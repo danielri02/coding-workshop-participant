@@ -232,84 +232,84 @@ echo ""
 # ============================================================
 # STEP 3: Check and Start LocalStack
 # ============================================================
-echo -e "[3/5] Checking LocalStack..."
+# echo -e "[3/5] Checking LocalStack..."
 
-# Check if localstack is installed
-if ! command -v localstack &> /dev/null; then
-    echo -e "ERROR: LocalStack is not installed"
-    echo "Install: pip install localstack"
-    exit 1
-fi
+# # Check if localstack is installed
+# if ! command -v localstack &> /dev/null; then
+#     echo -e "ERROR: LocalStack is not installed"
+#     echo "Install: pip install localstack"
+#     exit 1
+# fi
 
-# Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-    echo -e "ERROR: Docker is not running"
-    echo "  Please start Docker Desktop and try again"
-    exit 1
-fi
-echo -e "  ✓ Docker is running"
+# # Check if Docker is running
+# if ! docker info > /dev/null 2>&1; then
+#     echo -e "ERROR: Docker is not running"
+#     echo "  Please start Docker Desktop and try again"
+#     exit 1
+# fi
+# echo -e "  ✓ Docker is running"
 
-# Check if LocalStack is running
-LOCALSTACK_OK=false
-LOCALSTACK_IMAGE="${LOCALSTACK_IMAGE:-localstack/localstack-pro}"
-if curl -s http://localhost.localstack.cloud:4566/_localstack/health > /dev/null 2>&1; then
-    # Verify the correct image is running
-    RUNNING_IMAGE=$(docker inspect localstack-main --format '{{.Config.Image}}' 2>/dev/null || echo "")
-    if [ "$RUNNING_IMAGE" != "$LOCALSTACK_IMAGE" ]; then
-        echo -e "  ⚠ LocalStack running with wrong image ($RUNNING_IMAGE), expected $LOCALSTACK_IMAGE. Restarting..."
-        localstack stop
-        docker stop localstack-main 2>/dev/null || true
-        sleep 5
-    else
-        LOCALSTACK_OK=true
-        echo -e "  ✓ LocalStack is running ($LOCALSTACK_IMAGE)"
-    fi
-fi
+# # Check if LocalStack is running
+# LOCALSTACK_OK=false
+# LOCALSTACK_IMAGE="${LOCALSTACK_IMAGE:-localstack/localstack-pro}"
+# if curl -s http://localhost.localstack.cloud:4566/_localstack/health > /dev/null 2>&1; then
+#     # Verify the correct image is running
+#     RUNNING_IMAGE=$(docker inspect localstack-main --format '{{.Config.Image}}' 2>/dev/null || echo "")
+#     if [ "$RUNNING_IMAGE" != "$LOCALSTACK_IMAGE" ]; then
+#         echo -e "  ⚠ LocalStack running with wrong image ($RUNNING_IMAGE), expected $LOCALSTACK_IMAGE. Restarting..."
+#         localstack stop
+#         docker stop localstack-main 2>/dev/null || true
+#         sleep 5
+#     else
+#         LOCALSTACK_OK=true
+#         echo -e "  ✓ LocalStack is running ($LOCALSTACK_IMAGE)"
+#     fi
+# fi
 
-if [ "$LOCALSTACK_OK" = false ]; then
-    # Check if LocalStack docker container is already running
-    if docker ps | grep -q localstack-main; then
-        echo -e "  ⚠ Stopping existing LocalStack container..."
-        localstack stop || echo "WARN: localstack stop didn't work"
-        docker stop localstack-main || echo "WARN: docker stop localstack-main didn't work"
-        sleep 10
-    fi
+# if [ "$LOCALSTACK_OK" = false ]; then
+#     # Check if LocalStack docker container is already running
+#     if docker ps | grep -q localstack-main; then
+#         echo -e "  ⚠ Stopping existing LocalStack container..."
+#         localstack stop || echo "WARN: localstack stop didn't work"
+#         docker stop localstack-main || echo "WARN: docker stop localstack-main didn't work"
+#         sleep 10
+#     fi
 
-    echo -e "  ⚠ LocalStack not running, starting it..."
-    localstack start -d
+#     echo -e "  ⚠ LocalStack not running, starting it..."
+#     localstack start -d
 
-    # Wait for LocalStack to be ready (up to 30 seconds)
-    for i in {1..30}; do
-        if curl -s http://localhost.localstack.cloud:4566/_localstack/health > /dev/null 2>&1; then
-            LOCALSTACK_OK=true
-            echo -e "  ✓ LocalStack started"
-            break
-        fi
-        echo -e "  Waiting for LocalStack... ($i/30)"
-        sleep 1
-    done
+#     # Wait for LocalStack to be ready (up to 30 seconds)
+#     for i in {1..30}; do
+#         if curl -s http://localhost.localstack.cloud:4566/_localstack/health > /dev/null 2>&1; then
+#             LOCALSTACK_OK=true
+#             echo -e "  ✓ LocalStack started"
+#             break
+#         fi
+#         echo -e "  Waiting for LocalStack... ($i/30)"
+#         sleep 1
+#     done
 
-    if [ "$LOCALSTACK_OK" = false ]; then
-        echo -e "  ✗ LocalStack failed to start within 30 seconds"
-        exit 1
-    fi
-fi
+#     if [ "$LOCALSTACK_OK" = false ]; then
+#         echo -e "  ✗ LocalStack failed to start within 30 seconds"
+#         exit 1
+#     fi
+# fi
 
-# Verify LocalStack services
-HEALTH=$(curl -s http://localhost.localstack.cloud:4566/_localstack/health 2>/dev/null || echo "{}")
-LAMBDA_STATUS=$(echo "$HEALTH" | grep -o '"lambda":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
-S3_STATUS=$(echo "$HEALTH" | grep -o '"s3":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
+# # Verify LocalStack services
+# HEALTH=$(curl -s http://localhost.localstack.cloud:4566/_localstack/health 2>/dev/null || echo "{}")
+# LAMBDA_STATUS=$(echo "$HEALTH" | grep -o '"lambda":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
+# S3_STATUS=$(echo "$HEALTH" | grep -o '"s3":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
 
-if [ "$LAMBDA_STATUS" != "available" ] && [ "$LAMBDA_STATUS" != "running" ]; then
-    echo -e "  ⚠ Lambda service status: $LAMBDA_STATUS"
-fi
+# if [ "$LAMBDA_STATUS" != "available" ] && [ "$LAMBDA_STATUS" != "running" ]; then
+#     echo -e "  ⚠ Lambda service status: $LAMBDA_STATUS"
+# fi
 
-if [ "$S3_STATUS" != "available" ] && [ "$S3_STATUS" != "running" ]; then
-    echo -e "  ⚠ S3 service status: $S3_STATUS"
-fi
+# if [ "$S3_STATUS" != "available" ] && [ "$S3_STATUS" != "running" ]; then
+#     echo -e "  ⚠ S3 service status: $S3_STATUS"
+# fi
 
-echo -e "  ✓ LocalStack services verified"
-echo ""
+# echo -e "  ✓ LocalStack services verified"
+# echo ""
 
 # ============================================================
 # STEP 4: Check and Deploy Backend
