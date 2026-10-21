@@ -97,6 +97,15 @@ The previous `TF_VAR_facilities_maintenance_security_group_ids` setting is no lo
 used and can be removed. Use a connected runner rather than exposing PostgreSQL
 publicly.
 
+The read-only connection check honors the deployed `PGCONNECT_TIMEOUT` (30 seconds
+by default), so a paused Aurora instance has time to resume. An explicit
+`connect_timeout` in `DATABASE_URL` takes precedence for direct script invocations.
+If the check times out, it stops before table initialization or seeding. Check
+instance availability and TCP 5432 reachability from the VDI; opening Swagger or
+`/health` does not establish database connectivity. A persistent timeout is not
+evidence of a bad database password. No security groups or public database access
+are changed by the maintenance command.
+
 If a previous backend deployment failed with `ec2:CreateSecurityGroup`, pull the
 updated `cloud` branch, review `plan`, then rerun `backend`. Terraform reuses the
 resources already created by the partial deployment; no cleanup/reset is needed.

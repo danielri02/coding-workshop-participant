@@ -9,6 +9,7 @@ and connection query values are never printed.
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,7 @@ if __package__ in {None, "", "scripts"}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import select, text
+from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -25,11 +27,31 @@ from backend.app.models import User
 from backend.scripts.seed_database import DEFAULT_ADMIN_EMAIL
 
 
+def connection_timeout(url: URL) -> int:
+    """Honor libpq settings, allowing a paused Aurora instance time to resume."""
+
+    default = "30" if os.environ.get("IS_LOCAL", "true").lower() == "false" else "5"
+    value = url.query.get(
+        "connect_timeout", os.environ.get("PGCONNECT_TIMEOUT", default)
+    )
+    try:
+        timeout = int(value)
+        if timeout < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError(
+            "PGCONNECT_TIMEOUT/connect_timeout must be a positive integer"
+        ) from None
+    return timeout
+
+
 async def check_connection(*, check_admin: bool = False) -> None:
     """Make one read-only request, with a bounded connection timeout."""
 
     url = get_database_url()
-    engine = create_async_engine(url, connect_args={"connect_timeout": 5})
+    engine = create_async_engine(
+        url, connect_args={"connect_timeout": connection_timeout(url)}
+    )
     try:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))

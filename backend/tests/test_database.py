@@ -28,6 +28,7 @@ from backend.app.models import (
     Note,
     User,
 )
+from backend.scripts.check_database import connection_timeout
 from backend.scripts.create_tables import initialize_database
 from backend.scripts.seed_database import (
     DEFAULT_ADMIN_PASSWORD,
@@ -132,6 +133,38 @@ class DatabaseConfigTests(unittest.TestCase):
 
 class DatabaseDiagnosticTests(unittest.TestCase):
     """Connection failures must be useful without exposing credentials or SQL."""
+
+    def test_check_timeout_honors_deployed_and_explicit_connection_settings(
+        self,
+    ) -> None:
+        url = make_url(DEFAULT_DATABASE_URL)
+        for environment, expected in (
+            ({}, 5),
+            ({"IS_LOCAL": "false"}, 30),
+            ({"IS_LOCAL": "false", "PGCONNECT_TIMEOUT": "60"}, 60),
+        ):
+            with (
+                self.subTest(environment=environment),
+                patch.dict(os.environ, environment, clear=True),
+            ):
+                self.assertEqual(connection_timeout(url), expected)
+                self.assertEqual(
+                    connection_timeout(
+                        url.update_query_dict({"connect_timeout": "45"})
+                    ),
+                    45,
+                )
+
+    def test_check_rejects_unbounded_or_invalid_timeouts_without_echoing_values(
+        self,
+    ) -> None:
+        for value in ("0", "-1", "private-invalid-setting", ""):
+            with (
+                self.subTest(value=value),
+                patch.dict(os.environ, {"PGCONNECT_TIMEOUT": value}, clear=True),
+                self.assertRaisesRegex(ValueError, "must be a positive integer"),
+            ):
+                connection_timeout(make_url(DEFAULT_DATABASE_URL))
 
     def test_summary_reports_configuration_source_and_omits_secrets(self) -> None:
         """Report the target, preserving privacy for password and query values."""
