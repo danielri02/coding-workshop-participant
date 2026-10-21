@@ -6,10 +6,7 @@ module "lambda" {
   build_in_docker           = each.key == "facilities" && local.facilities_cloud
   docker_additional_options = each.key == "facilities" && local.facilities_cloud ? ["--platform=linux/amd64"] : []
   vpc_subnet_ids            = each.key == "facilities" && local.facilities_cloud ? data.aws_subnets.this.ids : local.public_subnet_ids
-  vpc_security_group_ids = concat(
-    data.aws_security_groups.this.ids,
-    each.key == "facilities" && local.facilities_cloud ? [aws_security_group.facilities_database[0].id] : []
-  )
+  vpc_security_group_ids    = data.aws_security_groups.this.ids
   cors = { for key, value in {
     allow_credentials = false
     allow_headers     = ["*"]

@@ -9,9 +9,8 @@ mock_provider "aws" {
   mock_data "aws_service_principal" { defaults = { name = "cloudfront.amazonaws.com" } }
 }
 variables {
-  facilities_local_environment              = { DATABASE_URL = "postgresql://local/local", JWT_SECRET_KEY = "local-only" }
-  facilities_cloud_environment              = { JWT_SECRET_KEY = "cloud-fixture-signing-key-at-least-32-characters" }
-  facilities_maintenance_security_group_ids = ["sg-222"]
+  facilities_local_environment = { DATABASE_URL = "postgresql://local/local", JWT_SECRET_KEY = "local-only" }
+  facilities_cloud_environment = { JWT_SECRET_KEY = "cloud-fixture-signing-key-at-least-32-characters" }
 }
 run "cloud_uses_cloud_only_settings_and_url_grants" {
   command = plan
@@ -32,8 +31,8 @@ run "cloud_uses_cloud_only_settings_and_url_grants" {
     error_message = "AWS needs both URL-restricted permissions and no local grants."
   }
   assert {
-    condition     = length(module.lambda["facilities"].subnets) == 2 && length(module.lambda["facilities"].groups) == 2 && aws_vpc_security_group_ingress_rule.facilities_postgres[0].from_port == 5432 && length(aws_vpc_security_group_ingress_rule.facilities_maintenance) == 1
-    error_message = "Lambda/Aurora and explicit maintenance access must use the VPC network."
+    condition     = length(module.lambda["facilities"].subnets) == 2 && toset(module.lambda["facilities"].groups) == toset(data.aws_security_groups.this.ids) && toset(aws_rds_cluster.this[0].vpc_security_group_ids) == toset(data.aws_security_groups.this.ids)
+    error_message = "Lambda and Aurora must share only the existing workshop security groups."
   }
   assert {
     condition     = alltrue([for rule in aws_cloudfront_distribution.this[0].custom_error_response : rule.response_code == null && rule.response_page_path == null && rule.error_caching_min_ttl == 0]) && length(aws_cloudfront_distribution.this[0].default_cache_behavior[0].function_association) == 1
@@ -56,7 +55,7 @@ run "local_settings_and_access_still_work" {
     error_message = "The existing local override and hot reload path must survive cloud changes."
   }
   assert {
-    condition     = length(aws_lambda_permission.facilities_cloud_url) == 0 && length(aws_lambda_permission.facilities_local_function_url) == 1 && length(aws_security_group.facilities_database) == 0 && length(aws_cloudfront_function.facilities_spa) == 0
+    condition     = length(aws_lambda_permission.facilities_cloud_url) == 0 && length(aws_lambda_permission.facilities_local_function_url) == 1 && length(aws_cloudfront_function.facilities_spa) == 0
     error_message = "Cloud-only resources must never be added to LocalStack."
   }
 }

@@ -48,9 +48,17 @@ class CloudTerraformTests(unittest.TestCase):
                 [terraform, "validate", "-no-color"], root, environment, capture=True
             )
             output = command(
-                [terraform, "test", "-no-color"], root, environment, capture=True
+                [terraform, "test", "-verbose", "-no-color"],
+                root,
+                environment,
+                capture=True,
             )
             self.assertIn("3 passed, 0 failed", output)
+            self.assertNotRegex(
+                output,
+                r'resource "aws_(?:security_group(?:_rule)?|vpc_security_group_(?:ingress|egress)_rule)"',
+                "Workshop deployment must not create or modify EC2 security groups/rules.",
+            )
 
 
 if __name__ == "__main__":

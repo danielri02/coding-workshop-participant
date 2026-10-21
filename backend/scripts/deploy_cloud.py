@@ -131,10 +131,8 @@ def clean_environment(settings: dict[str, str]) -> dict[str, str]:
     environment["AWS_DEFAULT_REGION"] = environment["AWS_REGION"]
     if not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-[0-9]+", environment["AWS_REGION"]):
         raise CloudError("AWS_REGION must be a valid AWS region name.")
-    for name in ("aws_vpc_id", "facilities_maintenance_security_group_ids"):
-        key = "TF_VAR_" + name
-        if key in settings:
-            environment[key] = settings[key]
+    if "TF_VAR_aws_vpc_id" in settings:
+        environment["TF_VAR_aws_vpc_id"] = settings["TF_VAR_aws_vpc_id"]
     environment.update(
         {
             "TF_VAR_aws_postgres_enabled": "true",
@@ -271,6 +269,12 @@ def prepare(
     vpc = vpcs.pop()
     environment["TF_VAR_aws_vpc_id"] = vpc
     print(f"Workshop VPC: {vpc}", flush=True)
+    print(
+        "Using existing workshop security group(s): "
+        + ", ".join(sorted(group["GroupId"] for group in groups["SecurityGroups"]))
+        + ". PostgreSQL access uses their existing rules; deployment does not modify them.",
+        flush=True,
+    )
     subnets = aws_json(
         root,
         environment,

@@ -4,12 +4,9 @@ resource "aws_db_subnet_group" "this" {
 }
 
 resource "aws_rds_cluster" "this" {
-  master_password   = one(random_password.facilities_database[*].result)
-  apply_immediately = true
-  vpc_security_group_ids = concat(
-    data.aws_security_groups.this.ids,
-    local.facilities_cloud ? [aws_security_group.facilities_database[0].id] : []
-  )
+  master_password        = one(random_password.facilities_database[*].result)
+  apply_immediately      = true
+  vpc_security_group_ids = data.aws_security_groups.this.ids
 }
 
 resource "aws_rds_cluster_instance" "this" {

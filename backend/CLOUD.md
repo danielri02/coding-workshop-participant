@@ -42,7 +42,7 @@ Terraform runs. It obtains temporary AWS credentials through the unchanged
 wrapper clears inherited profile/role selectors so stale local credentials cannot
 take precedence over the workshop credentials. These commands
 also need the workshop permissions to create the application resources, including
-its database security group/rules and CloudFront Function.
+the CloudFront Function. No new security groups or rules are created.
 
 ## Plan and deploy infrastructure
 
@@ -70,9 +70,11 @@ key is rejected in cloud mode. Cloud JWT/runtime overrides cannot replace databa
 identity. Both Function URL invocation permissions are explicitly granted; FastAPI
 authentication and role checks remain required on protected endpoints.
 
-The API and Aurora share a dedicated VPC security group permitting PostgreSQL on
-5432. Existing workshop security groups remain attached. The application does not
-create a new VPC or enable public database access. It uses the workshop subnets,
+The API and Aurora share the preprovisioned participant security group, matching
+the original workshop configuration. Its existing rules must permit PostgreSQL on
+5432 between them; deployment prints the selected group IDs and does not create
+groups or change rules. The application does not create a new VPC or enable public
+database access. It uses the workshop subnets,
 including those with implicit main-route associations. No NAT gateway is required
 by this API: configuration is injected and database access remains within the VPC.
 
@@ -88,11 +90,16 @@ private. These files, real cloud settings and generated inputs are ignored by Gi
 ## Initialize and optionally seed the database
 
 Run maintenance on a machine with network connectivity to the Aurora VPC, such as
-the workshop WorkSpace. If its existing rules do not permit access, set
-`TF_VAR_facilities_maintenance_security_group_ids='["sg-..."]'` in `.env.cloud` to
-the machine's security group in that same VPC, then rerun plan/backend. A security
-group rule does not create connectivity from a laptop outside the VPC; use a
-connected runner rather than exposing PostgreSQL publicly.
+the workshop WorkSpace. The existing workshop rules must also permit PostgreSQL
+from that machine. If they do not, the workshop administrator needs to permit the
+required private connection; this application does not modify workshop networking.
+The previous `TF_VAR_facilities_maintenance_security_group_ids` setting is no longer
+used and can be removed. Use a connected runner rather than exposing PostgreSQL
+publicly.
+
+If a previous backend deployment failed with `ec2:CreateSecurityGroup`, pull the
+updated `cloud` branch, review `plan`, then rerun `backend`. Terraform reuses the
+resources already created by the partial deployment; no cleanup/reset is needed.
 
 ```bash
 ./backend/scripts/deploy-cloud.sh database

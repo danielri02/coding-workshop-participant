@@ -22,17 +22,6 @@ variable "facilities_cloud_environment" {
   }
 }
 
-variable "facilities_maintenance_security_group_ids" {
-  description = "Optional security groups of VPC-connected maintenance machines allowed to reach Aurora on 5432."
-  type        = set(string)
-  default     = []
-
-  validation {
-    condition     = alltrue([for id in var.facilities_maintenance_security_group_ids : can(regex("^sg-[a-f0-9]+$", id))])
-    error_message = "Maintenance access must use security group IDs from the same VPC."
-  }
-}
-
 locals {
   facilities_cloud = data.aws_caller_identity.this.id != "000000000000"
   facilities_base_environment = {
