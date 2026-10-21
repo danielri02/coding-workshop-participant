@@ -6,8 +6,9 @@ import { RecordLink } from '../components/RecordLink'
 import { ValueChip } from '../components/ValueChip'
 import { statuses, priorities, categories, constraints } from '../generated/domain'
 import type { Field } from './forms'
+import { incidentFields, locationFields, noteFields } from './incidentFields'
 import { floorLabel } from './rows'
-import type { AdminRow, Lookups, Option, ResourceKey } from '../types'
+import type { AdminRow, Lookups, ResourceKey } from '../types'
 
 /** The only resource-specific configuration required by the reusable CRUD page. */
 export interface ResourceDefinition {
@@ -21,8 +22,6 @@ export interface ResourceDefinition {
   columns: (lookups: Lookups) => GridColDef<AdminRow>[]
 }
 
-const choices = (values: readonly string[]): Option[] =>
-  values.map((value) => ({ value, label: value }))
 const text = (field: keyof AdminRow, headerName: string, width = 180): GridColDef<AdminRow> => ({
   field,
   headerName,
@@ -48,38 +47,6 @@ const tag = (
   valueOptions: [...values],
   renderCell: ({ value }) => <ValueChip value={String(value)} />,
 })
-const locationFields: Field[] = [
-  {
-    name: 'building_id',
-    label: 'Building',
-    type: 'select',
-    required: true,
-    numeric: true,
-    resets: ['floor_id', 'seat_id'],
-    options: (data) => data.buildings.map((row) => ({ value: row.id, label: String(row.name) })),
-  },
-  {
-    name: 'floor_id',
-    label: 'Floor',
-    type: 'select',
-    numeric: true,
-    resets: ['seat_id'],
-    options: (data, values) =>
-      data.floors
-        .filter((row) => row.building_id === Number(values.building_id))
-        .map((row) => ({ value: row.id, label: `Floor ${String(row.label)}` })),
-  },
-  {
-    name: 'seat_id',
-    label: 'Seat',
-    type: 'select',
-    numeric: true,
-    options: (data, values) =>
-      data.seats
-        .filter((row) => row.floor_id === Number(values.floor_id))
-        .map((row) => ({ value: row.id, label: String(row.label) })),
-  },
-]
 
 export const resources: ResourceDefinition[] = [
   {
@@ -89,40 +56,7 @@ export const resources: ResourceDefinition[] = [
     endpoint: '/incidents',
     description: 'Coordinate workplace issues, assignments and progress.',
     lookups: ['users', 'buildings', 'floors', 'seats'],
-    fields: [
-      { name: 'title', label: 'Title', required: true, ...constraints.IncidentCreate.title },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'multiline',
-        required: true,
-        ...constraints.IncidentCreate.description,
-      },
-      {
-        name: 'category',
-        label: 'Category',
-        type: 'select',
-        required: true,
-        options: () => choices(categories),
-      },
-      ...locationFields,
-      {
-        name: 'priority',
-        label: 'Priority',
-        type: 'select',
-        required: true,
-        defaultValue: 'Medium',
-        createOnly: true,
-        options: () => choices(priorities),
-      },
-      {
-        name: 'escalation_reason',
-        label: 'Escalation reason',
-        type: 'multiline',
-        ...constraints.IncidentCreate.escalation_reason,
-        createOnly: true,
-      },
-    ],
+    fields: incidentFields,
     columns: (data) => {
       const columns: GridColDef<AdminRow>[] = [
         {
@@ -327,15 +261,7 @@ export const resources: ResourceDefinition[] = [
     endpoint: '/notes',
     description: 'Read and manage the shared conversation on each incident.',
     lookups: [],
-    fields: [
-      {
-        name: 'body',
-        label: 'Note',
-        type: 'multiline',
-        required: true,
-        ...constraints.NoteCreate.body,
-      },
-    ],
+    fields: noteFields,
     columns: () => [
       { ...text('body', 'Note', 400), flex: 1 },
       text('author_name', 'Author', 200),

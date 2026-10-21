@@ -2,10 +2,16 @@
 
 ## Overview
 
-The admin workspace uses React, TypeScript, Vite and MUI Data Grid Community.
-It includes authenticated sidebar pages for incidents, users, engineer profiles,
-buildings, floors, seats and incident notes. Sign in with a Facility Admin account;
-the development seed creates `admin@acme.inc` with password `admin`.
+The application uses React, TypeScript, Vite and MUI Data Grid Community.
+The backend-verified account selects the workspace after login:
+
+- Facility Admin: sidebar pages for incidents, users, engineer profiles,
+  buildings, floors, seats, notes and reports. Demo: `admin@acme.inc` / `admin`.
+- Employee: submit incidents and track submitted reports, progress and updates.
+  Demo: `employee@acme.inc` / `employee`.
+
+Run the backend seed command to add the demo employee and expanded samples to an
+existing development database. Existing seeded accounts and passwords are preserved.
 
 ## Workshop local development (default)
 
@@ -71,7 +77,7 @@ npm test
 ```
 
 Production builds include TypeScript checking. `src/App.tsx` owns authentication
-and loads `pages/AdminRoutes.tsx` after login. The seven resources share grids,
+and loads `pages/AdminRoutes.tsx` or `pages/EmployeeRoutes.tsx` after login. The seven resources share grids,
 forms and dialogs; `hooks/useResourceActions.ts` owns mutations, while
 `resources/incidentActions.ts`, `incidentQuery.ts`, `forms.ts` and `rows.ts` keep
 workflow inputs, query translation, payload construction and presentation adapters
@@ -81,7 +87,7 @@ separate from the page components.
 TanStack Query shares and cancels reads, caches successful reads for 30 seconds,
 and invalidates affected collections/details after mutations. Explicit Refresh
 also reloads the page's relationships. Cached data is cleared at login/logout.
-The administrator routes and grid code are loaded separately from the login UI.
+Workspace routes and grid code are loaded separately from the login UI.
 
 The header menu button collapses desktop navigation to an icon rail; links keep
 their accessible names and show tooltips. Windows from 900 to 1199 pixels wide
@@ -89,6 +95,27 @@ start with the rail; smaller windows use an overlay menu. Grids retain readable
 column widths and scroll horizontally within the table, with a scrollbar at the
 bottom and support for horizontal wheel/trackpad input. Grid height adapts to the
 window, and search/actions stack vertically on narrow screens.
+
+### Employee workspace
+
+`/employee/incidents` provides a server-paginated grid scoped to the current
+account's submitted reports, with search, status/priority/category/building filters
+and sorting. New incident uses the same validated location/category/priority
+inputs as the admin form. The backend supplies the reporter identity and starts
+the report Open.
+
+Incident pages show location, assigned engineer name, workflow progress,
+blocked/escalation reasons and the shared notes conversation. Employees can add
+notes and change priority/escalation while their own incident is active. Resolved
+and closed reports remain readable. Assignment, status changes, edits/deletes,
+people-management links and admin navigation are absent. The employee workspace
+uses incident and note display names without requesting user directories or
+engineer profiles. Direct admin URLs return employees to their incident grid;
+backend authorization also protects direct API calls and other employees' records.
+
+Non-admin engineers can use this submission/tracking view for their own reports;
+it deliberately filters by reporter even when the account has additional incident
+read grants. Dedicated engineering workflow pages are separate work.
 
 ### Reports
 

@@ -8,6 +8,23 @@ export type Editor = {
   row: AdminRow | null
 }
 
+export const priorityFields: Field[] = [
+  {
+    name: 'priority',
+    label: 'Priority',
+    type: 'select',
+    required: true,
+    options: () => priorities.map((value) => ({ value, label: value })),
+  },
+  {
+    name: 'escalation_reason',
+    label: 'Escalation reason',
+    type: 'multiline',
+    ...constraints.IncidentPriorityUpdate.escalation_reason,
+    helper: 'A reason marks this incident as escalated. Clear it to remove escalation.',
+  },
+]
+
 export type IncidentCommand = 'assignment' | 'priority' | 'status'
 
 /** Use the same workflow controls in row menus and incident details. */
@@ -39,23 +56,7 @@ export function editorForm(resource: ResourceDefinition, editor: Editor | null) 
             .map((row) => ({ value: row.id, label: String(row.name) })),
       },
     ]
-  if (editor?.action === 'priority')
-    fields = [
-      {
-        name: 'priority',
-        label: 'Priority',
-        type: 'select',
-        required: true,
-        options: () => priorities.map((value) => ({ value, label: value })),
-      },
-      {
-        name: 'escalation_reason',
-        label: 'Escalation reason',
-        type: 'multiline',
-        ...constraints.IncidentPriorityUpdate.escalation_reason,
-        helper: 'A reason marks this incident as escalated. Clear it to remove escalation.',
-      },
-    ]
+  if (editor?.action === 'priority') fields = priorityFields
   if (editor?.action === 'status') {
     const next = editor.row?.status ? transitions[editor.row.status] : []
     fields = [

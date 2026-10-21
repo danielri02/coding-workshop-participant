@@ -1,4 +1,4 @@
-import { Alert, Box, Button, CircularProgress, Stack } from '@mui/material'
+import { Box, CircularProgress } from '@mui/material'
 import { BrowserRouter } from 'react-router-dom'
 import { lazy, Suspense, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -7,10 +7,11 @@ import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
 import { LoginPage } from './pages/LoginPage'
 const AdminRoutes = lazy(() => import('./pages/AdminRoutes'))
+const EmployeeRoutes = lazy(() => import('./pages/EmployeeRoutes'))
 
-/** Protect admin pages using the current account verified by the backend. */
-function AdminApplication() {
-  const { user, booting, logout } = useAuth()
+/** Route each server-verified account to its permitted workspace. */
+function Application() {
+  const { user, booting } = useAuth()
   if (booting)
     return (
       <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
@@ -18,21 +19,12 @@ function AdminApplication() {
       </Box>
     )
   if (!user) return <LoginPage />
-  if (!user.is_admin)
-    return (
-      <Stack spacing={3} sx={{ maxWidth: 500, mx: 'auto', my: 10, p: 3 }}>
-        <Alert severity="warning">Facility Admin access is required for this workspace.</Alert>
-        <Button variant="contained" onClick={() => void logout()}>
-          Sign out
-        </Button>
-      </Stack>
-    )
-  return <AdminRoutes />
+  return user.is_admin ? <AdminRoutes /> : <EmployeeRoutes />
 }
 
-AdminApplication.propTypes = {}
+Application.propTypes = {}
 
-/** Compose the router and shared authentication boundary for the admin application. */
+/** Compose the router and shared authentication boundary for the application. */
 function App() {
   const [queryClient] = useState(createQueryClient)
   return (
@@ -46,7 +38,7 @@ function App() {
               </Box>
             }
           >
-            <AdminApplication />
+            <Application />
           </Suspense>
         </AuthProvider>
       </BrowserRouter>

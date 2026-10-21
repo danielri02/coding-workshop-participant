@@ -308,7 +308,10 @@ test('session refresh restores an expired access token and mobile navigation wor
   await expect(page.getByRole('button', { name: 'New building', exact: true })).toBeVisible()
 })
 
-test('non-admin credentials are rejected by the admin workspace', async ({ request, page }) => {
+test('employee credentials open their workspace and exclude admin navigation', async ({
+  request,
+  page,
+}) => {
   const employeeEmail = `test.employee.${Date.now()}@acme.inc`
   const employeePassword = 'employee-password-12345'
   const response = await request.post(`${apiUrl}/users`, {
@@ -318,7 +321,8 @@ test('non-admin credentials are rejected by the admin workspace', async ({ reque
   cleanup.unshift(`/users/${user.id}`)
   await page.goto('/admin/incidents')
   await signIn(page, employeeEmail, employeePassword)
-  await expect(page.getByRole('alert')).toContainText('Facility Admin access')
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/employee\/incidents$/)
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
 })
 
@@ -360,6 +364,7 @@ test('incident actions validate blocked reasons and preserve note editing after 
   cleanup.unshift(`/incidents/${incident.id}`)
   await page.goto('/admin/incidents')
   await signIn(page)
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(incident.title)
   const more = () =>
     page.getByRole('button', { name: `More actions for incidents ${incident.id}` }).click()
   await more()
@@ -716,4 +721,175 @@ test('incident details expose admin controls and links to notes and engineer pro
   await expect(
     page.getByRole('gridcell', { name: 'Navigation works for this incident.', exact: true }),
   ).toBeVisible()
+})
+
+test('demo employee submits incidents, tracks progress and shares notes on mobile', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(90000)
+  const suffix = `employeecheck${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const floors = await (await request.get(`${apiUrl}/floors`, { headers })).json()
+  const floor = floors.find((row: { building_id: number }) => row.building_id === building.id)
+  const seats = await (await request.get(`${apiUrl}/seats`, { headers })).json()
+  const seat = seats.find((row: { floor_id: number }) => row.floor_id === floor.id)
+  const requested: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith(browserApiUrl)) requested.push(new URL(request.url()).pathname)
+  })
+  await page.goto('/')
+  await signIn(page, 'employee@acme.inc', 'employee')
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
+  await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
+  await page.getByRole('option', { name: '10', exact: true }).click()
+  await expect(page.getByText('1–10 of 15', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Go to next page' }).click()
+  await expect(page.getByText('11–15 of 15', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'New incident', exact: true }).click()
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
+  ).toBeDisabled()
+  await page.getByRole('dialog').getByLabel('Title', { exact: false }).fill(suffix)
+  await page
+    .getByRole('dialog')
+    .getByLabel('Description')
+    .fill('The network connection at my desk keeps dropping.')
+  await select(page, 'Category', 'Network')
+  await select(page, 'Building', building.name)
+  await select(page, 'Floor', `Floor ${floor.label}`)
+  await select(page, 'Seat', seat.label)
+  const incident = await save(page, '/incidents')
+  await expect(page).toHaveURL(new RegExp(`/employee/incidents/${incident.id}$`))
+  await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
+  await expect(page.getByText('Awaiting assignment', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Assign engineer', exact: true })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
+  await page.getByRole('button', { name: 'Priority and escalation', exact: true }).click()
+  await select(page, 'Priority', 'High')
+  await page.getByRole('dialog').getByLabel('Escalation reason').fill('Unable to join meetings')
+  await save(page, `/incidents/${incident.id}/priority`, 'PATCH')
+  await expect(page.getByRole('alert').filter({ hasText: 'Unable to join meetings' })).toBeVisible()
+  await page.getByRole('button', { name: 'Add note', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('Note', { exact: false })
+    .fill('The connection also drops after restarting.')
+  await save(page, `/incidents/${incident.id}/notes`)
+  await expect(
+    page.getByText('The connection also drops after restarting.', { exact: true }),
+  ).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 640 })
+  await page.screenshot({
+    path: test.info().outputPath('employee-incident-mobile.png'),
+    fullPage: true,
+  })
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.reload()
+  await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
+  await expect(
+    page.getByText('The connection also drops after restarting.', { exact: true }),
+  ).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+    .toBeLessThanOrEqual(1)
+  await page.getByRole('link', { name: 'My incidents', exact: true }).first().click()
+  const searched = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/incidents/grid' &&
+      url.searchParams.get('search') === suffix &&
+      url.searchParams.has('reporter_id')
+    )
+  })
+  await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
+  expect((await searched).status()).toBe(200)
+  await expect(
+    page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }),
+  ).toBeVisible()
+  const scrollbar = page.getByRole('grid').locator('.MuiDataGrid-scrollbar--horizontal')
+  await expect(scrollbar).toBeVisible()
+  await scrollbar.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+  })
+  await expect.poll(() => scrollbar.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+  expect(
+    requested.some((path) => /\/(users|engineer-profiles|reports)(\/|$)/.test(path)),
+  ).toBeFalsy()
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await signIn(page)
+  await expect(page.getByRole('heading', { name: 'Incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toBeVisible()
+})
+
+test('employee workspace and API exclude other reports and privileged operations', async ({
+  request,
+  page,
+}) => {
+  const requested: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith(browserApiUrl)) requested.push(browserPath(new URL(request.url())))
+  })
+  await page.goto('/admin/users')
+  await signIn(page, 'employee@acme.inc', 'employee')
+  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  const accessToken = await page.evaluate(
+    () => JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token,
+  )
+  const employeeHeaders = { Authorization: `Bearer ${accessToken}` }
+  const account = await (
+    await request.get(`${apiUrl}/auth/me`, { headers: employeeHeaders })
+  ).json()
+  const own = await (await request.get(`${apiUrl}/incidents`, { headers: employeeHeaders })).json()
+  expect(own.length).toBeGreaterThan(10)
+  expect(own.every((row: { reporter_id: number }) => row.reporter_id === account.id)).toBeTruthy()
+  const all = await (await request.get(`${apiUrl}/incidents`, { headers })).json()
+  const other = all.find((row: { reporter_id: number }) => row.reporter_id !== account.id)
+  const closed = own.find((row: { status: string }) => row.status === 'Closed')
+  for (const path of [
+    `/incidents/${other.id}`,
+    `/incidents/${other.id}/notes`,
+    '/users',
+    '/reports/workload',
+  ]) {
+    expect((await request.get(`${apiUrl}${path}`, { headers: employeeHeaders })).status()).toBe(403)
+  }
+  for (const [path, data] of [
+    [`/incidents/${own[0].id}/status`, { status: 'In Progress' }],
+    [`/incidents/${own[0].id}/assignment`, { assignee_id: null }],
+    [`/incidents/${own[0].id}`, { title: 'Not permitted' }],
+    [`/incidents/${other.id}/priority`, { priority: 'High' }],
+  ] as const)
+    expect(
+      (await request.patch(`${apiUrl}${path}`, { headers: employeeHeaders, data })).status(),
+    ).toBe(403)
+  expect(
+    (
+      await request.delete(`${apiUrl}/incidents/${own[0].id}`, { headers: employeeHeaders })
+    ).status(),
+  ).toBe(403)
+  await page.goto(`/employee/incidents/${other.id}`)
+  await expect(page.getByRole('alert')).toBeVisible()
+  await expect(page.getByRole('heading', { name: other.title, exact: true })).toBeHidden()
+  expect(requested).not.toContain(`/incidents/${other.id}/notes`)
+  await page.goto(`/employee/incidents/${closed.id}`)
+  await expect(page.getByRole('heading', { name: closed.title, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  await expect(
+    page.getByRole('button', { name: 'Priority and escalation', exact: true }),
+  ).toBeHidden()
+  await expect(
+    page.getByText('Confirmed working again. Thank you for the update.', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: /Assign engineer|Change status|Delete|Edit/ }),
+  ).toBeHidden()
+  await expect(page.getByRole('link', { name: /Users|Engineers|Reports/ })).toBeHidden()
+  await page.screenshot({
+    path: test.info().outputPath('employee-closed-incident.png'),
+    fullPage: true,
+  })
 })

@@ -78,6 +78,17 @@ test('grid queries retain false filters, ignore cleared values and encode litera
   assert.equal(params.has('internal_field'), false)
 })
 
+test('employee grid scope cannot be replaced by an incidental reporter filter', () => {
+  const path = incidentQuery(
+    { page: 0, pageSize: 25 },
+    [],
+    { items: [{ field: 'reporter_id', operator: 'is', value: 999 }] },
+    '',
+    12,
+  )
+  assert.equal(new URL(path, 'http://localhost').searchParams.get('reporter_id'), '12')
+})
+
 test('queries reuse reads and invalidate affected resources without refetching every table', async () => {
   const client = createQueryClient()
   try {

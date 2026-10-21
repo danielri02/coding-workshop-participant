@@ -4,7 +4,7 @@ import type { User, Building, Floor, Seat, Lookups } from '../types'
 import { useApiQuery } from './useApiQuery'
 
 /** Load only the relationship tables required by the current resource. */
-export function useLookups(resource: ResourceDefinition) {
+export function useLookups(resource: Pick<ResourceDefinition, 'lookups'>) {
   const users = useApiQuery<User[]>(resource.lookups.includes('users') ? '/users' : null, [])
   const buildings = useApiQuery<Building[]>(
     resource.lookups.includes('buildings') ? '/buildings' : null,

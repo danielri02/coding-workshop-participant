@@ -30,7 +30,12 @@ from backend.app.models import (
     User,
 )
 from backend.scripts.create_tables import initialize_database
-from backend.scripts.seed_database import DEFAULT_ADMIN_PASSWORD, seed_database
+from backend.scripts.seed_database import (
+    DEFAULT_ADMIN_PASSWORD,
+    DEFAULT_EMPLOYEE_EMAIL,
+    DEFAULT_EMPLOYEE_PASSWORD,
+    seed_database,
+)
 
 
 class DatabaseConfigTests(unittest.TestCase):
@@ -320,13 +325,13 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             counts,
             {
-                "users": 3,
-                "engineer_profiles": 1,
+                "users": 5,
+                "engineer_profiles": 2,
                 "buildings": 2,
                 "floors": 4,
                 "seats": 8,
-                "incidents": 7,
-                "notes": 7,
+                "incidents": 18,
+                "notes": 39,
                 "refresh_tokens": 0,
             },
         )
@@ -341,11 +346,44 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                         user.password_hash,
                         DEFAULT_ADMIN_PASSWORD
                         if user.is_admin
+                        else DEFAULT_EMPLOYEE_PASSWORD
+                        if user.email == DEFAULT_EMPLOYEE_EMAIL
                         else self.password.get_secret_value(),
                     )
                 )
             statuses = set(await session.scalars(select(Incident.status)))
             self.assertEqual(statuses, set(IncidentStatus))
+
+    async def test_demo_employee_has_own_history_and_other_people_have_distinct_work(
+        self,
+    ) -> None:
+        async with self.factory() as session:
+            await seed_database(session, self.password)
+            employee = await session.scalar(
+                select(User).where(User.email == DEFAULT_EMPLOYEE_EMAIL)
+            )
+            self.assertFalse(employee.is_admin)
+            self.assertIsNone(await session.get(EngineerProfile, employee.id))
+            own = (
+                await session.scalars(
+                    select(Incident).where(Incident.reporter_id == employee.id)
+                )
+            ).all()
+            others = (
+                await session.scalars(
+                    select(Incident).where(Incident.reporter_id != employee.id)
+                )
+            ).all()
+            self.assertEqual(len(own), 15)
+            self.assertEqual(len(others), 3)
+            self.assertEqual({row.status for row in own}, set(IncidentStatus))
+            self.assertEqual(
+                len({row.assignee_id for row in own if row.assignee_id}), 2
+            )
+            profiles = (await session.scalars(select(EngineerProfile))).all()
+            self.assertEqual({row.is_available for row in profiles}, {True, False})
+            authors = set(await session.scalars(select(Note.author_id)))
+            self.assertGreaterEqual(len(authors), 4)
 
     async def test_seed_preserves_existing_edits_and_passwords(self) -> None:
         """Reruns must not undo edited content, availability, or note deletions."""
@@ -354,7 +392,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             await seed_database(session, self.password)
             async with session.begin():
                 user = await session.scalar(
-                    select(User).where(User.email == "demo.employee@acme.inc")
+                    select(User).where(User.email == DEFAULT_EMPLOYEE_EMAIL)
                 )
                 original_hash = user.password_hash
                 user.name = "Updated employee name"
@@ -366,7 +404,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(value == 0 for value in counts.values()))
         async with self.factory() as session:
             user = await session.scalar(
-                select(User).where(User.email == "demo.employee@acme.inc")
+                select(User).where(User.email == DEFAULT_EMPLOYEE_EMAIL)
             )
             self.assertEqual(user.password_hash, original_hash)
             self.assertEqual(user.name, "Updated employee name")
@@ -374,7 +412,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 (await session.scalar(select(EngineerProfile))).is_available
             )
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(Note)), 6
+                await session.scalar(select(func.count()).select_from(Note)), 38
             )
 
     async def test_missing_or_invalid_seed_password_leaves_no_partial_data(
@@ -549,12 +587,12 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                     seed, password=self.password, invocation=invocation
                 )
                 self.assertEqual(code, 0, stderr)
-                self.assertEqual(await self.inserted_user_count(), 3)
+                self.assertEqual(await self.inserted_user_count(), 5)
                 code, _, stderr = await self.cli(
                     create, "--reset", invocation=invocation
                 )
                 self.assertEqual(code, 2, stderr)
-                self.assertEqual(await self.inserted_user_count(), 3)
+                self.assertEqual(await self.inserted_user_count(), 5)
                 code, _, stderr = await self.cli(
                     create, "--reset", "--yes", invocation=invocation
                 )
@@ -571,10 +609,10 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         code, stdout, stderr = await self.cli(seed, password=self.password)
         self.assertEqual(code, 0, stderr)
         self.assertNotIn(self.password.get_secret_value(), stdout + stderr)
-        self.assertEqual(await self.inserted_user_count(), 3)
+        self.assertEqual(await self.inserted_user_count(), 5)
         code, stdout, stderr = await self.cli(create, "--reset")
         self.assertEqual(code, 2, stderr)
-        self.assertEqual(await self.inserted_user_count(), 3)
+        self.assertEqual(await self.inserted_user_count(), 5)
         code, stdout, stderr = await self.cli(seed)
         self.assertEqual(code, 0, stderr)
         self.assertIn("users=0", stdout)

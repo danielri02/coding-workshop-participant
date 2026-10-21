@@ -7,7 +7,7 @@ import type { TokenPair, User } from '../types'
 import { AuthContext } from './context'
 import { isTokenPair, isUser } from '../services/authContracts'
 
-/** Restore a tab session, verify admin capabilities and manage login/logout. */
+/** Restore a tab session, verify account capabilities and manage login/logout. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const [user, setUser] = useState<User | null>(null)
@@ -67,17 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(tokens)
     try {
       const account = await api<User>('/auth/me', {}, true, isUser)
-      if (!account.is_admin) {
-        await api(
-          '/auth/logout',
-          { method: 'POST', body: JSON.stringify({ refresh_token: tokens.refresh_token }) },
-          false,
-        )
-        throw new ApiError(
-          'This workspace requires Facility Admin access. Sign in with an admin account.',
-          403,
-        )
-      }
       setUser(account)
     } catch (error) {
       setSession(null)

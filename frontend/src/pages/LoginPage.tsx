@@ -5,7 +5,7 @@ import ArrowForward from '@mui/icons-material/ArrowForward'
 import { useAuth } from '../auth/context'
 import { errorMessage } from '../services/client'
 
-/** Sign administrators in with visible request and credential errors. */
+/** Sign employees and administrators in with visible request and credential errors. */
 export function LoginPage() {
   const { login, notice } = useAuth()
   const [email, setEmail] = useState('')
@@ -45,7 +45,7 @@ export function LoginPage() {
         </Stack>
         <Box>
           <Typography variant="overline" sx={{ color: '#89a7c5', letterSpacing: 2 }}>
-            Workplace administration
+            Workplace support
           </Typography>
           <Typography
             variant="h2"
@@ -60,7 +60,7 @@ export function LoginPage() {
             A better workplace starts here.
           </Typography>
           <Typography sx={{ color: '#a6b9cd', mt: 3, maxWidth: 400, lineHeight: 1.8 }}>
-            Manage your facilities, coordinate engineers, and keep workplace incidents moving.
+            Report workplace issues, follow their progress, and stay in touch with facilities.
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ color: '#7e98b2' }}>
@@ -83,7 +83,7 @@ export function LoginPage() {
             Welcome back
           </Typography>
           <Typography color="text.secondary" variant="body2" sx={{ mt: 1, mb: 4 }}>
-            Sign in to your admin workspace.
+            Sign in to your facilities workspace.
           </Typography>
           <Stack
             component="form"
@@ -126,7 +126,7 @@ export function LoginPage() {
             </Button>
           </Stack>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 3, display: 'block' }}>
-            Facility Admin access is required.
+            Your account determines the workspace and actions available to you.
           </Typography>
         </Paper>
       </Stack>

@@ -245,13 +245,23 @@ through `POST /users`; it grants employee access only. `GET /auth/me` returns th
 authenticated account and its current capabilities, without credential fields;
 the frontend uses it when restoring a login.
 
-The simple admin credential is a development seed default. Rerun the seed command
-to create this account in an existing development database; existing accounts and
-passwords are preserved. `SEED_PASSWORD` controls newly created
-`demo.engineer@acme.inc` and `demo.employee@acme.inc` accounts, independently of
-the admin default. A pre-existing non-admin `admin@acme.inc` account is rejected
+Development seed logins are `admin@acme.inc` / `admin` and
+`employee@acme.inc` / `employee`. Rerun `python scripts/seed_database.py` from
+`backend/` to add the employee account and expanded samples to the database
+selected by the shared configuration. Existing accounts, passwords, roles,
+availability and edited content are preserved; no table reset is needed.
+`SEED_PASSWORD` controls newly created `demo.engineer@acme.inc`,
+`demo.engineer2@acme.inc` and `demo.employee@acme.inc` accounts independently of
+these two defaults. A pre-existing non-admin `admin@acme.inc` account is rejected
 rather than promoted. Public registration still requires 12–128 character
-passwords; the seeded admin is the explicit exception.
+passwords; the two simple development seed credentials are explicit exceptions.
+
+A fresh seed includes five users, two engineers (one available and one unavailable),
+two buildings, four floors, eight seats, 18 incidents and 39 notes. The primary
+employee has 15 incidents across every status, with three submitted by another
+employee to exercise access boundaries. Samples cover recurring locations,
+different categories/priorities, multiple assignees, varied response times,
+blocked/escalated work, and conversations through resolution and closure.
 
 ### Route permissions
 

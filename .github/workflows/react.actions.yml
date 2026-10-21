@@ -55,7 +55,7 @@ jobs:
       - run: npm run build
       - run: npm audit --audit-level=high
       - run: npx playwright install --with-deps chromium
-      - name: Run admin browser journeys against disposable PostgreSQL
+      - name: Run admin and employee browser journeys against disposable PostgreSQL
         run: |
           python ../backend/scripts/create_tables.py
           python ../backend/scripts/seed_database.py

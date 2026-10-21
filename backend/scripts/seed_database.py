@@ -7,11 +7,11 @@ From backend/:
     python -m scripts.seed_database
     python scripts/seed_database.py
 
-DATABASE_URL selects the database. The development admin is admin@acme.inc with
-password admin. Set SEED_PASSWORD (12–128 nonblank characters) for the other demo
-accounts when creating them for the first time. Passwords are Argon2-hashed;
-reruns preserve existing passwords, roles, availability, and content.
-Other accounts: demo.engineer@acme.inc, demo.employee@acme.inc.
+DATABASE_URL selects the database. Development logins are admin@acme.inc / admin
+and employee@acme.inc / employee. SEED_PASSWORD (12–128 nonblank characters) is
+required for new demo.engineer@acme.inc, demo.engineer2@acme.inc and
+demo.employee@acme.inc accounts. Passwords are Argon2-hashed. Reruns preserve
+existing passwords, roles, availability and content; new samples are additive.
 """
 
 import argparse
@@ -52,8 +52,10 @@ from backend.scripts import SETUP_LOCK_ID
 
 Model = TypeVar("Model", bound=Base)
 DEFAULT_ADMIN_EMAIL = "admin@acme.inc"
+DEFAULT_EMPLOYEE_EMAIL = "employee@acme.inc"
 # The user requested this default for the development seed account.
 DEFAULT_ADMIN_PASSWORD = "admin"  # nosec B105
+DEFAULT_EMPLOYEE_PASSWORD = "employee"  # nosec B105
 
 
 async def get_or_create(
@@ -89,17 +91,22 @@ async def seed_database(
     users: dict[str, User] = {}
     async with session.begin():
         await session.execute(select(func.pg_advisory_xact_lock(SETUP_LOCK_ID)))
-        for role, name in (
-            ("admin", "Demo Admin"),
-            ("engineer", "Demo Engineer"),
-            ("employee", "Demo Employee"),
+        for role, name, email in (
+            ("admin", "Demo Admin", DEFAULT_ADMIN_EMAIL),
+            ("employee", "Demo Employee", DEFAULT_EMPLOYEE_EMAIL),
+            ("engineer", "Demo Engineer", "demo.engineer@acme.inc"),
+            ("engineer2", "Sam Patel", "demo.engineer2@acme.inc"),
+            ("colleague", "Taylor Morgan", "demo.employee@acme.inc"),
         ):
-            email = DEFAULT_ADMIN_EMAIL if role == "admin" else f"demo.{role}@acme.inc"
             user = await session.scalar(select(User).where(User.email == email))
             new_user = user is None
             if new_user:
-                if role == "admin":
-                    account_password = DEFAULT_ADMIN_PASSWORD
+                if role in {"admin", "employee"}:
+                    account_password = (
+                        DEFAULT_ADMIN_PASSWORD
+                        if role == "admin"
+                        else DEFAULT_EMPLOYEE_PASSWORD
+                    )
                 else:
                     if password is None:
                         raise ValueError(
@@ -131,14 +138,18 @@ async def seed_database(
                 raise ValueError(
                     "Existing admin@acme.inc is not an admin; refusing to grant a capability"
                 )
-            if role == "engineer":
+            if role in {"engineer", "engineer2"}:
                 profile = await session.get(EngineerProfile, user.id)
                 if profile is None:
                     if not new_user:
                         raise ValueError(
-                            "Existing demo.engineer@acme.inc has no engineer profile; refusing to grant a capability"
+                            f"Existing {email} has no engineer profile; refusing to grant a capability"
                         )
-                    session.add(EngineerProfile(user_id=user.id))
+                    session.add(
+                        EngineerProfile(
+                            user_id=user.id, is_available=role == "engineer"
+                        )
+                    )
                     await session.flush()
                     counts["engineer_profiles"] += 1
 
@@ -203,22 +214,103 @@ async def seed_database(
                 IncidentStatus.OPEN,
                 IncidentPriority.MEDIUM,
             ),
+            (
+                "Demo: recurring meeting room cooling problem",
+                IncidentCategory.HVAC,
+                IncidentStatus.IN_PROGRESS,
+                IncidentPriority.HIGH,
+            ),
+            (
+                "Demo: desk power socket loose",
+                IncidentCategory.ELECTRICAL,
+                IncidentStatus.OPEN,
+                IncidentPriority.MEDIUM,
+            ),
+            (
+                "Demo: printer awaiting a replacement tray",
+                IncidentCategory.EQUIPMENT,
+                IncidentStatus.BLOCKED,
+                IncidentPriority.MEDIUM,
+            ),
+            (
+                "Demo: washroom drain repaired",
+                IncidentCategory.PLUMBING,
+                IncidentStatus.RESOLVED,
+                IncidentPriority.MEDIUM,
+            ),
+            (
+                "Demo: reception signage replaced",
+                IncidentCategory.OTHER,
+                IncidentStatus.CLOSED,
+                IncidentPriority.LOW,
+            ),
+            (
+                "Demo: conference room Wi-Fi drops",
+                IncidentCategory.NETWORK,
+                IncidentStatus.IN_PROGRESS,
+                IncidentPriority.HIGH,
+            ),
+            (
+                "Demo: lobby lighting repaired again",
+                IncidentCategory.ELECTRICAL,
+                IncidentStatus.RESOLVED,
+                IncidentPriority.MEDIUM,
+            ),
+            (
+                "Demo: meeting room ventilation noisy",
+                IncidentCategory.HVAC,
+                IncidentStatus.OPEN,
+                IncidentPriority.LOW,
+            ),
+            (
+                "Demo: docking station stops charging",
+                IncidentCategory.EQUIPMENT,
+                IncidentStatus.OPEN,
+                IncidentPriority.MEDIUM,
+            ),
+            (
+                "Demo: kitchen water filter awaiting delivery",
+                IncidentCategory.PLUMBING,
+                IncidentStatus.BLOCKED,
+                IncidentPriority.LOW,
+            ),
+            (
+                "Demo: cupboard door needs adjustment",
+                IncidentCategory.OTHER,
+                IncidentStatus.IN_PROGRESS,
+                IncidentPriority.LOW,
+            ),
         )
         now = datetime.now(timezone.utc)
         for index, (title, category, status, priority) in enumerate(scenarios):
-            # Network samples share a location to exercise recurrence reporting.
-            building, floor, seat = locations[
-                3 if category == IncidentCategory.NETWORK else index
+            # Repeated category/location groups make recurrence reports useful.
+            location_index = {
+                IncidentCategory.NETWORK: 3,
+                IncidentCategory.HVAC: 1,
+                IncidentCategory.ELECTRICAL: 0,
+            }.get(category, index % len(locations))
+            building, floor, seat = locations[location_index]
+            reporter = users[
+                "colleague" if index >= 7 and index % 3 == 0 else "employee"
             ]
-            created_at = now - timedelta(days=4) + timedelta(hours=index)
-            assigned = status != IncidentStatus.OPEN
+            engineer = users["engineer2" if index % 2 == 0 else "engineer"]
+            created_at = now - timedelta(days=8) + timedelta(hours=index * 6)
+            assigned = status != IncidentStatus.OPEN or (index >= 7 and index % 2 == 0)
+            acknowledged = status != IncidentStatus.OPEN
             resolved = status in {IncidentStatus.RESOLVED, IncidentStatus.CLOSED}
+            assigned_at = (
+                created_at + timedelta(minutes=10 + index * 3) if assigned else None
+            )
+            acknowledged_at = (
+                created_at + timedelta(minutes=30 + index * 7) if acknowledged else None
+            )
+            resolved_at = created_at + timedelta(hours=4 + index) if resolved else None
             incident, created = await get_or_create(
                 session,
                 Incident,
                 {
                     "title": title,
-                    "reporter_id": users["employee"].id,
+                    "reporter_id": reporter.id,
                     "building_id": building.id,
                 },
                 {
@@ -228,7 +320,7 @@ async def seed_database(
                     "priority": priority,
                     "floor_id": floor.id,
                     "seat_id": seat.id,
-                    "assignee_id": users["engineer"].id if assigned else None,
+                    "assignee_id": engineer.id if assigned else None,
                     "blocked_reason": "Waiting for a replacement part"
                     if status == IncidentStatus.BLOCKED
                     else None,
@@ -236,30 +328,59 @@ async def seed_database(
                     if status == IncidentStatus.BLOCKED
                     else None,
                     "created_at": created_at,
-                    "assigned_at": created_at + timedelta(minutes=10)
-                    if assigned
-                    else None,
-                    "acknowledged_at": created_at + timedelta(minutes=20)
-                    if assigned
-                    else None,
-                    "resolved_at": created_at + timedelta(hours=1)
-                    if resolved
-                    else None,
+                    "assigned_at": assigned_at,
+                    "acknowledged_at": acknowledged_at,
+                    "resolved_at": resolved_at,
                 },
             )
             counts["incidents"] += created
-            # Only newly created incidents get an initial note. Do not recreate a
-            # deleted/corrected note or post to an existing resolved/closed incident.
+            # Add conversations only for new samples; preserve edited/deleted notes.
             if created:
-                session.add(
-                    Note(
-                        incident_id=incident.id,
-                        author_id=users["employee"].id,
-                        body="Initial demo report received by facilities.",
-                        created_at=created_at + timedelta(minutes=5),
+                updates = [
+                    (
+                        reporter,
+                        "Please investigate this workplace issue.",
+                        created_at + timedelta(minutes=2),
                     )
-                )
-                counts["notes"] += 1
+                ]
+                if assigned:
+                    updates.append(
+                        (
+                            engineer if acknowledged else users["admin"],
+                            "Waiting for a replacement part; we will update you when it arrives."
+                            if status == IncidentStatus.BLOCKED
+                            else "I have started investigating and will keep you informed."
+                            if acknowledged
+                            else "An engineer has been assigned to your report.",
+                            (acknowledged_at or assigned_at) + timedelta(minutes=5),
+                        )
+                    )
+                if resolved:
+                    updates.append(
+                        (
+                            engineer,
+                            "The issue has been repaired and verified. Please let us know if anything is still wrong.",
+                            resolved_at,
+                        )
+                    )
+                if status == IncidentStatus.CLOSED:
+                    updates.append(
+                        (
+                            reporter,
+                            "Confirmed working again. Thank you for the update.",
+                            resolved_at + timedelta(hours=3),
+                        )
+                    )
+                for author, body, timestamp in updates:
+                    session.add(
+                        Note(
+                            incident_id=incident.id,
+                            author_id=author.id,
+                            body=body,
+                            created_at=timestamp,
+                        )
+                    )
+                counts["notes"] += len(updates)
         await session.flush()
     return counts
 
