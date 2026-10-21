@@ -68,7 +68,7 @@ test('a missing workshop service returns JSON 503 before SPA fallback', async ()
     })
     assert.equal(response.status, 503)
     const body = await response.json()
-    assert.match(body.detail, /deploy-backend.sh local/)
+    assert.match(body.detail, /deploy-local.sh/)
     assert.match(response.headers.get('content-type') || '', /application\/json/)
   } finally {
     await server.close()

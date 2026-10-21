@@ -8,6 +8,28 @@ solves a theoretical business problem.
 
 Navigate to [Coding Workshop - Main Guide](./docs/README.md) to get started.
 
+## Application configuration
+
+Copy [.env.sample](./.env.sample) to `.env` in the repository root and edit that
+one file for backend, frontend and local Lambda deployment settings. The API and
+all Python maintenance scripts load it automatically from any working directory.
+Vite reads it too, exposing only the three approved public `VITE_API_*` settings.
+Database passwords, JWT secrets and seed passwords stay on the backend.
+
+Existing shell variables override `.env`. `APP_ENV_FILE` selects another file
+(relative to this repository root); an empty value disables shared-file loading.
+The workshop still owns `frontend/.env.local`: it supplies generated endpoint
+discovery, with lower priority than explicit root-file/shell settings. No workshop
+scripts are modified and no manual edits to the generated file are needed.
+
+After changing backend settings, run `./backend/scripts/deploy-local.sh` to update
+Lambda and restart `./bin/start-dev.sh` to reload the frontend. The wrapper derives
+ignored Terraform input from the same database settings as the seed scripts;
+localhost is translated to Docker's host alias while database name, port, user,
+password and URL options remain the same. The generated local overrides apply
+only to LocalStack. See [backend setup](./backend/README.md) and
+[frontend setup](./frontend/README.md) for commands and diagnostics.
+
 ## Coding Workshop Example
 
 Coding workshop organizer(s) will provide instructions to follow by email. Here

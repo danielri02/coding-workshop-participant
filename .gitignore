@@ -251,6 +251,7 @@ tfplan
 
 # Terraform variables
 *.auto.tfvars
+*.auto.tfvars.json
 
 # Config files (might contain sensitive info)
 *.config

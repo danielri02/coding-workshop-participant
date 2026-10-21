@@ -493,6 +493,37 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 await session.scalar(select(func.count()).select_from(Building)), 1
             )
 
+    async def test_admin_check_distinguishes_missing_and_unprivileged_accounts(
+        self,
+    ) -> None:
+        """Diagnose permission problems without promoting accounts or writing data."""
+
+        module = "backend.scripts.check_database"
+        code, _, stderr = await self.cli(module, "--check-admin")
+        self.assertEqual(code, 1)
+        self.assertIn("Seed admin is missing", stderr)
+        async with self.factory.begin() as session:
+            session.add(
+                User(
+                    name="Existing employee",
+                    email="admin@acme.inc",
+                    password_hash="test" * 8,
+                )
+            )
+        code, _, stderr = await self.cli(module, "--check-admin")
+        self.assertEqual(code, 1)
+        self.assertIn("lacks Admin capability", stderr)
+        async with self.factory.begin() as session:
+            user = await session.scalar(
+                select(User).where(User.email == "admin@acme.inc")
+            )
+            self.assertFalse(user.is_admin)
+            user.is_admin = True
+        code, stdout, stderr = await self.cli(module, "--check-admin")
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Seed admin exists with Admin capability", stdout)
+        self.assertEqual(await self.inserted_user_count(), 1)
+
     async def test_missing_database_has_actionable_safe_cli_error(self) -> None:
         """Real connection failures identify a missing database without a traceback."""
 

@@ -5,6 +5,7 @@ import os
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 
+from ..config import ENVIRONMENT_FILE
 from .config import POSTGRES_SETTINGS
 
 
@@ -18,6 +19,8 @@ def connection_summary(url: URL) -> str:
         if any(name in os.environ for name in POSTGRES_SETTINGS)
         else "DEFAULT_DATABASE_URL in app/database/config.py"
     )
+    if ENVIRONMENT_FILE is not None:
+        source += f" (shared file loaded: {ENVIRONMENT_FILE})"
     password_present = url.password is not None or "password" in url.query
     return "\n".join(
         (

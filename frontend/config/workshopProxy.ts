@@ -23,7 +23,7 @@ export function workshopProxy(environment: ApiEnvironment): Record<string, Proxy
 /** Explain missing discovery before Vite's SPA fallback can masquerade as an API. */
 export function missingWorkshopMapping(environment: ApiEnvironment): Plugin {
   const missing = !isDirectApi(environment) && !workshopEndpoint(environment)
-  const message = `The workshop has no ${workshopService.name} API endpoint. Run ./bin/deploy-backend.sh local, then ./bin/start-dev.sh to deploy the service and regenerate frontend/.env.local.`
+  const message = `The workshop has no ${workshopService.name} API endpoint. Run ./backend/scripts/deploy-local.sh, then ./bin/start-dev.sh to deploy the service and regenerate frontend/.env.local.`
   const configure = (server: Pick<ViteDevServer, 'middlewares'>) => {
     if (!missing) return
     server.middlewares.use(workshopService.prefix, (_request, response) => {

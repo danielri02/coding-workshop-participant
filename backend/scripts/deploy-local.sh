@@ -17,6 +17,9 @@ Overrides:
   TF_VAR_aws_postgres_host   Database host reachable from Lambda containers
   TF_VAR_aws_mongo_host      MongoDB host reachable from Lambda containers
 
+Runtime settings come from the root .env (or APP_ENV_FILE). Shell values win.
+POSTGRES_LAMBDA_HOST changes the database host alias used inside Docker.
+
 Next, run ./bin/start-dev.sh to start the databases and frontend.
 EOF
 }
@@ -110,6 +113,10 @@ for requirements in "$PROJECT_ROOT"/backend/*/requirements.txt; do
     echo "Installing local runtime dependencies for $(basename -- "$service_dir")..."
     "$PYTHON" -m pip install --upgrade --target="$service_dir" -r "$requirements"
 done
+
+echo "Preparing shared application settings..."
+PYTHONPATH="$PROJECT_ROOT/backend/facilities${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON" "$SCRIPT_DIR/configure_local.py"
 
 echo "LocalStack is ready. Deploying the backend..."
 exec bash "$PROJECT_ROOT/bin/deploy-backend.sh" local

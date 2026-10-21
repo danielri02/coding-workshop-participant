@@ -14,11 +14,12 @@ Use the existing workshop setup. After pulling the new service into an existing
 LocalStack environment, run from the repository root:
 
 ```bash
+cp -n .env.sample .env  # Keep an existing .env; edit its database settings.
 ./backend/scripts/deploy-local.sh
 ./bin/start-dev.sh
 ```
 
-The first command starts LocalStack if needed, waits for its local and S3
+The deployment wrapper starts LocalStack if needed, waits for its local and S3
 endpoints, installs Python service dependencies for hot reload, and calls the
 unmodified `bin/deploy-backend.sh local`. It loads `ENVIRONMENT.config` when
 present and uses local test credentials. Docker must already be running, and
@@ -33,6 +34,31 @@ normal starts use that command. Explicit deployment is useful because the
 provided script can skip deployment when unrelated previously deployed functions
 make its service count look sufficient. The workshop scripts remain unchanged.
 
+### Shared application configuration
+
+The repository-root `.env` is shared by the backend, Python scripts, local
+deployment and Vite frontend. Edit `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASS`,
+host/port and any authentication/CORS overrides there. Explicit shell variables
+win. A configured `DATABASE_URL` takes precedence over the individual PostgreSQL
+fields; unset an old exported URL if you want the component settings to apply.
+`APP_ENV_FILE` selects a different shared file relative to the repository root;
+`APP_ENV_FILE=''` disables file loading. Values are literal, without interpolation.
+Lambda uses injected settings rather than reading a host-side file.
+
+`deploy-local.sh` uses the same Python database configuration and writes
+`infra/facilities.local.auto.tfvars.json`, an ignored, owner-readable generated
+file. The application-owned Terraform override injects its settings into only the
+local `facilities` Lambda, taking priority over workshop defaults. Keeping this
+generated input lets later unmodified `start-dev.sh` redeployments use the same
+settings. Do not edit the generated file; rerun the wrapper after editing `.env`.
+It is ignored for real AWS deployments.
+
+On the host, use the database's normal address (`localhost` by default). For a
+loopback address, deployment automatically uses `172.17.0.1` inside Linux Lambda
+containers or `host.docker.internal` on other platforms. `POSTGRES_LAMBDA_HOST`
+overrides that alias if necessary. It must point to the same PostgreSQL server;
+the database name, port, credentials and URL options are shared without changes.
+
 With PostgreSQL running, initialize its application tables from `backend/` using
 Python 3.13 and an activated virtual environment:
 
@@ -41,11 +67,20 @@ python -m pip install -r requirements-dev.txt
 python scripts/check_database.py
 python scripts/create_tables.py
 SEED_PASSWORD='development-only' python scripts/seed_database.py
+python scripts/check_database.py --check-admin
 ```
 
-These additive commands target the same database/role as the workshop defaults.
+These additive commands target the database/role selected by the shared settings.
 They never run at Lambda startup. Existing tables/data are preserved; changing the
 database configuration does not move data from a previously used database.
+If `SEED_PASSWORD` is already set in the shared `.env`, run the seed command
+without an inline password. The admin check distinguishes a missing seed account
+from an existing account without Admin capability; it never promotes accounts.
+
+To detect generated configuration that no longer matches the shared settings,
+run `python backend/scripts/configure_local.py --check` from the repository root.
+This checks the generated deployment input, not the live Lambda: redeployment is
+still required to apply changes. Signing-key changes require signing in again.
 
 ### Database configuration
 
@@ -90,10 +125,9 @@ If Swagger Authorize reports **Service Unavailable (503)**, inspect the FastAPI
 terminal log or the response from `POST /auth/login` for the configuration error.
 Explicitly invalid overrides (such as an empty/short `JWT_SECRET_KEY` or invalid
 token lifetime) still produce 503. Unset invalid overrides to restore defaults,
-or correct them in the shell that launches FastAPI, then restart the server. A
-`.env` file is not automatically loaded by `fastapi dev app/main.py`; use an
-exported variable or an explicit environment-file loading option. An overridden
-key must contain at least 32 bytes.
+or correct them in the shared root `.env`, then restart the server. The file is
+loaded automatically by `fastapi dev app/main.py` and maintenance scripts.
+An overridden key must contain at least 32 bytes.
 
 ### Frontend origin
 

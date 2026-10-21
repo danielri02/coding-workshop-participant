@@ -15,15 +15,17 @@ from pathlib import Path
 if __package__ in {None, "", "scripts"}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.app.database.config import get_database_url
 from backend.app.database.diagnostics import connection_summary, database_error_message
+from backend.app.models import User
+from backend.scripts.seed_database import DEFAULT_ADMIN_EMAIL
 
 
-async def check_connection() -> None:
+async def check_connection(*, check_admin: bool = False) -> None:
     """Make one read-only request, with a bounded connection timeout."""
 
     url = get_database_url()
@@ -31,6 +33,18 @@ async def check_connection() -> None:
     try:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
+            if check_admin:
+                admin = await connection.scalar(
+                    select(User.is_admin).where(User.email == DEFAULT_ADMIN_EMAIL)
+                )
+                if admin is None:
+                    raise ValueError(
+                        "Seed admin is missing from this database. Run the seed script against this target."
+                    )
+                if not admin:
+                    raise ValueError(
+                        "Seed admin exists but lacks Admin capability. Seeding preserves existing roles; investigate this account."
+                    )
     finally:
         await engine.dispose()
 
@@ -41,13 +55,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.parse_args()
+    parser.add_argument(
+        "--check-admin",
+        action="store_true",
+        help="Also verify the development seed admin exists and has Admin capability",
+    )
+    args = parser.parse_args()
     print(connection_summary(get_database_url()), flush=True)
     try:
-        asyncio.run(check_connection())
+        asyncio.run(check_connection(check_admin=args.check_admin))
     except SQLAlchemyError as exc:
         parser.exit(1, database_error_message(exc) + "\n")
+    except ValueError as exc:
+        parser.exit(1, str(exc) + "\n")
     print("Connection successful.")
+    if args.check_admin:
+        print("Seed admin exists with Admin capability.")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
 import { workshopService } from '../generated/domain'
 
+/** Only these shared settings may be exposed to the browser bundle. */
+export const publicApiSettings = ['VITE_API_MODE', 'VITE_API_URL', 'VITE_API_ENDPOINTS'] as const
+
 export interface ApiEnvironment {
   VITE_API_MODE?: string
   VITE_API_URL?: string
