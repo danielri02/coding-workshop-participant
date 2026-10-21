@@ -13,7 +13,7 @@ import {
 import PropTypes from 'prop-types'
 import { DataTable } from './DataTable'
 import type { AdminRow, ResourceKey } from '../types'
-import { transitions } from '../generated/domain'
+import { incidentCommands } from '../resources/incidentActions'
 
 export type RowAction =
   'view' | 'edit' | 'delete' | 'admin' | 'assignment' | 'priority' | 'status' | 'notes'
@@ -31,14 +31,7 @@ function RowActions({ row, resource, disabled, onAction }: ActionsProps) {
     resource === 'users'
       ? [{ action: 'admin', label: row.is_admin ? 'Remove admin access' : 'Grant admin access' }]
       : resource === 'incidents'
-        ? [
-            { action: 'assignment', label: 'Assign engineer' },
-            { action: 'priority', label: 'Priority and escalation' },
-            ...(row.status && transitions[row.status].length
-              ? [{ action: 'status' as const, label: 'Change status' }]
-              : []),
-            { action: 'notes', label: 'View notes' },
-          ]
+        ? [...incidentCommands(row), { action: 'notes', label: 'View notes' }]
         : []
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>

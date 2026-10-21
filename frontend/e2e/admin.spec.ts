@@ -621,3 +621,99 @@ test('reports menu remains reachable and collapsible in a short mobile sidebar',
   })
   await expect.poll(() => scrollbar.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
 })
+
+test('incident details expose admin controls and links to notes and engineer profiles', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(90000)
+  const suffix = `incidentlinks${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const engineer = (await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json())[0]
+  const engineerUser = await (
+    await request.get(`${apiUrl}/users/${engineer.user_id}`, { headers })
+  ).json()
+  const response = await request.post(`${apiUrl}/incidents`, {
+    headers,
+    data: {
+      title: suffix,
+      description: 'Verify incident navigation and admin controls.',
+      category: 'Equipment',
+      building_id: building.id,
+    },
+  })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  const incident = await response.json()
+  cleanup.unshift(`/incidents/${incident.id}`)
+  await page.goto('/admin/incidents')
+  await signIn(page)
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  const incidentRow = page.getByRole('grid').locator(`[role="row"][data-id="${incident.id}"]`)
+  const openIncident = async () => {
+    await page.getByRole('grid').getByRole('link', { name: suffix, exact: true }).click()
+    await expect(page.getByRole('dialog')).toHaveAccessibleName(`Incident #${incident.id}`)
+  }
+  await openIncident()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Assign engineer', exact: true })
+    .click()
+  await select(page, 'Assigned engineer', engineerUser.name)
+  await save(page, `/incidents/${incident.id}/assignment`, 'PATCH')
+  await openIncident()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Priority and escalation', exact: true })
+    .click()
+  await select(page, 'Priority', 'High')
+  await save(page, `/incidents/${incident.id}/priority`, 'PATCH')
+  await openIncident()
+  await page.getByRole('dialog').getByRole('button', { name: 'Change status', exact: true }).click()
+  await select(page, 'Next status', 'In Progress')
+  await save(page, `/incidents/${incident.id}/status`, 'PATCH')
+  await expect(incidentRow.getByRole('gridcell', { name: 'High', exact: true })).toBeVisible()
+  await expect(
+    incidentRow.getByRole('gridcell', { name: 'In Progress', exact: true }),
+  ).toBeVisible()
+  await openIncident()
+  await page.getByRole('dialog').getByRole('link', { name: engineerUser.name, exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/admin/engineers\\?record=${engineer.user_id}$`))
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
+  await expect(
+    page.getByRole('dialog').getByText(engineerUser.email, { exact: true }),
+  ).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page).toHaveURL(/\/admin\/engineers$/)
+  await navigate(page, 'Incidents')
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  const scroller = page.getByRole('grid').locator('.MuiDataGrid-virtualScroller')
+  await scroller.evaluate((element) => {
+    element.scrollLeft = 500
+  })
+  await incidentRow.getByRole('link', { name: engineerUser.name, exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+  await navigate(page, 'Incidents')
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await scroller.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+  })
+  await incidentRow.getByRole('link', { name: 'View notes', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/admin/notes\\?incident=${incident.id}$`))
+  await expect(page.getByRole('combobox', { name: 'Incident', exact: true })).toContainText(suffix)
+  await page.getByRole('button', { name: 'New note', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('Note', { exact: false })
+    .fill('Navigation works for this incident.')
+  await save(page, `/incidents/${incident.id}/notes`)
+  await navigate(page, 'Incidents')
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await openIncident()
+  await page.getByRole('dialog').getByRole('link', { name: 'View notes', exact: true }).click()
+  await expect(
+    page.getByRole('gridcell', { name: 'Navigation works for this incident.', exact: true }),
+  ).toBeVisible()
+})

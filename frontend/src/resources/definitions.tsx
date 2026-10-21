@@ -1,5 +1,8 @@
 import type { GridColDef } from '@mui/x-data-grid'
 import { getGridBooleanOperators, getGridSingleSelectOperators } from '@mui/x-data-grid'
+import { Link } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
+import { RecordLink } from '../components/RecordLink'
 import { ValueChip } from '../components/ValueChip'
 import { statuses, priorities, categories, constraints } from '../generated/domain'
 import type { Field } from './forms'
@@ -122,7 +125,16 @@ export const resources: ResourceDefinition[] = [
     ],
     columns: (data) => {
       const columns: GridColDef<AdminRow>[] = [
-        { ...text('title', 'Incident', 280), flex: 1, minWidth: 220 },
+        {
+          ...text('title', 'Incident', 280),
+          flex: 1,
+          minWidth: 220,
+          renderCell: ({ row, hasFocus }) => (
+            <RecordLink resource="incidents" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+              {row.title}
+            </RecordLink>
+          ),
+        },
         tag('status', 'Status', statuses),
         tag('priority', 'Priority', priorities),
         {
@@ -137,10 +149,35 @@ export const resources: ResourceDefinition[] = [
         },
         {
           ...text('assignee_id', 'Assigned engineer', 180),
+          renderCell: ({ row, formattedValue, hasFocus }) =>
+            row.assignee_id ? (
+              <RecordLink resource="engineers" id={row.assignee_id} tabIndex={hasFocus ? 0 : -1}>
+                {row.assignee_name || String(formattedValue || `#${row.assignee_id}`)}
+              </RecordLink>
+            ) : (
+              'Unassigned'
+            ),
           type: 'singleSelect',
           valueOptions: data.users
             .filter((row) => row.engineer_profile)
             .map((row) => ({ value: row.id, label: String(row.name) })),
+        },
+        {
+          field: 'notes',
+          headerName: 'Notes',
+          width: 115,
+          sortable: false,
+          filterable: false,
+          renderCell: ({ row, hasFocus }) => (
+            <Link
+              component={RouterLink}
+              to={`/admin/notes?incident=${row.id}`}
+              tabIndex={hasFocus ? 0 : -1}
+              onClick={(event) => event.stopPropagation()}
+            >
+              View notes
+            </Link>
+          ),
         },
         { ...flag('escalated', 'Escalated'), sortable: false },
         {

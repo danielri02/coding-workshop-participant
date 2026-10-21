@@ -8,6 +8,19 @@ export type Editor = {
   row: AdminRow | null
 }
 
+export type IncidentCommand = 'assignment' | 'priority' | 'status'
+
+/** Use the same workflow controls in row menus and incident details. */
+export function incidentCommands(row: AdminRow): { action: IncidentCommand; label: string }[] {
+  return [
+    { action: 'assignment', label: 'Assign engineer' },
+    { action: 'priority', label: 'Priority and escalation' },
+    ...(row.status && transitions[row.status].length
+      ? [{ action: 'status' as const, label: 'Change status' }]
+      : []),
+  ]
+}
+
 /** Keep operation-specific input rules separate from page orchestration. */
 export function editorForm(resource: ResourceDefinition, editor: Editor | null) {
   let fields: Field[] = resource.fields

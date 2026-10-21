@@ -57,6 +57,17 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     formRow,
     formTitle,
   } = useResourceActions(resource, scope, changed)
+  const detailId = Number(searchParams.get('record'))
+  const detailRow =
+    viewing ?? (Number.isSafeInteger(detailId) && detailId > 0 ? { id: detailId } : null)
+  const closeDetails = () => {
+    setViewing(null)
+    if (searchParams.has('record')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('record')
+      setSearchParams(next, { replace: true })
+    }
+  }
   const lookups = useLookups(resource)
   const incidents = useApiQuery<Incident[]>(resource.key === 'notes' ? '/incidents' : null, [])
   const selectedIncident = incidents.data.find((row) => row.id === scope)
@@ -239,12 +250,16 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           }
         />
       )}
-      {viewing && (
+      {detailRow && (
         <RecordDetailsDialog
           resource={resource}
-          row={viewing}
+          row={detailRow}
           lookups={lookups.data}
-          onClose={() => setViewing(null)}
+          onClose={closeDetails}
+          onIncidentAction={(command, record) => {
+            closeDetails()
+            action(command, record)
+          }}
         />
       )}
       {confirmation && (

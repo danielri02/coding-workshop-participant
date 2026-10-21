@@ -135,6 +135,13 @@ capability are separate explicit actions. Forms use labeled relationship selects
 required/length validation, pending states and visible API errors. Parent facility
 associations stay fixed during label edits, matching the API.
 
+Incident details expose Assign engineer, Priority and escalation, and Change
+status; the three-dot row menu provides the same controls. Status options follow
+the workflow and require a reason when moving to Blocked. Click an incident title
+to open its details. Assigned engineer names link to the engineer profile, and View
+notes opens the incident's notes grid from either the grid or details dialog.
+Record links use `?record=<id>` and reopen the details dialog after a reload.
+
 The incident grid API is `GET /incidents/grid`; its pagination, filtering and sort
 parameters are documented in `../backend/README.md`. MUI's zero-based `page` and
 `pageSize` map to `page` and `page_size`, and the response's `row_count` maps to
