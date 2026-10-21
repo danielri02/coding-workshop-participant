@@ -3,23 +3,22 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..database import crud
-from ..models import Incident, IncidentStatus, Note, User
+from ..models import Note
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
-from .dependencies import DatabaseSession, QueryID, RecordID
+from ..security.dependencies import AdminUser, CurrentUser
+from ..security.permissions import ACTIVE_STATUSES, accessible_incident
+from .dependencies import DatabaseSession, RecordID
 
 router = APIRouter(tags=[Note.__name__])
-ACTIVE_STATUSES = {
-    IncidentStatus.OPEN,
-    IncidentStatus.IN_PROGRESS,
-    IncidentStatus.BLOCKED,
-}
 
 
 @router.get("/incidents/{incident_id}/notes", response_model=list[NoteRead])
-async def list_notes(incident_id: RecordID, session: DatabaseSession) -> list[Note]:
+async def list_notes(
+    incident_id: RecordID, session: DatabaseSession, user: CurrentUser
+) -> list[Note]:
     """List every note for an incident, in creation/ID order."""
 
-    await crud.get_record(session, Incident, incident_id)
+    await accessible_incident(session, incident_id, user)
     return await crud.list_records(
         session,
         Note,
@@ -36,34 +35,37 @@ async def list_notes(incident_id: RecordID, session: DatabaseSession) -> list[No
 async def create_note(
     incident_id: RecordID,
     payload: NoteCreate,
-    author_id: QueryID,
     session: DatabaseSession,
+    user: CurrentUser,
 ) -> Note:
-    """Post to an active incident using an explicit author ID until auth exists."""
+    """Post as the authenticated viewer while the incident remains active."""
 
-    incident = await crud.get_record(session, Incident, incident_id, for_update=True)
+    incident = await accessible_incident(session, incident_id, user, for_update=True)
     if incident.status not in ACTIVE_STATUSES:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "New notes require an active incident"
         )
-    await crud.get_record(session, User, author_id)
     return await crud.create_record(
         session,
         Note,
-        {**payload.model_dump(), "incident_id": incident_id, "author_id": author_id},
+        {**payload.model_dump(), "incident_id": incident_id, "author_id": user.id},
     )
 
 
 @router.get("/notes/{note_id}", response_model=NoteRead)
-async def get_note(note_id: RecordID, session: DatabaseSession) -> Note:
+async def get_note(
+    note_id: RecordID, session: DatabaseSession, user: CurrentUser
+) -> Note:
     """Read one shared incident note."""
 
-    return await crud.get_record(session, Note, note_id)
+    note = await crud.get_record(session, Note, note_id)
+    await accessible_incident(session, note.incident_id, user)
+    return note
 
 
 @router.patch("/notes/{note_id}", response_model=NoteRead)
 async def update_note(
-    note_id: RecordID, payload: NoteUpdate, session: DatabaseSession
+    note_id: RecordID, payload: NoteUpdate, session: DatabaseSession, _admin: AdminUser
 ) -> Note:
     """Correct an existing note, including on resolved or closed incidents."""
 
@@ -74,7 +76,9 @@ async def update_note(
 
 
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_note(note_id: RecordID, session: DatabaseSession) -> Response:
+async def delete_note(
+    note_id: RecordID, session: DatabaseSession, _admin: AdminUser
+) -> Response:
     """Delete an existing note without deleting its incident."""
 
     await crud.delete_record(

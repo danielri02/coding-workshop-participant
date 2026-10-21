@@ -1,6 +1,6 @@
 """Engineer capability and manual availability CRUD endpoints."""
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from ..database import crud
 from ..models import EngineerProfile, User
@@ -9,9 +9,14 @@ from ..schemas import (
     EngineerProfileRead,
     EngineerProfileUpdate,
 )
+from ..security.dependencies import current_user, require_admin
 from .dependencies import DatabaseSession, RecordID
 
-router = APIRouter(prefix="/engineer-profiles", tags=[EngineerProfile.__name__])
+router = APIRouter(
+    prefix="/engineer-profiles",
+    tags=[EngineerProfile.__name__],
+    dependencies=[Depends(current_user)],
+)
 
 
 @router.get("", response_model=list[EngineerProfileRead])
@@ -22,7 +27,10 @@ async def list_engineer_profiles(session: DatabaseSession) -> list[EngineerProfi
 
 
 @router.post(
-    "", response_model=EngineerProfileRead, status_code=status.HTTP_201_CREATED
+    "",
+    response_model=EngineerProfileRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
 )
 async def create_engineer_profile(
     payload: EngineerProfileCreate, session: DatabaseSession
@@ -42,7 +50,11 @@ async def get_engineer_profile(
     return await crud.get_record(session, EngineerProfile, user_id)
 
 
-@router.patch("/{user_id}", response_model=EngineerProfileRead)
+@router.patch(
+    "/{user_id}",
+    response_model=EngineerProfileRead,
+    dependencies=[Depends(require_admin)],
+)
 async def update_engineer_profile(
     user_id: RecordID, payload: EngineerProfileUpdate, session: DatabaseSession
 ) -> EngineerProfile:
@@ -54,7 +66,11 @@ async def update_engineer_profile(
     )
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
 async def delete_engineer_profile(
     user_id: RecordID, session: DatabaseSession
 ) -> Response:

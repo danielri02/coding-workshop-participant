@@ -7,10 +7,11 @@ From backend/:
     python -m scripts.seed_database
     python scripts/seed_database.py
 
-DATABASE_URL selects the database. Set SEED_PASSWORD (12–128 nonblank characters)
-when creating demo accounts for the first time. Passwords are Argon2-hashed and
-never printed. Reruns preserve existing passwords, roles, availability, and content.
-Demo accounts: demo.admin@acme.inc, demo.engineer@acme.inc, demo.employee@acme.inc.
+DATABASE_URL selects the database. The development admin is admin@acme.inc with
+password admin. Set SEED_PASSWORD (12–128 nonblank characters) for the other demo
+accounts when creating them for the first time. Passwords are Argon2-hashed;
+reruns preserve existing passwords, roles, availability, and content.
+Other accounts: demo.engineer@acme.inc, demo.employee@acme.inc.
 """
 
 import argparse
@@ -50,6 +51,9 @@ from backend.app.security.passwords import hash_password
 from backend.scripts import SETUP_LOCK_ID
 
 Model = TypeVar("Model", bound=Base)
+DEFAULT_ADMIN_EMAIL = "admin@acme.inc"
+# The user requested this default for the development seed account.
+DEFAULT_ADMIN_PASSWORD = "admin"  # nosec B105
 
 
 async def get_or_create(
@@ -90,21 +94,27 @@ async def seed_database(
             ("engineer", "Demo Engineer"),
             ("employee", "Demo Employee"),
         ):
-            email = f"demo.{role}@acme.inc"
+            email = DEFAULT_ADMIN_EMAIL if role == "admin" else f"demo.{role}@acme.inc"
             user = await session.scalar(select(User).where(User.email == email))
             new_user = user is None
             if new_user:
-                if password is None:
-                    raise ValueError("Set SEED_PASSWORD before creating demo accounts")
-                try:
-                    registration = UserCreate(name=name, email=email, password=password)
-                except ValidationError:
-                    raise ValueError(
-                        "SEED_PASSWORD must be 12–128 characters and not only whitespace"
-                    ) from None
-                password_hash = await asyncio.to_thread(
-                    hash_password, registration.password.get_secret_value()
-                )
+                if role == "admin":
+                    account_password = DEFAULT_ADMIN_PASSWORD
+                else:
+                    if password is None:
+                        raise ValueError(
+                            "Set SEED_PASSWORD before creating demo accounts"
+                        )
+                    try:
+                        registration = UserCreate(
+                            name=name, email=email, password=password
+                        )
+                    except ValidationError:
+                        raise ValueError(
+                            "SEED_PASSWORD must be 12–128 characters and not only whitespace"
+                        ) from None
+                    account_password = registration.password.get_secret_value()
+                password_hash = await asyncio.to_thread(hash_password, account_password)
                 user, _ = await get_or_create(
                     session,
                     User,
@@ -117,6 +127,10 @@ async def seed_database(
                 )
                 counts["users"] += 1
             users[role] = user
+            if role == "admin" and not user.is_admin:
+                raise ValueError(
+                    "Existing admin@acme.inc is not an admin; refusing to grant a capability"
+                )
             if role == "engineer":
                 profile = await session.get(EngineerProfile, user.id)
                 if profile is None:

@@ -1,13 +1,16 @@
 """Building CRUD endpoints."""
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from ..database import crud
 from ..models import Building
 from ..schemas import BuildingCreate, BuildingRead, BuildingUpdate
+from ..security.dependencies import current_user, require_admin
 from .dependencies import DatabaseSession, RecordID
 
-router = APIRouter(prefix="/buildings", tags=[Building.__name__])
+router = APIRouter(
+    prefix="/buildings", tags=[Building.__name__], dependencies=[Depends(current_user)]
+)
 
 
 @router.get("", response_model=list[BuildingRead])
@@ -17,7 +20,12 @@ async def list_buildings(session: DatabaseSession) -> list[Building]:
     return await crud.list_records(session, Building)
 
 
-@router.post("", response_model=BuildingRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=BuildingRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
 async def create_building(
     payload: BuildingCreate, session: DatabaseSession
 ) -> Building:
@@ -33,7 +41,9 @@ async def get_building(building_id: RecordID, session: DatabaseSession) -> Build
     return await crud.get_record(session, Building, building_id)
 
 
-@router.patch("/{building_id}", response_model=BuildingRead)
+@router.patch(
+    "/{building_id}", response_model=BuildingRead, dependencies=[Depends(require_admin)]
+)
 async def update_building(
     building_id: RecordID, payload: BuildingUpdate, session: DatabaseSession
 ) -> Building:
@@ -45,7 +55,11 @@ async def update_building(
     )
 
 
-@router.delete("/{building_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{building_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
 async def delete_building(building_id: RecordID, session: DatabaseSession) -> Response:
     """Delete an unreferenced building."""
 

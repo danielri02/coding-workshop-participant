@@ -1,13 +1,16 @@
 """Seat CRUD endpoints."""
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from ..database import crud
 from ..models import Floor, Seat
 from ..schemas import SeatCreate, SeatRead, SeatUpdate
+from ..security.dependencies import current_user, require_admin
 from .dependencies import DatabaseSession, OptionalQueryID, RecordID
 
-router = APIRouter(prefix="/seats", tags=[Seat.__name__])
+router = APIRouter(
+    prefix="/seats", tags=[Seat.__name__], dependencies=[Depends(current_user)]
+)
 
 
 @router.get("", response_model=list[SeatRead])
@@ -20,7 +23,12 @@ async def list_seats(
     return await crud.list_records(session, Seat, filters=filters)
 
 
-@router.post("", response_model=SeatRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SeatRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
 async def create_seat(payload: SeatCreate, session: DatabaseSession) -> Seat:
     """Create a labeled seat on an existing floor."""
 
@@ -35,7 +43,9 @@ async def get_seat(seat_id: RecordID, session: DatabaseSession) -> Seat:
     return await crud.get_record(session, Seat, seat_id)
 
 
-@router.patch("/{seat_id}", response_model=SeatRead)
+@router.patch(
+    "/{seat_id}", response_model=SeatRead, dependencies=[Depends(require_admin)]
+)
 async def update_seat(
     seat_id: RecordID, payload: SeatUpdate, session: DatabaseSession
 ) -> Seat:
@@ -47,7 +57,11 @@ async def update_seat(
     )
 
 
-@router.delete("/{seat_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{seat_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
 async def delete_seat(seat_id: RecordID, session: DatabaseSession) -> Response:
     """Delete an unreferenced seat."""
 

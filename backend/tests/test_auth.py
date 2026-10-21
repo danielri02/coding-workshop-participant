@@ -20,15 +20,16 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from backend.app.database.session import get_session
 from backend.app.main import app
 from backend.app.models import RefreshToken, User
-from backend.app.routes.auth import auth_settings
 from backend.app.security.config import SecuritySettings
-from backend.app.security.jwt import decode_access_token
+from backend.app.security.dependencies import auth_settings
+from backend.app.security.jwt import create_access_token, decode_access_token
 from backend.app.security.passwords import hash_password, password_needs_rehash
 from backend.app.security.refresh_tokens import (
     generate_refresh_token,
     hash_refresh_token,
 )
 from backend.scripts.create_tables import initialize_database
+from backend.scripts.seed_database import DEFAULT_ADMIN_PASSWORD, seed_database
 
 
 class AuthTests(unittest.IsolatedAsyncioTestCase):
@@ -95,8 +96,18 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
                 password_hash=await asyncio.to_thread(hash_password, self.password),
             )
             session.add(user)
+            admin = User(
+                name="Admin",
+                email="test.admin@acme.inc",
+                password_hash="test" * 8,
+                is_admin=True,
+            )
+            session.add(admin)
             await session.flush()
             self.user_id = user.id
+            self.admin_headers = {
+                "Authorization": f"Bearer {create_access_token(admin.id, self.settings)}"
+            }
 
     async def login(self) -> dict[str, object]:
         """Create a valid login session through the actual HTTP endpoint."""
@@ -205,6 +216,128 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(old.expires_at, new.expires_at)
             self.assertEqual(old.family_id, new.family_id)
 
+    async def test_swagger_password_flow_authenticates_protected_requests(self) -> None:
+        """Swagger Authorize exchanges form credentials for a usable bearer token."""
+
+        specification = (await self.client.get("/openapi.json")).json()
+        flow = specification["components"]["securitySchemes"]["OAuth2PasswordBearer"]
+        self.assertEqual(flow["flows"]["password"]["tokenUrl"], "auth/token")
+        self.assertTrue(specification["paths"]["/users"]["get"]["security"])
+        self.assertNotIn("security", specification["paths"]["/users"]["post"])
+        response = await self.client.post(
+            "/auth/token",
+            data={
+                "username": " EMPLOYEE@ACME.INC ",
+                "password": self.password,
+                "grant_type": "password",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.json()["token_type"], "bearer")
+        access_token = response.json()["access_token"]
+        response = await self.client.get(
+            f"/users/{self.user_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["email"], "employee@acme.inc")
+        for email in ("not-an-email", "employee@acme.inc"):
+            response = await self.client.post(
+                "/auth/token",
+                data={"username": email, "password": secrets.token_urlsafe(18)},
+            )
+            self.assertEqual(response.status_code, 401, response.text)
+
+    async def test_seeded_development_admin_can_authorize_in_swagger(self) -> None:
+        """The requested short seed credential works without relaxing registration."""
+
+        async with self.factory() as session:
+            await seed_database(session, SecretStr(self.password))
+        response = await self.client.post(
+            "/auth/token",
+            data={"username": "admin@acme.inc", "password": DEFAULT_ADMIN_PASSWORD},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        response = await self.client.get(
+            "/users",
+            headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(
+            any(
+                user["email"] == "admin@acme.inc" and user["is_admin"]
+                for user in response.json()
+            )
+        )
+        response = await self.client.post(
+            "/users",
+            json={
+                "name": "Short password",
+                "email": "short@acme.inc",
+                "password": DEFAULT_ADMIN_PASSWORD,
+            },
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+
+    async def test_logout_revokes_descendants_from_consumed_ancestor(self) -> None:
+        """Explicit logout revokes the family without logging out another session."""
+
+        original = await self.login()
+        independent = await self.login()
+        rotated = (
+            await self.client.post(
+                "/auth/refresh", json={"refresh_token": original["refresh_token"]}
+            )
+        ).json()
+        response = await self.client.post(
+            "/auth/logout", json={"refresh_token": original["refresh_token"]}
+        )
+        self.assertEqual(response.status_code, 204, response.text)
+        self.assertEqual(response.content, b"")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        for value in (original["refresh_token"], rotated["refresh_token"]):
+            response = await self.client.post(
+                "/auth/refresh", json={"refresh_token": value}
+            )
+            self.assertEqual(response.status_code, 401, response.text)
+        response = await self.client.post(
+            "/auth/refresh", json={"refresh_token": independent["refresh_token"]}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        # Refresh revocation does not blacklist already issued short-lived JWTs.
+        response = await self.client.get(
+            f"/users/{self.user_id}",
+            headers={"Authorization": f"Bearer {original['access_token']}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        for value in (original["refresh_token"], generate_refresh_token()):
+            response = await self.client.post(
+                "/auth/logout", json={"refresh_token": value}
+            )
+            self.assertEqual(response.status_code, 204, response.text)
+
+    async def test_concurrent_logout_and_refresh_leave_no_valid_successor(self) -> None:
+        """The shared family lock serializes explicit revocation and rotation."""
+
+        tokens = await self.login()
+        refresh_response, logout_response = await asyncio.gather(
+            self.client.post(
+                "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+            ),
+            self.client.post(
+                "/auth/logout", json={"refresh_token": tokens["refresh_token"]}
+            ),
+        )
+        self.assertEqual(logout_response.status_code, 204, logout_response.text)
+        self.assertIn(refresh_response.status_code, (200, 401), refresh_response.text)
+        if refresh_response.status_code == 200:
+            response = await self.client.post(
+                "/auth/refresh",
+                json={"refresh_token": refresh_response.json()["refresh_token"]},
+            )
+            self.assertEqual(response.status_code, 401, response.text)
+
     async def test_replay_revokes_the_chain_but_not_other_logins(self) -> None:
         """A reused refresh credential invalidates its successor and only that family."""
 
@@ -282,7 +415,12 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
 
         tokens = await self.login()
         self.assertEqual(
-            (await self.client.delete(f"/users/{self.user_id}")).status_code, 204
+            (
+                await self.client.delete(
+                    f"/users/{self.user_id}", headers=self.admin_headers
+                )
+            ).status_code,
+            204,
         )
         self.assertEqual(await self.token_count(), 0)
         self.assertEqual(
@@ -302,16 +440,16 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
             self.client.post(
                 "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
             ),
-            self.client.delete(f"/users/{self.user_id}"),
+            self.client.delete(f"/users/{self.user_id}", headers=self.admin_headers),
         )
         self.assertIn(refresh_response.status_code, (200, 401), refresh_response.text)
         self.assertEqual(delete_response.status_code, 204, delete_response.text)
         self.assertEqual(await self.token_count(), 0)
 
-    async def test_missing_auth_configuration_fails_closed_without_changing_crud(
+    async def test_missing_auth_configuration_fails_closed_on_business_routes(
         self,
     ) -> None:
-        """Only auth endpoints depend on signing configuration or bearer credentials."""
+        """Business routes fail closed while public registration/health remain usable."""
 
         app.dependency_overrides.pop(auth_settings)
         try:
@@ -321,11 +459,22 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
                     json={"email": "employee@acme.inc", "password": self.password},
                 )
                 self.assertEqual(response.status_code, 503, response.text)
-                self.assertEqual((await self.client.get("/users")).status_code, 200)
-                response = await self.client.patch(
-                    f"/users/{self.user_id}/admin", json={"is_admin": True}
+                self.assertEqual((await self.client.get("/users")).status_code, 401)
+                response = await self.client.get(
+                    "/users",
+                    headers=self.admin_headers,
                 )
-                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.status_code, 503, response.text)
+                self.assertEqual((await self.client.get("/health")).status_code, 200)
+                response = await self.client.post(
+                    "/users",
+                    json={
+                        "name": "Public",
+                        "email": "public@acme.inc",
+                        "password": self.password,
+                    },
+                )
+                self.assertEqual(response.status_code, 201, response.text)
         finally:
             app.dependency_overrides[auth_settings] = lambda: self.settings
 

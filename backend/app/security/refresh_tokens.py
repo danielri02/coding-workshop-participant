@@ -85,6 +85,22 @@ def invalid_refresh_token() -> HTTPException:
     )
 
 
+async def invalidate_refresh_chain(session: AsyncSession, raw_token: str) -> None:
+    """Idempotently revoke one login family, serialized with token rotation.
+
+    A consumed ancestor can revoke its current descendants. Other login sessions
+    remain valid; already issued access JWTs retain their short remaining lifetime.
+    """
+
+    record = await session.get(RefreshToken, hash_refresh_token(raw_token))
+    if record is None:
+        return
+    lock_id = int.from_bytes(record.family_id.bytes[:8], byteorder="big", signed=True)
+    await session.execute(select(func.pg_advisory_xact_lock(lock_id)))
+    await revoke_refresh_family(session, record.family_id, datetime.now(timezone.utc))
+    await commit(session)
+
+
 async def rotate_refresh_token(
     session: AsyncSession, raw_token: str, settings: SecuritySettings
 ) -> TokenPair:

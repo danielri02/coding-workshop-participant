@@ -1,13 +1,16 @@
 """Floor CRUD endpoints."""
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from ..database import crud
 from ..models import Building, Floor
 from ..schemas import FloorCreate, FloorRead, FloorUpdate
+from ..security.dependencies import current_user, require_admin
 from .dependencies import DatabaseSession, OptionalQueryID, RecordID
 
-router = APIRouter(prefix="/floors", tags=[Floor.__name__])
+router = APIRouter(
+    prefix="/floors", tags=[Floor.__name__], dependencies=[Depends(current_user)]
+)
 
 
 @router.get("", response_model=list[FloorRead])
@@ -20,7 +23,12 @@ async def list_floors(
     return await crud.list_records(session, Floor, filters=filters)
 
 
-@router.post("", response_model=FloorRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=FloorRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
 async def create_floor(payload: FloorCreate, session: DatabaseSession) -> Floor:
     """Create a labeled floor in an existing building."""
 
@@ -35,7 +43,9 @@ async def get_floor(floor_id: RecordID, session: DatabaseSession) -> Floor:
     return await crud.get_record(session, Floor, floor_id)
 
 
-@router.patch("/{floor_id}", response_model=FloorRead)
+@router.patch(
+    "/{floor_id}", response_model=FloorRead, dependencies=[Depends(require_admin)]
+)
 async def update_floor(
     floor_id: RecordID, payload: FloorUpdate, session: DatabaseSession
 ) -> Floor:
@@ -47,7 +57,11 @@ async def update_floor(
     )
 
 
-@router.delete("/{floor_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{floor_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
 async def delete_floor(floor_id: RecordID, session: DatabaseSession) -> Response:
     """Delete an unreferenced floor."""
 

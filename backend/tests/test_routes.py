@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from argon2 import PasswordHasher
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -17,6 +18,9 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from backend.app.database.session import get_session
 from backend.app.main import app
 from backend.app.models import Building, EngineerProfile, Floor, Note, Seat, User
+from backend.app.security.config import SecuritySettings
+from backend.app.security.dependencies import auth_settings
+from backend.app.security.jwt import create_access_token
 from backend.scripts.create_tables import initialize_database
 
 
@@ -69,13 +73,21 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
 
         app.dependency_overrides[get_session] = override_session
         self.addCleanup(app.dependency_overrides.pop, get_session)
+        self.settings = SecuritySettings(
+            jwt_secret_key=SecretStr(secrets.token_urlsafe(48))
+        )
+        app.dependency_overrides[auth_settings] = lambda: self.settings
+        self.addCleanup(app.dependency_overrides.pop, auth_settings)
         self.client = AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
         )
         self.addAsyncCleanup(self.client.aclose)
         async with self.factory.begin() as session:
             reporter = User(
-                name="Reporter", email="reporter@acme.inc", password_hash="test" * 8
+                name="Reporter",
+                email="reporter@acme.inc",
+                password_hash="test" * 8,
+                is_admin=True,
             )
             engineer = User(
                 name="Engineer", email="engineer@acme.inc", password_hash="test" * 8
@@ -97,6 +109,9 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             self.building_id, self.other_building_id = building.id, other_building.id
             self.floor_id, self.other_floor_id = floor.id, other_floor.id
             self.seat_id, self.other_seat_id = seat.id, other_seat.id
+        self.client.headers["Authorization"] = (
+            f"Bearer {create_access_token(self.reporter_id, self.settings)}"
+        )
 
     def report_data(self, **changes: object) -> dict[str, object]:
         """Provide a complete valid report for individual HTTP boundary checks."""
@@ -112,11 +127,10 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         }
 
     async def create_report(self, **changes: object) -> dict[str, object]:
-        """Create a valid incident through the public API."""
+        """Create a valid incident through the authenticated API."""
 
         response = await self.client.post(
             "/incidents",
-            params={"reporter_id": self.reporter_id},
             json=self.report_data(**changes),
         )
         self.assertEqual(response.status_code, 201, response.text)
@@ -602,7 +616,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             (await self.client.post("/incidents", json=self.report_data())).status_code,
-            422,
+            201,
         )
         self.assertEqual(
             (
@@ -612,7 +626,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                     json=self.report_data(),
                 )
             ).status_code,
-            404,
+            201,
         )
         report = await self.create_report()
         self.assertEqual(
@@ -623,7 +637,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                     json={"body": "Note"},
                 )
             ).status_code,
-            404,
+            201,
         )
         self.assertEqual(
             (

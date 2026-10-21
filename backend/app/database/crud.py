@@ -43,12 +43,14 @@ async def list_records(
     filters: Mapping[str, Any] | None = None,
     options: Sequence[ORMOption] = (),
     order_by: Sequence[SQLColumnExpression[Any]] = (),
+    conditions: Sequence[SQLColumnExpression[bool]] = (),
 ) -> list[Model]:
     """Return every matching record in deterministic primary-key order."""
 
     statement = (
         select(model)
         .filter_by(**(filters or {}))
+        .where(*conditions)
         .options(*options)
         .order_by(*(order_by or inspect(model).primary_key))
     )

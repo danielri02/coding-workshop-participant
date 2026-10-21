@@ -11,7 +11,6 @@ from ..models import (
     IncidentCategory,
     IncidentPriority,
     IncidentStatus,
-    User,
 )
 from ..schemas import (
     IncidentAdminUpdate,
@@ -21,7 +20,14 @@ from ..schemas import (
     IncidentRead,
     IncidentStatusUpdate,
 )
-from .dependencies import DatabaseSession, OptionalQueryID, QueryID, RecordID
+from ..security.dependencies import AdminUser, CurrentUser
+from ..security.permissions import (
+    accessible_incident,
+    incident_visibility,
+    require_incident_worker,
+    require_priority_access,
+)
+from .dependencies import DatabaseSession, OptionalQueryID, RecordID
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])
 TRANSITIONS = {
@@ -36,6 +42,7 @@ TRANSITIONS = {
 @router.get("", response_model=list[IncidentRead])
 async def list_incidents(
     session: DatabaseSession,
+    user: CurrentUser,
     reporter_id: OptionalQueryID = None,
     assignee_id: OptionalQueryID = None,
     building_id: OptionalQueryID = None,
@@ -61,34 +68,39 @@ async def list_incidents(
         session,
         Incident,
         filters={key: value for key, value in filters.items() if value is not None},
+        conditions=(incident_visibility(user),),
     )
 
 
 @router.post("", response_model=IncidentRead, status_code=status.HTTP_201_CREATED)
 async def create_incident(
-    payload: IncidentCreate, reporter_id: QueryID, session: DatabaseSession
+    payload: IncidentCreate, session: DatabaseSession, user: CurrentUser
 ) -> Incident:
-    """Create an Open report using an explicit reporter ID until auth is added."""
+    """Create an Open report owned by the authenticated employee."""
 
-    await crud.get_record(session, User, reporter_id)
     await crud.validate_location(
         session, payload.building_id, payload.floor_id, payload.seat_id
     )
     return await crud.create_record(
-        session, Incident, {**payload.model_dump(), "reporter_id": reporter_id}
+        session, Incident, {**payload.model_dump(), "reporter_id": user.id}
     )
 
 
 @router.get("/{incident_id}", response_model=IncidentRead)
-async def get_incident(incident_id: RecordID, session: DatabaseSession) -> Incident:
+async def get_incident(
+    incident_id: RecordID, session: DatabaseSession, user: CurrentUser
+) -> Incident:
     """Read one incident."""
 
-    return await crud.get_record(session, Incident, incident_id)
+    return await accessible_incident(session, incident_id, user)
 
 
 @router.patch("/{incident_id}", response_model=IncidentRead)
 async def update_incident(
-    incident_id: RecordID, payload: IncidentAdminUpdate, session: DatabaseSession
+    incident_id: RecordID,
+    payload: IncidentAdminUpdate,
+    session: DatabaseSession,
+    _admin: AdminUser,
 ) -> Incident:
     """Correct submitted details, checking location after merging the patch."""
 
@@ -105,11 +117,15 @@ async def update_incident(
 
 @router.patch("/{incident_id}/priority", response_model=IncidentRead)
 async def update_incident_priority(
-    incident_id: RecordID, payload: IncidentPriorityUpdate, session: DatabaseSession
+    incident_id: RecordID,
+    payload: IncidentPriorityUpdate,
+    session: DatabaseSession,
+    user: CurrentUser,
 ) -> Incident:
     """Change priority or set/clear an escalation reason."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
+    require_priority_access(user, record)
     return await crud.update_record(
         session, record, payload.model_dump(exclude_unset=True)
     )
@@ -117,7 +133,10 @@ async def update_incident_priority(
 
 @router.patch("/{incident_id}/assignment", response_model=IncidentRead)
 async def assign_incident(
-    incident_id: RecordID, payload: IncidentAssignment, session: DatabaseSession
+    incident_id: RecordID,
+    payload: IncidentAssignment,
+    session: DatabaseSession,
+    _admin: AdminUser,
 ) -> Incident:
     """Assign/reassign/unassign while preserving the first-assignment milestone."""
 
@@ -132,11 +151,15 @@ async def assign_incident(
 
 @router.patch("/{incident_id}/status", response_model=IncidentRead)
 async def update_incident_status(
-    incident_id: RecordID, payload: IncidentStatusUpdate, session: DatabaseSession
+    incident_id: RecordID,
+    payload: IncidentStatusUpdate,
+    session: DatabaseSession,
+    user: CurrentUser,
 ) -> Incident:
     """Apply a valid transition and maintain first-entry milestone timestamps."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
+    require_incident_worker(user, record)
     if payload.status not in TRANSITIONS[record.status]:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -152,7 +175,9 @@ async def update_incident_status(
 
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_incident(incident_id: RecordID, session: DatabaseSession) -> Response:
+async def delete_incident(
+    incident_id: RecordID, session: DatabaseSession, _admin: AdminUser
+) -> Response:
     """Delete an incident and cascade its notes."""
 
     await crud.delete_record(

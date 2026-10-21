@@ -30,7 +30,7 @@ from backend.app.models import (
     User,
 )
 from backend.scripts.create_tables import initialize_database
-from backend.scripts.seed_database import seed_database
+from backend.scripts.seed_database import DEFAULT_ADMIN_PASSWORD, seed_database
 
 
 class DatabaseConfigTests(unittest.TestCase):
@@ -293,7 +293,9 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.to_thread(
                         PasswordHasher().verify,
                         user.password_hash,
-                        self.password.get_secret_value(),
+                        DEFAULT_ADMIN_PASSWORD
+                        if user.is_admin
+                        else self.password.get_secret_value(),
                     )
                 )
             statuses = set(await session.scalars(select(Incident.status)))
@@ -363,6 +365,23 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 await session.scalar(select(func.count()).select_from(EngineerProfile)),
                 0,
             )
+
+    async def test_seed_does_not_promote_an_existing_admin_email(self) -> None:
+        """An email collision cannot turn a registered employee into an admin."""
+
+        async with self.factory.begin() as session:
+            user = User(
+                name="Employee", email="admin@acme.inc", password_hash="test" * 8
+            )
+            session.add(user)
+            await session.flush()
+            user_id = user.id
+        async with self.factory() as session:
+            with self.assertRaisesRegex(ValueError, "refusing to grant a capability"):
+                await seed_database(session, self.password)
+        self.assertEqual(await self.inserted_user_count(), 1)
+        async with self.factory() as session:
+            self.assertFalse((await session.get(User, user_id)).is_admin)
 
     async def cli(
         self,
