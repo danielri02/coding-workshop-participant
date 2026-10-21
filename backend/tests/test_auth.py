@@ -316,7 +316,7 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
         """The requested short seed credential works without relaxing registration."""
 
         async with self.factory() as session:
-            await seed_database(session, SecretStr(self.password))
+            await seed_database(session)
         response = await self.client.post(
             "/auth/token",
             data={"username": "admin@acme.inc", "password": DEFAULT_ADMIN_PASSWORD},
@@ -558,7 +558,7 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
         """Authorize the default admin, rotate tokens and access routes with no env."""
 
         async with self.factory() as session:
-            await seed_database(session, SecretStr(self.password))
+            await seed_database(session)
         app.dependency_overrides.pop(auth_settings)
         try:
             with patch.dict(os.environ, {}, clear=True):

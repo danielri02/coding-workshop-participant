@@ -134,10 +134,10 @@ class SchemaTests(unittest.TestCase):
                 schema(**data)
 
     def test_incident_defaults_and_optional_location(self) -> None:
-        """A building-only report starts with normal priority and no escalation."""
+        """A building-only report starts with low priority and no escalation."""
 
         incident = IncidentCreate(**self.incident_data())
-        self.assertEqual(incident.priority, IncidentPriority.MEDIUM)
+        self.assertEqual(incident.priority, IncidentPriority.LOW)
         self.assertIsNone(incident.floor_id)
         self.assertIsNone(incident.seat_id)
         self.assertIsNone(incident.escalation_reason)

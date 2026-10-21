@@ -2,6 +2,7 @@
 export const workshopService = { name: 'facilities', prefix: '/api/facilities' } as const
 
 export const incidentGrid = {
+  defaultSort: { field: 'created_at', sort: 'desc' },
   filterFields: [
     'reporter_id',
     'assignee_id',
@@ -12,6 +13,7 @@ export const incidentGrid = {
     'priority',
     'category',
     'escalated',
+    'unassigned',
   ],
   searchMaxLength: 200,
 } as const

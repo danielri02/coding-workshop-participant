@@ -187,7 +187,7 @@ export interface components {
       escalation_reason?: string | null
       /** Floor Id */
       floor_id?: number | null
-      /** @default Medium */
+      /** @default Low */
       priority: components['schemas']['IncidentPriority']
       /** Seat Id */
       seat_id?: number | null
@@ -216,7 +216,7 @@ export interface components {
     IncidentPriority: 'Low' | 'Medium' | 'High'
     /**
      * IncidentPriorityUpdate
-     * @description Reporter-on-active-incident or admin priority and escalation changes.
+     * @description Admin-only priority and escalation changes.
      */
     IncidentPriorityUpdate: {
       /** Escalation Reason */

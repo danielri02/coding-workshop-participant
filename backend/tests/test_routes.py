@@ -378,7 +378,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         report = await self.create_report()
         incident = report["id"]
         self.assertEqual(report["status"], "Open")
-        self.assertEqual(report["priority"], "Medium")
+        self.assertEqual(report["priority"], "Low")
         self.assertEqual(report["reporter_id"], self.reporter_id)
         self.assertTrue(report["created_at"].endswith("Z"))
         self.assertIsNone(report["assigned_at"])

@@ -132,8 +132,8 @@ class Incident(Base):
             create_constraint=True,
             name="incident_priority",
         ),
-        default=IncidentPriority.MEDIUM,
-        server_default=text("'Medium'"),
+        default=IncidentPriority.LOW,
+        server_default=text("'Low'"),
         index=True,
     )
     blocked_reason: Mapped[str | None] = mapped_column(String(2000))

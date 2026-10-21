@@ -6,7 +6,7 @@ import { RecordLink } from '../components/RecordLink'
 import { ValueChip } from '../components/ValueChip'
 import { statuses, priorities, categories, constraints } from '../generated/domain'
 import type { Field } from './forms'
-import { incidentFields, locationFields, noteFields } from './incidentFields'
+import { adminIncidentFields, locationFields, noteFields } from './incidentFields'
 import { floorLabel } from './rows'
 import type { AdminRow, Lookups, ResourceKey } from '../types'
 
@@ -56,7 +56,7 @@ export const resources: ResourceDefinition[] = [
     endpoint: '/incidents',
     description: 'Coordinate workplace issues, assignments and progress.',
     lookups: ['users', 'buildings', 'floors', 'seats'],
-    fields: incidentFields,
+    fields: adminIncidentFields,
     columns: (data) => {
       const columns: GridColDef<AdminRow>[] = [
         {

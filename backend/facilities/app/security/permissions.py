@@ -9,7 +9,6 @@ from sqlalchemy.orm.interfaces import ORMOption
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..database import crud
-from ..domain.incidents import ACTIVE_STATUSES
 from ..models import Incident, User
 
 
@@ -61,18 +60,6 @@ def require_incident_worker(user: User, incident: Incident) -> None:
     ):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Admin or assigned Engineer capability required"
-        )
-
-
-def require_priority_access(user: User, incident: Incident) -> None:
-    """Allow admins on any state and reporters on their own active incidents."""
-
-    if not user.is_admin and not (
-        incident.reporter_id == user.id and incident.status in ACTIVE_STATUSES
-    ):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Priority changes require Admin capability or an own active incident",
         )
 
 

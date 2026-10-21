@@ -29,7 +29,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
   const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 25 })
-  const [sorting, setSorting] = useState<GridSortModel>([{ field: 'created_at', sort: 'desc' }])
+  const [sorting, setSorting] = useState<GridSortModel>([incidentGrid.defaultSort])
   const [filters, setFilters] = useState<GridFilterModel>({ items: [] })
   const lookups = useLookups({ lookups: ['buildings', 'floors', 'seats'] })
   const path = incidentQuery(
@@ -137,7 +137,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
           lookups={lookups.data}
           onSave={save}
           onClose={() => setCreating(false)}
-          subtitle="This report will be submitted in your name and start Open. Building is required; floor and seat are optional."
+          subtitle="This report will be submitted in your name and start Open with Low priority. Facilities admins handle escalation. Building is required; floor and seat are optional."
         />
       )}
     </Stack>

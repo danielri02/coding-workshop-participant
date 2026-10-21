@@ -26,7 +26,6 @@ from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import (
     accessible_incident,
     require_incident_worker,
-    require_priority_access,
 )
 from .dependencies import INCIDENT_READ_OPTIONS, DatabaseSession, RecordID
 
@@ -86,6 +85,14 @@ async def create_incident(
 ) -> Incident:
     """Create an Open report owned by the authenticated employee."""
 
+    if (
+        not user.is_admin
+        and {"priority", "escalation_reason"} & payload.model_fields_set
+    ):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Admin capability required to set priority or escalation",
+        )
     await crud.validate_location(
         session, payload.building_id, payload.floor_id, payload.seat_id
     )
@@ -135,12 +142,11 @@ async def update_incident_priority(
     incident_id: RecordID,
     payload: IncidentPriorityUpdate,
     session: DatabaseSession,
-    user: CurrentUser,
+    _admin: AdminUser,
 ) -> Incident:
-    """Change priority or set/clear an escalation reason."""
+    """Admin triage: change priority or set/clear an escalation reason."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
-    require_priority_access(user, record)
     return await crud.update_record(
         session,
         record,

@@ -56,12 +56,17 @@ export const incidentFields: Field[] = [
     options: () => choices(categories),
   },
   ...locationFields,
+]
+
+/** Only the admin creation form exposes initial triage fields. */
+export const adminIncidentFields: Field[] = [
+  ...incidentFields,
   {
     name: 'priority',
     label: 'Priority',
     type: 'select',
     required: true,
-    defaultValue: 'Medium',
+    defaultValue: 'Low',
     createOnly: true,
     options: () => choices(priorities),
   },

@@ -14,7 +14,7 @@ Copy [.env.sample](./.env.sample) to `.env` in the repository root and edit that
 one file for backend, frontend and local Lambda deployment settings. The API and
 all Python maintenance scripts load it automatically from any working directory.
 Vite reads it too, exposing only the three approved public `VITE_API_*` settings.
-Database passwords, JWT secrets and seed passwords stay on the backend.
+Database passwords and JWT secrets stay on the backend.
 
 Existing shell variables override `.env`. `APP_ENV_FILE` selects another file
 (relative to this repository root); an empty value disables shared-file loading.

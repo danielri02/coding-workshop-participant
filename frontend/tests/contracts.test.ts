@@ -104,6 +104,20 @@ test('assigned grid scope is fixed to the current engineer without requiring own
   assert.equal(params.get('search'), 'printer')
 })
 
+test('admin grid defaults to newest first and preserves both unassigned filter values', () => {
+  for (const unassigned of [true, false]) {
+    const path = incidentQuery({ page: 0, pageSize: 25 }, [], { items: [] }, '', {
+      unassigned,
+      reporter_id: undefined,
+    })
+    const params = new URL(path, 'http://localhost').searchParams
+    assert.equal(params.get('sort_by'), 'created_at')
+    assert.equal(params.get('sort_direction'), 'desc')
+    assert.equal(params.get('unassigned'), String(unassigned))
+    assert.equal(params.has('reporter_id'), false)
+  }
+})
+
 test('queries reuse reads and invalidate affected resources without refetching every table', async () => {
   const client = createQueryClient()
   try {

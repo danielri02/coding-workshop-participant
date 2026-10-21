@@ -73,16 +73,18 @@ Python 3.13 and an activated virtual environment:
 python -m pip install -r requirements-dev.txt
 python scripts/check_database.py
 python scripts/create_tables.py
-SEED_PASSWORD='development-only' python scripts/seed_database.py
+python scripts/seed_database.py
 python scripts/check_database.py --check-admin
 ```
 
-These additive commands target the database/role selected by the shared settings.
-They never run at Lambda startup. Existing tables/data are preserved; changing the
+**`create_tables.py` wipes and recreates all application tables**, including users,
+incidents, notes, facilities and refresh tokens, in the configured database.
+Unrelated tables and PostgreSQL accounts are preserved. Run it only when you want
+a fresh database; rerunning `seed_database.py` alone adds missing samples while
+preserving existing records. These commands never run at Lambda startup. Changing
 database configuration does not move data from a previously used database.
-If `SEED_PASSWORD` is already set in the shared `.env`, run the seed command
-without an inline password. The admin check distinguishes a missing seed account
-from an existing account without Admin capability; it never promotes accounts.
+The admin check distinguishes a missing seed account from an existing account
+without Admin capability; it never promotes accounts.
 
 To detect generated configuration that no longer matches the shared settings,
 run `python backend/scripts/configure_local.py --check` from the repository root.
@@ -153,10 +155,11 @@ cross-origin cookies are not required.
 | --- | --- |
 | `page` | Zero-based page number, default 0 |
 | `page_size` | Rows per page, 1–100, default 25 |
-| `sort_by` | Default `id`; also title, category, status, priority, assignee_name, building_id, floor_id, seat_id, reporter_id, assignee_id and milestone timestamps |
-| `sort_direction` | `asc` (default) or `desc`; nulls sort last and IDs break ties |
+| `sort_by` | Default `created_at`; also id, title, category, status, priority, assignee_name, building_id, floor_id, seat_id, reporter_id, assignee_id and milestone timestamps |
+| `sort_direction` | `desc` (default) or `asc`; nulls sort last and IDs break ties |
 | `search` | Case-insensitive literal substring in incident title or description; whitespace-only searches clear this filter; maximum 200 characters |
 | `escalated` | `true` for incidents with an escalation reason, `false` for those without; omit for both |
+| `unassigned` | `true` for incidents without an engineer, `false` for assigned incidents; omit for both |
 | Structured filters | Exact reporter_id, assignee_id, building_id, floor_id, seat_id, status, priority and category |
 
 For example, `/incidents/grid?page=0&page_size=25&search=printer&sort_by=created_at&sort_direction=desc`
@@ -246,23 +249,22 @@ through `POST /users`; it grants employee access only. `GET /auth/me` returns th
 authenticated account and its current capabilities, without credential fields;
 the frontend uses it when restoring a login.
 
-Development seed logins are `admin@acme.inc` / `admin` and
-`employee@acme.inc` / `employee`. Rerun `python scripts/seed_database.py` from
-`backend/` to add the employee account and expanded samples to the database
-selected by the shared configuration. Existing accounts, passwords, roles,
-availability and edited content are preserved; no table reset is needed.
-`SEED_PASSWORD` controls newly created `demo.engineer@acme.inc`,
-`demo.engineer2@acme.inc` and `demo.employee@acme.inc` accounts independently of
-these two defaults. A pre-existing non-admin `admin@acme.inc` account is rejected
-rather than promoted. Public registration still requires 12–128 character
-passwords; the two simple development seed credentials are explicit exceptions.
+Development seed logins are `admin@acme.inc` / `admin`, `employee@acme.inc` /
+`employee`, and `engineer@acme.inc` / `engineer`. No password environment variable
+is needed. Additional sample staff (`employee2`, `employee3`, `engineer2`,
+`engineer3`, `engineer4`, all at `acme.inc`) use their base role as the password.
+Existing accounts, passwords, roles, availability and edited content are preserved
+on seed reruns. A pre-existing non-admin `admin@acme.inc` account is rejected rather
+than promoted. Public registration still requires 12–128 character passwords;
+these simple development seed credentials are explicit exceptions.
 
-A fresh seed includes five users, two engineers (one available and one unavailable),
-two buildings, four floors, eight seats, 18 incidents and 39 notes. The primary
-employee has 15 incidents across every status, with three submitted by another
-employee to exercise access boundaries. Samples cover recurring locations,
-different categories/priorities, multiple assignees, varied response times,
-blocked/escalated work, and conversations through resolution and closure.
+A fresh seed includes eight users, four engineers (one unavailable and one with
+no assignments), three buildings, nine floors, 54 seats, 120 incidents and 307
+notes. The primary employee has 96 incidents across every status; two other
+employees own the remaining 24. Samples span about eight weeks, with uneven
+category counts, recurring locations, different priorities, varied engineer
+workloads and response times, blocked/escalated work, and conversations through
+resolution and closure. The newest 12 incidents form an unassigned intake queue.
 
 ### Route permissions
 
@@ -273,10 +275,10 @@ logout authenticate the supplied refresh credential rather than an access JWT.
 | Operation | Access |
 | --- | --- |
 | Read incidents and their complete shared notes | Own reports; engineers also get current assignments; admins get all |
-| Create incidents | Any signed-in employee; reporter comes from the access token |
+| Create incidents | Any signed-in employee; reporter comes from the access token, priority defaults to Low; only admins may supply priority/escalation |
 | Correct submitted incident details, assign/unassign, delete incidents | Admin |
 | Change incident status | Assigned engineer or admin, following valid transitions |
-| Change priority/escalation | Reporter on own active incident; admin on any incident |
+| Change priority/escalation | Admin |
 | Post notes | Reporter, assigned engineer or admin on an active incident; author comes from the access token |
 | Edit/delete existing notes | Admin, including after resolution/closure |
 | Read facilities and engineer profiles | Any signed-in employee, for location/assignee lookups |

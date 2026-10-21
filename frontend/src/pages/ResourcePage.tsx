@@ -38,7 +38,10 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
   const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 25 })
-  const [sorting, setSorting] = useState<GridSortModel>([{ field: 'id', sort: 'asc' }])
+  const [sorting, setSorting] = useState<GridSortModel>([
+    resource.key === 'incidents' ? incidentGrid.defaultSort : { field: 'id', sort: 'asc' },
+  ])
+  const [assignment, setAssignment] = useState('all')
   const [filters, setFilters] = useState<GridFilterModel>({ items: [] })
   const {
     user,
@@ -73,7 +76,9 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   const selectedIncident = incidents.data.find((row) => row.id === scope)
   const server = resource.key === 'incidents'
   const path = server
-    ? incidentQuery(pagination, sorting, filters, debouncedSearch)
+    ? incidentQuery(pagination, sorting, filters, debouncedSearch, {
+        unassigned: assignment === 'all' ? undefined : assignment === 'unassigned',
+      })
     : resource.key === 'notes'
       ? scope
         ? `/incidents/${scope}/notes`
@@ -159,6 +164,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
             borderColor: 'divider',
             alignItems: { xs: 'stretch', sm: 'center' },
             gap: 2,
+            flexWrap: 'wrap',
           }}
         >
           <TextField
@@ -183,6 +189,23 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
             }}
             sx={{ width: { xs: '100%', sm: 360 }, minWidth: 0 }}
           />
+          {server && (
+            <TextField
+              select
+              label="Assignment"
+              size="small"
+              value={assignment}
+              sx={{ minWidth: 160 }}
+              onChange={(event) => {
+                setAssignment(event.target.value)
+                setPagination((previous) => ({ ...previous, page: 0 }))
+              }}
+            >
+              <MenuItem value="all">All incidents</MenuItem>
+              <MenuItem value="unassigned">Unassigned</MenuItem>
+              <MenuItem value="assigned">Assigned</MenuItem>
+            </TextField>
+          )}
           <Button
             startIcon={<Refresh />}
             onClick={() => changed('Reloading records…')}

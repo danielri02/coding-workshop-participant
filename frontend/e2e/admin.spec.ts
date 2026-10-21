@@ -172,6 +172,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await select(page, 'Building', `${buildingName} updated`)
   await page.getByRole('dialog').getByLabel('Floor label').fill('12')
   const floor = await save(page, '/floors')
+  await page.getByRole('textbox', { name: 'Search floors' }).fill(suffix)
   await page.getByRole('button', { name: `Edit floors ${floor.id}`, exact: true }).click()
   await page.getByRole('dialog').getByLabel('Floor label').fill('13')
   await save(page, `/floors/${floor.id}`, 'PATCH')
@@ -181,6 +182,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await select(page, 'Floor', `${buildingName} updated · Floor 13`)
   await page.getByRole('dialog').getByLabel('Seat label').fill('A1')
   const seat = await save(page, '/seats')
+  await page.getByRole('textbox', { name: 'Search seats' }).fill(suffix)
   await page.getByRole('button', { name: `Edit seats ${seat.id}`, exact: true }).click()
   await page.getByRole('dialog').getByLabel('Seat label').fill('A2')
   await save(page, `/seats/${seat.id}`, 'PATCH')
@@ -276,8 +278,10 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await navigate(page, 'Users')
   await remove(page, 'users', user.id)
   await navigate(page, 'Seats')
+  await page.getByRole('textbox', { name: 'Search seats' }).fill(suffix)
   await remove(page, 'seats', seat.id)
   await navigate(page, 'Floors')
+  await page.getByRole('textbox', { name: 'Search floors' }).fill(suffix)
   await remove(page, 'floors', floor.id)
   await navigate(page, 'Buildings')
   await remove(page, 'buildings', building.id)
@@ -422,12 +426,13 @@ test('incident actions validate blocked reasons and preserve note editing after 
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
 })
 
-test('incident grid sends backend search, pagination and sorting changes', async ({
+test('incident grid defaults to newest first and filters assignment with server paging', async ({
   request,
   page,
 }) => {
   const suffix = `gridcheck${Date.now()}`
   const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const engineer = (await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json())[0]
   for (let index = 0; index < 12; index += 1) {
     const response = await request.post(`${apiUrl}/incidents`, {
       headers,
@@ -439,7 +444,15 @@ test('incident grid sends backend search, pagination and sorting changes', async
       },
     })
     expect(response.ok()).toBeTruthy()
-    cleanup.unshift(`/incidents/${(await response.json()).id}`)
+    const incident = await response.json()
+    cleanup.unshift(`/incidents/${incident.id}`)
+    if (index % 2) {
+      const assigned = await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
+        headers,
+        data: { assignee_id: engineer.user_id },
+      })
+      expect(assigned.ok(), await assigned.text()).toBeTruthy()
+    }
   }
   await page.goto('/admin/incidents')
   await signIn(page)
@@ -447,8 +460,41 @@ test('incident grid sends backend search, pagination and sorting changes', async
   await page.getByRole('combobox').last().click()
   await page.getByRole('option', { name: '10', exact: true }).click()
   await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: /^Reported/ })).toHaveAttribute(
+    'aria-sort',
+    'descending',
+  )
+  await expect(page.getByRole('grid').getByRole('row').nth(1)).toContainText(`${suffix} 11`)
   await page.getByRole('button', { name: 'Go to next page' }).click()
   await expect(page.getByText('11–12 of 12', { exact: true })).toBeVisible()
+  for (const [option, unassigned] of [
+    ['Unassigned', true],
+    ['Assigned', false],
+  ] as const) {
+    const filtered = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return (
+        browserPath(url) === '/incidents/grid' &&
+        url.searchParams.get('unassigned') === String(unassigned) &&
+        url.searchParams.get('page') === '0'
+      )
+    })
+    await page.getByRole('combobox', { name: 'Assignment', exact: true }).click()
+    await page.getByRole('option', { name: option, exact: true }).click()
+    const response = await filtered
+    expect(response.ok()).toBeTruthy()
+    const data = await response.json()
+    expect(data.row_count).toBe(6)
+    expect(
+      data.rows.every((row: { assignee_id: number | null }) =>
+        unassigned ? row.assignee_id === null : row.assignee_id === engineer.user_id,
+      ),
+    ).toBeTruthy()
+    await expect(page.getByText('1–6 of 6', { exact: true })).toBeVisible()
+  }
+  await page.getByRole('combobox', { name: 'Assignment', exact: true }).click()
+  await page.getByRole('option', { name: 'All incidents', exact: true }).click()
+  await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
   const sorted = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return (
@@ -742,11 +788,21 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   await signIn(page, 'employee@acme.inc', 'employee')
   await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
+  const employeeToken = await page.evaluate(
+    () => JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token,
+  )
+  const owned = await (
+    await request.get(`${apiUrl}/incidents`, {
+      headers: { Authorization: `Bearer ${employeeToken}` },
+    })
+  ).json()
   await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
   await page.getByRole('option', { name: '10', exact: true }).click()
-  await expect(page.getByText('1–10 of 15', { exact: true })).toBeVisible()
+  await expect(page.getByText(`1–10 of ${owned.length}`, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Go to next page' }).click()
-  await expect(page.getByText('11–15 of 15', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText(`11–${Math.min(20, owned.length)} of ${owned.length}`, { exact: true }),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'New incident', exact: true }).click()
   await expect(
     page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
@@ -760,16 +816,26 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   await select(page, 'Building', building.name)
   await select(page, 'Floor', `Floor ${floor.label}`)
   await select(page, 'Seat', seat.label)
+  await expect(
+    page.getByRole('dialog').getByRole('combobox', { name: 'Priority', exact: false }),
+  ).toBeHidden()
+  await expect(page.getByRole('dialog').getByLabel('Escalation reason')).toBeHidden()
   const incident = await save(page, '/incidents')
+  expect(incident.priority).toBe('Low')
   await expect(page).toHaveURL(new RegExp(`/employee/incidents/${incident.id}$`))
   await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
   await expect(page.getByText('Awaiting assignment', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Assign engineer', exact: true })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
-  await page.getByRole('button', { name: 'Priority and escalation', exact: true }).click()
-  await select(page, 'Priority', 'High')
-  await page.getByRole('dialog').getByLabel('Escalation reason').fill('Unable to join meetings')
-  await save(page, `/incidents/${incident.id}/priority`, 'PATCH')
+  await expect(
+    page.getByRole('button', { name: 'Priority and escalation', exact: true }),
+  ).toBeHidden()
+  const escalated = await request.patch(`${apiUrl}/incidents/${incident.id}/priority`, {
+    headers,
+    data: { priority: 'High', escalation_reason: 'Unable to join meetings' },
+  })
+  expect(escalated.status()).toBe(200)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Unable to join meetings' })).toBeVisible()
   await page.getByRole('button', { name: 'Add note', exact: true }).click()
   await page
@@ -862,6 +928,7 @@ test('employee workspace and API exclude other reports and privileged operations
     [`/incidents/${own[0].id}/assignment`, { assignee_id: null }],
     [`/incidents/${own[0].id}`, { title: 'Not permitted' }],
     [`/incidents/${other.id}/priority`, { priority: 'High' }],
+    [`/incidents/${own[0].id}/priority`, { priority: 'High', escalation_reason: 'Not permitted' }],
   ] as const)
     expect(
       (await request.patch(`${apiUrl}${path}`, { headers: employeeHeaders, data })).status(),
@@ -1054,7 +1121,7 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
   await expect(
     page.getByRole('button', { name: 'Priority and escalation', exact: true }),
-  ).toBeVisible()
+  ).toBeHidden()
 })
 
 test('engineer scope and permissions follow current assignment including reassignment', async ({

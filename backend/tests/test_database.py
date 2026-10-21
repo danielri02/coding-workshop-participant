@@ -10,7 +10,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from argon2 import PasswordHasher
-from pydantic import SecretStr
 from sqlalchemy import create_engine, func, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
@@ -34,6 +33,7 @@ from backend.scripts.seed_database import (
     DEFAULT_ADMIN_PASSWORD,
     DEFAULT_EMPLOYEE_EMAIL,
     DEFAULT_EMPLOYEE_PASSWORD,
+    DEFAULT_ENGINEER_PASSWORD,
     seed_database,
 )
 
@@ -234,7 +234,6 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             self.engine, expire_on_commit=False, autoflush=False
         )
         await initialize_database(self.engine, reset=True)
-        self.password = SecretStr(secrets.token_urlsafe(18))
 
     async def inserted_user_count(self) -> int:
         """Count users through a fresh session to check transaction outcomes."""
@@ -320,18 +319,18 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         """Seed every persona, category, status, and a recurring location."""
 
         async with self.factory() as session:
-            counts = await seed_database(session, self.password)
+            counts = await seed_database(session)
             rerun = await seed_database(session)
         self.assertEqual(
             counts,
             {
-                "users": 5,
-                "engineer_profiles": 2,
-                "buildings": 2,
-                "floors": 4,
-                "seats": 8,
-                "incidents": 18,
-                "notes": 39,
+                "users": 8,
+                "engineer_profiles": 4,
+                "buildings": 3,
+                "floors": 9,
+                "seats": 54,
+                "incidents": 120,
+                "notes": 307,
                 "refresh_tokens": 0,
             },
         )
@@ -346,9 +345,9 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                         user.password_hash,
                         DEFAULT_ADMIN_PASSWORD
                         if user.is_admin
-                        else DEFAULT_EMPLOYEE_PASSWORD
-                        if user.email == DEFAULT_EMPLOYEE_EMAIL
-                        else self.password.get_secret_value(),
+                        else DEFAULT_ENGINEER_PASSWORD
+                        if user.email.startswith("engineer")
+                        else DEFAULT_EMPLOYEE_PASSWORD,
                     )
                 )
             statuses = set(await session.scalars(select(Incident.status)))
@@ -358,7 +357,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         async with self.factory() as session:
-            await seed_database(session, self.password)
+            await seed_database(session)
             employee = await session.scalar(
                 select(User).where(User.email == DEFAULT_EMPLOYEE_EMAIL)
             )
@@ -374,11 +373,11 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                     select(Incident).where(Incident.reporter_id != employee.id)
                 )
             ).all()
-            self.assertEqual(len(own), 15)
-            self.assertEqual(len(others), 3)
+            self.assertEqual(len(own), 96)
+            self.assertEqual(len(others), 24)
             self.assertEqual({row.status for row in own}, set(IncidentStatus))
             self.assertEqual(
-                len({row.assignee_id for row in own if row.assignee_id}), 2
+                len({row.assignee_id for row in own if row.assignee_id}), 3
             )
             profiles = (await session.scalars(select(EngineerProfile))).all()
             self.assertEqual({row.is_available for row in profiles}, {True, False})
@@ -389,7 +388,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         """Reruns must not undo edited content, availability, or note deletions."""
 
         async with self.factory() as session:
-            await seed_database(session, self.password)
+            await seed_database(session)
             async with session.begin():
                 user = await session.scalar(
                     select(User).where(User.email == DEFAULT_EMPLOYEE_EMAIL)
@@ -397,10 +396,11 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 original_hash = user.password_hash
                 user.name = "Updated employee name"
                 profile = await session.scalar(select(EngineerProfile))
+                profile_id = profile.user_id
                 profile.is_available = False
                 note = await session.scalar(select(Note).order_by(Note.id))
                 await session.delete(note)
-            counts = await seed_database(session, SecretStr(secrets.token_urlsafe(18)))
+            counts = await seed_database(session)
             self.assertTrue(all(value == 0 for value in counts.values()))
         async with self.factory() as session:
             user = await session.scalar(
@@ -409,25 +409,40 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(user.password_hash, original_hash)
             self.assertEqual(user.name, "Updated employee name")
             self.assertFalse(
-                (await session.scalar(select(EngineerProfile))).is_available
+                (await session.get(EngineerProfile, profile_id)).is_available
             )
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(Note)), 38
+                await session.scalar(select(func.count()).select_from(Note)), 306
             )
 
-    async def test_missing_or_invalid_seed_password_leaves_no_partial_data(
+    async def test_seed_needs_no_password_environment_and_has_idle_engineer_and_unassigned_queue(
         self,
     ) -> None:
-        """Account validation failure rolls back all rows and hides the input."""
-
-        for password in (None, SecretStr("x" * 5)):
-            with self.subTest(password_present=password is not None):
-                async with self.factory() as session:
-                    with self.assertRaises(ValueError) as result:
-                        await seed_database(session, password)
-                if password is not None:
-                    self.assertNotIn(password.get_secret_value(), str(result.exception))
-                self.assertEqual(await self.inserted_user_count(), 0)
+        async with self.factory() as session:
+            counts = await seed_database(session)
+            self.assertEqual(counts["users"], 8)
+            idle = await session.scalar(
+                select(User).where(User.email == "engineer4@acme.inc")
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Incident)
+                    .where(Incident.assignee_id == idle.id)
+                ),
+                0,
+            )
+            self.assertGreater(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Incident)
+                    .where(
+                        Incident.assignee_id.is_(None),
+                        Incident.status == IncidentStatus.OPEN,
+                    )
+                ),
+                10,
+            )
 
     async def test_seed_does_not_promote_an_existing_employee(self) -> None:
         """A colliding demo email must not silently gain Engineer capability."""
@@ -436,13 +451,13 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             session.add(
                 User(
                     name="Existing employee",
-                    email="demo.engineer@acme.inc",
+                    email="engineer@acme.inc",
                     password_hash="test" * 8,
                 )
             )
         async with self.factory() as session:
             with self.assertRaisesRegex(ValueError, "refusing to grant a capability"):
-                await seed_database(session, self.password)
+                await seed_database(session)
         self.assertEqual(await self.inserted_user_count(), 1)
         async with self.factory() as session:
             self.assertEqual(
@@ -462,7 +477,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             user_id = user.id
         async with self.factory() as session:
             with self.assertRaisesRegex(ValueError, "refusing to grant a capability"):
-                await seed_database(session, self.password)
+                await seed_database(session)
         self.assertEqual(await self.inserted_user_count(), 1)
         async with self.factory() as session:
             self.assertFalse((await session.get(User, user_id)).is_admin)
@@ -471,7 +486,6 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self,
         module: str,
         *args: str,
-        password: SecretStr | None = None,
         invocation: str = "root-module",
         database_url: str | None = None,
     ) -> tuple[int, str, str]:
@@ -483,8 +497,6 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             or self.test_url.render_as_string(hide_password=False),
         }
         environment.pop("SEED_PASSWORD", None)
-        if password is not None:
-            environment["SEED_PASSWORD"] = password.get_secret_value()
         repository = Path(__file__).resolve().parents[2]
         backend_module = module.removeprefix("backend.")
         directory, command = {
@@ -583,40 +595,34 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(invocation=invocation):
                 code, _, stderr = await self.cli(create, invocation=invocation)
                 self.assertEqual(code, 0, stderr)
-                code, _, stderr = await self.cli(
-                    seed, password=self.password, invocation=invocation
-                )
+                code, _, stderr = await self.cli(seed, invocation=invocation)
                 self.assertEqual(code, 0, stderr)
-                self.assertEqual(await self.inserted_user_count(), 5)
-                code, _, stderr = await self.cli(
-                    create, "--reset", invocation=invocation
-                )
-                self.assertEqual(code, 2, stderr)
-                self.assertEqual(await self.inserted_user_count(), 5)
-                code, _, stderr = await self.cli(
-                    create, "--reset", "--yes", invocation=invocation
-                )
+                self.assertEqual(await self.inserted_user_count(), 8)
+                code, _, stderr = await self.cli(create, invocation=invocation)
                 self.assertEqual(code, 0, stderr)
                 self.assertEqual(await self.inserted_user_count(), 0)
 
-    async def test_cli_create_seed_guard_and_reset(self) -> None:
-        """Exercise real commands, including refusal of an unconfirmed reset."""
+    async def test_cli_create_tables_always_resets_application_data(self) -> None:
+        """A plain script invocation wipes seeded data and supports a fresh reseed."""
 
         create = "backend.scripts.create_tables"
         seed = "backend.scripts.seed_database"
-        code, stdout, stderr = await self.cli(create)
+        code, _, stderr = await self.cli(create)
         self.assertEqual(code, 0, stderr)
-        code, stdout, stderr = await self.cli(seed, password=self.password)
+        code, stdout, stderr = await self.cli(seed)
         self.assertEqual(code, 0, stderr)
-        self.assertNotIn(self.password.get_secret_value(), stdout + stderr)
-        self.assertEqual(await self.inserted_user_count(), 5)
-        code, stdout, stderr = await self.cli(create, "--reset")
-        self.assertEqual(code, 2, stderr)
-        self.assertEqual(await self.inserted_user_count(), 5)
+        self.assertEqual(await self.inserted_user_count(), 8)
         code, stdout, stderr = await self.cli(seed)
         self.assertEqual(code, 0, stderr)
         self.assertIn("users=0", stdout)
-        code, stdout, stderr = await self.cli(create, "--reset", "--yes")
+        code, stdout, stderr = await self.cli(create)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Application tables reset", stdout)
+        self.assertEqual(await self.inserted_user_count(), 0)
+        code, _, stderr = await self.cli(seed)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(await self.inserted_user_count(), 8)
+        code, _, stderr = await self.cli(create, "--reset", "--yes")
         self.assertEqual(code, 0, stderr)
         self.assertEqual(await self.inserted_user_count(), 0)
 

@@ -42,6 +42,12 @@ def incident_criteria(
             if query.escalated
             else Incident.escalation_reason.is_(None)
         )
+    if query.unassigned is not None:
+        conditions.append(
+            Incident.assignee_id.is_(None)
+            if query.unassigned
+            else Incident.assignee_id.is_not(None)
+        )
     return filters, conditions
 
 

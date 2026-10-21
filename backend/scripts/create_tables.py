@@ -1,14 +1,11 @@
-"""Create missing application tables, or explicitly reset all application tables.
+"""Wipe and recreate all application tables in the configured database.
 
-From the repository root:
-    python -m backend.scripts.create_tables
-    python -m backend.scripts.create_tables --reset --yes
+From the repository root: python backend/scripts/create_tables.py
+From backend/: python scripts/create_tables.py
 
-From backend/:
-    python -m scripts.create_tables
-    python scripts/create_tables.py
-
-DATABASE_URL selects the database. Creation does not migrate existing tables.
+This deletes application users, incidents, notes, facilities and refresh tokens.
+Unrelated tables and PostgreSQL accounts are preserved. Run seed_database.py next.
+DATABASE_URL / POSTGRES_* select the target via the shared root .env.
 """
 
 import argparse
@@ -52,35 +49,20 @@ async def run(reset: bool) -> None:
 
 
 def main() -> None:
-    """Parse arguments and require explicit confirmation for destructive resets."""
+    """Reset application data; invoking this script explicitly requests the wipe."""
 
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="Drop and recreate application tables; deletes their data",
-    )
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help="Confirm data deletion when used with --reset",
-    )
-    args = parser.parse_args()
-    if args.reset and not args.yes:
-        parser.error("Reset deletes application data; supply --reset --yes to confirm")
-    if args.yes and not args.reset:
-        parser.error("--yes is only valid with --reset")
+    # Accept previous invocations while making a plain run perform the requested reset.
+    parser.add_argument("--reset", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
+    parser.parse_args()
     try:
-        asyncio.run(run(args.reset))
+        asyncio.run(run(reset=True))
     except SQLAlchemyError as exc:
         parser.exit(1, database_error_message(exc) + "\n")
-    print(
-        "Application tables reset."
-        if args.reset
-        else "Application tables created; existing data preserved."
-    )
+    print("Application tables reset. Run seed_database.py to populate demo data.")
 
 
 if __name__ == "__main__":

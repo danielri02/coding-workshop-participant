@@ -3,10 +3,11 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..database import crud
+from ..domain.incidents import ACTIVE_STATUSES
 from ..models import Note
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
 from ..security.dependencies import AdminUser, CurrentUser
-from ..security.permissions import ACTIVE_STATUSES, accessible_incident
+from ..security.permissions import accessible_incident
 from .dependencies import NOTE_READ_OPTIONS, DatabaseSession, RecordID
 
 router = APIRouter(tags=[Note.__name__])

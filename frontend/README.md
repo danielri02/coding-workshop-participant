@@ -9,10 +9,8 @@ The backend-verified account selects the workspace after login:
   buildings, floors, seats, notes and reports. Demo: `admin@acme.inc` / `admin`.
 - Employee: submit incidents and track submitted reports, progress and updates.
   Demo: `employee@acme.inc` / `employee`.
-
 - Engineer: assigned incidents, shared notes and status changes, plus access to
-  their own submitted reports. Demo: `demo.engineer@acme.inc` with the configured
-  `SEED_PASSWORD` (the sample value is `development-only`).
+  their own submitted reports. Demo: `engineer@acme.inc` / `engineer`.
 
 Run the backend seed command to add the demo employee and expanded samples to an
 existing development database. Existing seeded accounts and passwords are preserved.
@@ -104,14 +102,15 @@ window, and search/actions stack vertically on narrow screens.
 
 `/employee/incidents` provides a server-paginated grid scoped to the current
 account's submitted reports, with search, status/priority/category/building filters
-and sorting. New incident uses the same validated location/category/priority
+and sorting. New incident uses the same validated location/category
 inputs as the admin form. The backend supplies the reporter identity and starts
-the report Open.
+the report Open with Low priority.
 
 Incident pages show location, assigned engineer name, workflow progress,
 blocked/escalation reasons and the shared notes conversation. Employees can add
-notes and change priority/escalation while their own incident is active. Resolved
-and closed reports remain readable. Assignment, status changes, edits/deletes,
+notes while their own incident is active. Priority starts Low and only admins can
+change it or escalate an incident. Resolved and closed reports remain readable.
+Assignment, status changes, edits/deletes,
 people-management links and admin navigation are absent. The employee workspace
 uses incident and note display names without requesting user directories or
 engineer profiles. Direct admin URLs return employees to their incident grid;
@@ -194,8 +193,11 @@ to open its details. Assigned engineer names link to the engineer profile, and V
 notes opens the incident's notes grid from either the grid or details dialog.
 Record links use `?record=<id>` and reopen the details dialog after a reload.
 
-The incident grid API is `GET /incidents/grid`; its pagination, filtering and sort
-parameters are documented in `../backend/README.md`. MUI's zero-based `page` and
+The incident grid defaults to most recently reported first (`created_at desc`).
+Its Assignment selector filters All incidents, Unassigned or Assigned, combining
+with text search and other grid filters. The incident grid API is
+`GET /incidents/grid`; its pagination, filtering and sort parameters are documented
+in `../backend/README.md`. MUI's zero-based `page` and
 `pageSize` map to `page` and `page_size`, and the response's `row_count` maps to
 `rowCount`. The incident page uses server modes for pagination, sorting and
 filtering. Other tables use client-side grid pagination/filtering on the complete

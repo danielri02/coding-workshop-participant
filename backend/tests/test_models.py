@@ -136,7 +136,7 @@ class ModelTests(unittest.TestCase):
         self.assertFalse(self.reporter.is_admin)
         self.assertTrue(self.engineer.is_available)
         self.assertEqual(incident.status, IncidentStatus.OPEN)
-        self.assertEqual(incident.priority, IncidentPriority.MEDIUM)
+        self.assertEqual(incident.priority, IncidentPriority.LOW)
         self.assertIsNone(incident.assignee_id)
         self.assertEqual(
             IncidentRead.model_validate(incident).created_at.utcoffset(), timedelta(0)

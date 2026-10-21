@@ -299,6 +299,75 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.json()["row_count"], 1)
 
+    async def test_unassigned_filter_and_newest_first_order_keep_permission_scope(
+        self,
+    ) -> None:
+        async with self.factory.begin() as session:
+            for index, incident_id in enumerate(self.reports.values()):
+                record = await session.get(Incident, incident_id)
+                record.created_at = datetime(
+                    2026, 1, 1, tzinfo=timezone.utc
+                ) + timedelta(hours=index)
+        for endpoint in ("/incidents", "/incidents/grid"):
+            response = await self.request(
+                "admin", "GET", endpoint + "?unassigned=true", 200
+            )
+            rows = (
+                response.json() if endpoint == "/incidents" else response.json()["rows"]
+            )
+            self.assertEqual([row["id"] for row in rows], [self.reports["other"]])
+            response = await self.request(
+                "admin", "GET", endpoint + "?unassigned=false", 200
+            )
+            rows = (
+                response.json() if endpoint == "/incidents" else response.json()["rows"]
+            )
+            self.assertEqual(
+                {row["id"] for row in rows},
+                {self.reports["assigned"], self.reports["engineer_owned"]},
+            )
+            response = await self.request(
+                "employee", "GET", endpoint + "?unassigned=true", 200
+            )
+            rows = (
+                response.json() if endpoint == "/incidents" else response.json()["rows"]
+            )
+            self.assertEqual(rows, [])
+        response = await self.request("admin", "GET", "/incidents/grid", 200)
+        self.assertEqual(
+            [row["id"] for row in response.json()["rows"]],
+            list(reversed(list(self.reports.values()))),
+        )
+        await self.request("admin", "GET", "/incidents/grid?unassigned=invalid", 422)
+
+    async def test_employee_cannot_supply_initial_priority_or_escalation(self) -> None:
+        for actor in ("employee", "engineer"):
+            response = await self.request(
+                actor, "POST", "/incidents", 201, self.report_data()
+            )
+            self.assertEqual(response.json()["priority"], "Low")
+            self.assertIsNone(response.json()["escalation_reason"])
+            for triage in (
+                {"priority": "High"},
+                {"priority": "Low"},
+                {"escalation_reason": "Urgent"},
+            ):
+                await self.request(
+                    actor, "POST", "/incidents", 403, {**self.report_data(), **triage}
+                )
+        response = await self.request(
+            "admin",
+            "POST",
+            "/incidents",
+            201,
+            {
+                **self.report_data(),
+                "priority": "High",
+                "escalation_reason": "Admin triage",
+            },
+        )
+        self.assertEqual(response.json()["priority"], "High")
+
     async def test_visible_incidents_and_notes_include_names_without_people_lookup(
         self,
     ) -> None:
@@ -522,10 +591,10 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.request("combined", "DELETE", f"/notes/{self.note_id}", 204)
 
-    async def test_status_and_priority_use_distinct_capabilities_and_active_rules(
+    async def test_only_admins_control_priority_while_assignees_change_status(
         self,
     ) -> None:
-        """Engineers transition assignments; reporters prioritize only own active work."""
+        """Engineers transition assignments; only admins can prioritize or escalate."""
 
         path = f"/incidents/{self.reports['assigned']}"
         await self.request(
@@ -551,14 +620,14 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
             "employee",
             "PATCH",
             path + "/priority",
-            200,
+            403,
             {"priority": "High", "escalation_reason": "Urgent impact"},
         )
         await self.request(
             "engineer",
             "PATCH",
             f"/incidents/{self.reports['engineer_owned']}/priority",
-            200,
+            403,
             {"priority": "High"},
         )
         for payload in (

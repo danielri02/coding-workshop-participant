@@ -7,10 +7,10 @@ import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { RecordFormDialog } from '../components/RecordFormDialog'
 import { ValueChip } from '../components/ValueChip'
-import { activeStatuses, transitions } from '../generated/domain'
+import { transitions } from '../generated/domain'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useLookups } from '../hooks/useLookups'
-import { priorityFields, statusFields } from '../resources/incidentActions'
+import { statusFields } from '../resources/incidentActions'
 import { floorLabel, recordLabel } from '../resources/rows'
 import { api } from '../services/client'
 import { invalidateResourceQueries } from '../services/queries'
@@ -27,13 +27,11 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
   const validId = Number.isSafeInteger(id) && id > 0 && id <= 2147483647
   const { user } = useAuth()
   const client = useQueryClient()
-  const [editing, setEditing] = useState<'priority' | 'status' | null>(null)
+  const [editing, setEditing] = useState(false)
   const query = useApiQuery<Incident | null>(validId ? `/incidents/${id}` : null, null)
   const lookups = useLookups({ lookups: ['buildings', 'floors', 'seats'] })
   const incident =
     query.data?.id === id && user && inIncidentScope(query.data, user, scope) ? query.data : null
-  const active = activeStatuses.some((status) => status === incident?.status)
-  const canChangePriority = active && incident?.reporter_id === user?.id
   const canChangeStatus = Boolean(
     incident &&
     user?.engineer_profile &&
@@ -43,11 +41,11 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
   const refresh = () =>
     void invalidateResourceQueries(client, 'incidents', ['buildings', 'floors', 'seats'])
   const save = async (payload: Record<string, unknown>) => {
-    await api<Incident>(`/incidents/${id}/${editing}`, {
+    await api<Incident>(`/incidents/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
-    setEditing(null)
+    setEditing(false)
     await invalidateResourceQueries(client, 'incidents')
   }
   const details = incident
@@ -127,19 +125,10 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
                 Report details
               </Typography>
               <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', gap: 1 }}>
-                {canChangePriority && (
-                  <Button
-                    variant="outlined"
-                    onClick={() => setEditing('priority')}
-                    disabled={query.loading}
-                  >
-                    Priority and escalation
-                  </Button>
-                )}
                 {canChangeStatus && (
                   <Button
                     variant="contained"
-                    onClick={() => setEditing('status')}
+                    onClick={() => setEditing(true)}
                     disabled={query.loading}
                   >
                     Change status
@@ -176,16 +165,14 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
             </Box>
           </Paper>
           <IncidentNotes key={incident.id} incident={incident} />
-          {editing && (editing === 'status' ? canChangeStatus : canChangePriority) && (
+          {editing && canChangeStatus && (
             <RecordFormDialog
-              title={editing === 'status' ? 'Change status' : 'Priority and escalation'}
-              fields={editing === 'status' ? statusFields(incident.status) : priorityFields}
-              row={
-                editing === 'status' ? { ...incident, status: '', blocked_reason: '' } : incident
-              }
+              title="Change status"
+              fields={statusFields(incident.status)}
+              row={{ ...incident, status: '', blocked_reason: '' }}
               lookups={lookups.data}
               onSave={save}
-              onClose={() => setEditing(null)}
+              onClose={() => setEditing(false)}
             />
           )}
         </>

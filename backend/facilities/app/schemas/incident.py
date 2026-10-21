@@ -26,7 +26,7 @@ class IncidentCreate(Schema):
     building_id: PositiveID
     floor_id: PositiveID | None = None
     seat_id: PositiveID | None = None
-    priority: IncidentPriority = IncidentPriority.MEDIUM
+    priority: IncidentPriority = IncidentPriority.LOW
     escalation_reason: Reason | None = None
 
     @model_validator(mode="after")
@@ -64,7 +64,7 @@ class IncidentAdminUpdate(PatchSchema):
 
 
 class IncidentPriorityUpdate(PatchSchema):
-    """Reporter-on-active-incident or admin priority and escalation changes."""
+    """Admin-only priority and escalation changes."""
 
     nullable_fields: ClassVar[frozenset[str]] = frozenset({"escalation_reason"})
 
@@ -137,6 +137,7 @@ class IncidentFilters(Schema):
     category: IncidentCategory | None = None
     search: Annotated[str, Field(max_length=200)] | None = None
     escalated: bool | None = None
+    unassigned: bool | None = None
 
 
 class IncidentGridQuery(IncidentFilters):
@@ -160,8 +161,8 @@ class IncidentGridQuery(IncidentFilters):
         "assigned_at",
         "acknowledged_at",
         "resolved_at",
-    ] = "id"
-    sort_direction: Literal["asc", "desc"] = "asc"
+    ] = "created_at"
+    sort_direction: Literal["asc", "desc"] = "desc"
 
 
 class IncidentPage(Schema):

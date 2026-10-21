@@ -147,9 +147,7 @@ export function ResourceGrid({
       loading={loading}
       initialState={{
         columns: {
-          columnVisibilityModel: server
-            ? { id: false, category: false, building_id: false, created_at: false }
-            : {},
+          columnVisibilityModel: server ? { id: false, category: false, building_id: false } : {},
         },
       }}
       rowCount={server ? rowCount : undefined}

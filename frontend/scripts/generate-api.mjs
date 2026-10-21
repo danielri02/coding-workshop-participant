@@ -20,6 +20,10 @@ const gridParameters = document.paths['/incidents/grid'].get.parameters.filter(
 const domain = {
   workshopService: document['x-workshop-service'],
   incidentGrid: {
+    defaultSort: {
+      field: gridParameters.find((parameter) => parameter.name === 'sort_by').schema.default,
+      sort: gridParameters.find((parameter) => parameter.name === 'sort_direction').schema.default,
+    },
     filterFields: gridParameters
       .map((parameter) => parameter.name)
       .filter(
