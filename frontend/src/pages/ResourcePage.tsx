@@ -13,7 +13,12 @@ import {
 import Add from '@mui/icons-material/Add'
 import Refresh from '@mui/icons-material/Refresh'
 import Search from '@mui/icons-material/Search'
-import type { GridFilterModel, GridPaginationModel, GridSortModel } from '@mui/x-data-grid'
+import type {
+  GridColumnVisibilityModel,
+  GridFilterModel,
+  GridPaginationModel,
+  GridSortModel,
+} from '@mui/x-data-grid'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import type { AdminOutlet } from '../components/AdminLayout'
@@ -27,6 +32,11 @@ import { useResourceActions } from '../hooks/useResourceActions'
 import { noteStatuses, incidentGrid } from '../generated/domain'
 import type { ResourceDefinition } from '../resources/definitions'
 import { incidentQuery } from '../resources/incidentQuery'
+import {
+  defaultIncidentColumns,
+  incidentViews,
+  incidentViewState,
+} from '../resources/incidentViews'
 import { decorateRow } from '../resources/rows'
 import type { ApiRecord, Incident, IncidentPage } from '../types'
 
@@ -43,6 +53,21 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   ])
   const [assignment, setAssignment] = useState('all')
   const [filters, setFilters] = useState<GridFilterModel>({ items: [] })
+  const [quickView, setQuickView] = useState('all')
+  const [visibility, setVisibility] = useState<GridColumnVisibilityModel>(defaultIncidentColumns)
+  const customize = () => setQuickView('custom')
+  const applyView = (id: string) => {
+    const view = incidentViews.find((item) => item.id === id)
+    if (!view) return
+    const next = incidentViewState(view)
+    setQuickView(view.id)
+    setSearch('')
+    setFilters(next.filters)
+    setAssignment(next.assignment)
+    setSorting(next.sorting)
+    setVisibility(next.columns)
+    setPagination((previous) => ({ ...previous, page: 0 }))
+  }
   const {
     user,
     editor,
@@ -174,6 +199,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
             value={search}
             disabled={resource.key === 'notes' && !scope}
             onChange={(event) => {
+              customize()
               setSearch(event.target.value)
               setPagination((previous) => ({ ...previous, page: 0 }))
             }}
@@ -192,11 +218,33 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           {server && (
             <TextField
               select
+              label="Quick view"
+              size="small"
+              value={quickView}
+              sx={{ minWidth: 190 }}
+              onChange={(event) => applyView(event.target.value)}
+            >
+              {incidentViews.map((view) => (
+                <MenuItem key={view.id} value={view.id}>
+                  {view.label}
+                </MenuItem>
+              ))}
+              {quickView === 'custom' && (
+                <MenuItem value="custom" disabled>
+                  Custom
+                </MenuItem>
+              )}
+            </TextField>
+          )}
+          {server && (
+            <TextField
+              select
               label="Assignment"
               size="small"
               value={assignment}
               sx={{ minWidth: 160 }}
               onChange={(event) => {
+                customize()
                 setAssignment(event.target.value)
                 setPagination((previous) => ({ ...previous, page: 0 }))
               }}
@@ -232,6 +280,11 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
             rowCount={rowCount}
             pagination={pagination}
             sorting={sorting}
+            visibility={visibility}
+            onVisibility={(model) => {
+              setVisibility(model)
+              customize()
+            }}
             filters={
               server
                 ? filters
@@ -244,10 +297,12 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
             }
             onPagination={setPagination}
             onSorting={(model) => {
+              customize()
               setSorting(model)
               setPagination((previous) => ({ ...previous, page: 0 }))
             }}
             onFilters={(model) => {
+              customize()
               setFilters(model)
               setPagination((previous) => ({ ...previous, page: 0 }))
             }}

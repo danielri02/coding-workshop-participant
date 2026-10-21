@@ -169,8 +169,8 @@ class DatabaseInitTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post(PATH, headers=self.headers)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.headers["cache-control"], "no-store")
-        self.assertEqual(response.json()["inserted"]["users"], 8)
-        self.assertEqual(response.json()["inserted"]["incidents"], 120)
+        self.assertEqual(response.json()["inserted"]["users"], 16)
+        self.assertEqual(response.json()["inserted"]["incidents"], 240)
         return response
 
     async def test_upgrade_expands_legacy_constraint_idempotently_without_changing_data(
@@ -255,10 +255,10 @@ class DatabaseInitTests(unittest.IsolatedAsyncioTestCase):
         await self.initialize()
         async with self.factory() as session:
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(User)), 8
+                await session.scalar(select(func.count()).select_from(User)), 16
             )
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(Incident)), 120
+                await session.scalar(select(func.count()).select_from(Incident)), 240
             )
             self.assertIsNone(
                 await session.scalar(
@@ -351,10 +351,10 @@ class DatabaseInitTests(unittest.IsolatedAsyncioTestCase):
         )
         async with self.factory() as session:
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(User)), 8
+                await session.scalar(select(func.count()).select_from(User)), 16
             )
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(Incident)), 120
+                await session.scalar(select(func.count()).select_from(Incident)), 240
             )
 
 

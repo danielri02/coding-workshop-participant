@@ -195,7 +195,9 @@ Read-only report endpoints calculate across the complete authorized incident set
 Locations, categories and timings accept `scope=visible` (default, caller's existing
 incident access), `personal` (own reports), or `assigned` (engineer assignments;
 requires Engineer capability). Employee and engineer access cannot be broadened
-by changing scope. The admin UI labels `visible` as “All incidents”.
+by changing scope. Admin report pages always use the complete visible scope; personal/assigned scope
+selectors are reserved for future employee/engineer views, while the API retains
+its existing scoped access checks.
 
 The summary defaults to `personal` and always covers the entire requested scope,
 independent of grid search, filters and pagination. Employee cards show active,
@@ -234,6 +236,14 @@ three `*_minutes` fields; defaults are created_at/desc, with nulls last and ID t
 
 Open/blocked/escalated incident lists and notes remain in the CRUD grids rather
 than duplicate report endpoints.
+
+### Admin incident quick views
+
+The incident grid offers All incidents, Needs assignment (Open and unassigned),
+Awaiting acceptance (Assigned), Blocked, Escalated, and Ready to close (Resolved).
+Each preset clears old search/filter state, restores newest-first ordering, resets
+the page, and selects useful columns. Blocked/Escalated include the matching reason
+column. Manual changes are labeled Custom; All incidents restores the default view.
 
 ### Unexpected errors and maintenance
 
@@ -290,13 +300,21 @@ on seed reruns. A pre-existing non-admin `admin@acme.inc` account is rejected ra
 than promoted. Public registration still requires 12–128 character passwords;
 these simple development seed credentials are explicit exceptions.
 
-A fresh seed includes eight users, four engineers (one unavailable and one with
-no assignments), three buildings, nine floors, 54 seats, 120 incidents and 307
-notes. The primary employee has 96 incidents across every status; two other
-employees own the remaining 24. Samples span about eight weeks, with uneven
-category counts, recurring locations, different priorities, varied engineer
-workloads and response times, blocked/escalated work, and conversations through
-resolution and closure. The newest 12 incidents form an unassigned intake queue.
+A fresh seed includes 16 users, eight engineers (including unavailable and idle
+engineers), six buildings, 18 floors, 108 seats, 240 incidents and 653 notes.
+The primary employee has 192 incidents across every status; five other employees
+own the remaining 48. Dates are relative to the time seeding runs: the dataset
+spans recent days through approximately 20 months, with every status and completed
+milestones in the last seven days. Category hotspots, priorities, engineer workloads,
+and response durations vary. The newest six tickets form an unassigned intake queue.
+Generated milestones and notes never lie in the future. Refresh tokens are created
+by actual logins, not by seeding.
+
+Additive seeding preserves existing ticket content and dates. To refresh a demo
+dataset's clock, explicitly reset and seed it again. For cloud, run
+`./backend/scripts/deploy-cloud.sh database --seed`; locally, run `create_tables.py`
+then `seed_database.py`. This replaces application data; normal redeployments do
+not move timestamps or reset records.
 
 ### Route permissions
 

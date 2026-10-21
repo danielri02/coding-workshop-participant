@@ -5,12 +5,14 @@ import os
 import secrets
 import sys
 import unittest
+from collections import Counter
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
 from argon2 import PasswordHasher
-from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy import create_engine, func, inspect, or_, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -19,6 +21,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from backend.app.database.config import DEFAULT_DATABASE_URL, get_database_url
 from backend.app.database.diagnostics import connection_summary, database_error_message
 from backend.app.database.session import get_session
+from backend.app.maintenance.sample_data import incidents
 from backend.app.models import (
     Base,
     Building,
@@ -37,6 +40,47 @@ from backend.scripts.seed_database import (
     DEFAULT_ENGINEER_PASSWORD,
     seed_database,
 )
+
+
+class SampleDataTests(unittest.TestCase):
+    def test_seed_clock_moves_the_complete_timeline_and_keeps_recent_work_diverse(self):
+        now = datetime(2026, 10, 21, 12, tzinfo=UTC)
+        samples = list(incidents(now))
+        later = list(incidents(now + timedelta(days=90)))
+        for before, after in zip(samples, later, strict=True):
+            for field in (
+                "created_at",
+                "assigned_at",
+                "acknowledged_at",
+                "resolved_at",
+            ):
+                timestamp = before.values[field]
+                if timestamp is not None:
+                    self.assertLessEqual(timestamp, now)
+                    self.assertGreaterEqual(timestamp, before.values["created_at"])
+                    self.assertEqual(
+                        after.values[field] - timestamp, timedelta(days=90)
+                    )
+        recent = [
+            sample
+            for sample in samples
+            if sample.values["created_at"] >= now - timedelta(days=7)
+        ]
+        self.assertEqual(
+            {sample.values["status"] for sample in recent}, set(IncidentStatus)
+        )
+        self.assertTrue(any(sample.values["resolved_at"] for sample in recent))
+        groups = Counter(
+            (sample.location, sample.values["category"]) for sample in recent
+        )
+        self.assertGreater(max(groups.values()), 1)
+        for age in (7, 30, 365):
+            self.assertTrue(
+                any(
+                    sample.values["created_at"] < now - timedelta(days=age)
+                    for sample in samples
+                )
+            )
 
 
 class DatabaseConfigTests(unittest.TestCase):
@@ -357,20 +401,20 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             counts,
             {
-                "users": 8,
-                "engineer_profiles": 4,
-                "buildings": 3,
-                "floors": 9,
-                "seats": 54,
-                "incidents": 120,
-                "notes": 311,
+                "users": 16,
+                "engineer_profiles": 8,
+                "buildings": 6,
+                "floors": 18,
+                "seats": 108,
+                "incidents": 240,
+                "notes": 653,
                 "refresh_tokens": 0,
             },
         )
         self.assertTrue(all(value == 0 for value in rerun.values()))
         async with self.factory() as session:
             users = (await session.scalars(select(User))).all()
-            self.assertEqual(sum(user.is_admin for user in users), 1)
+            self.assertEqual(sum(user.is_admin for user in users), 2)
             for user in users:
                 self.assertTrue(
                     await asyncio.to_thread(
@@ -406,16 +450,61 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                     select(Incident).where(Incident.reporter_id != employee.id)
                 )
             ).all()
-            self.assertEqual(len(own), 96)
-            self.assertEqual(len(others), 24)
+            self.assertEqual(len(own), 192)
+            self.assertEqual(len(others), 48)
             self.assertEqual({row.status for row in own}, set(IncidentStatus))
             self.assertEqual(
-                len({row.assignee_id for row in own if row.assignee_id}), 3
+                len({row.assignee_id for row in own if row.assignee_id}), 6
             )
             profiles = (await session.scalars(select(EngineerProfile))).all()
             self.assertEqual({row.is_available for row in profiles}, {True, False})
             authors = set(await session.scalars(select(Note.author_id)))
             self.assertGreaterEqual(len(authors), 4)
+
+    async def test_recent_seed_milestones_and_notes_are_not_in_the_future(self):
+        async with self.factory() as session:
+            await seed_database(session)
+            now = datetime.now(UTC)
+            cutoff = now - timedelta(days=7)
+            for milestone in (
+                Incident.assigned_at,
+                Incident.acknowledged_at,
+                Incident.resolved_at,
+            ):
+                self.assertGreater(
+                    await session.scalar(
+                        select(func.count(milestone)).where(
+                            Incident.created_at >= cutoff
+                        )
+                    ),
+                    0,
+                )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Incident)
+                    .where(
+                        or_(
+                            *[
+                                field > now
+                                for field in (
+                                    Incident.created_at,
+                                    Incident.assigned_at,
+                                    Incident.acknowledged_at,
+                                    Incident.resolved_at,
+                                )
+                            ]
+                        )
+                    )
+                ),
+                0,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count()).select_from(Note).where(Note.created_at > now)
+                ),
+                0,
+            )
 
     async def test_seed_preserves_existing_edits_and_passwords(self) -> None:
         """Reruns must not undo edited content, availability, or note deletions."""
@@ -445,7 +534,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 (await session.get(EngineerProfile, profile_id)).is_available
             )
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(Note)), 310
+                await session.scalar(select(func.count()).select_from(Note)), 652
             )
 
     async def test_seed_needs_no_password_environment_and_has_idle_engineer_and_unassigned_queue(
@@ -453,7 +542,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         async with self.factory() as session:
             counts = await seed_database(session)
-            self.assertEqual(counts["users"], 8)
+            self.assertEqual(counts["users"], 16)
             idle = await session.scalar(
                 select(User).where(User.email == "engineer4@acme.inc")
             )
@@ -669,7 +758,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(code, 0, stderr)
                 code, _, stderr = await self.cli(seed, invocation=invocation)
                 self.assertEqual(code, 0, stderr)
-                self.assertEqual(await self.inserted_user_count(), 8)
+                self.assertEqual(await self.inserted_user_count(), 16)
                 code, _, stderr = await self.cli(create, invocation=invocation)
                 self.assertEqual(code, 0, stderr)
                 self.assertEqual(await self.inserted_user_count(), 0)
@@ -702,7 +791,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, 0, stderr)
         code, stdout, stderr = await self.cli(seed)
         self.assertEqual(code, 0, stderr)
-        self.assertEqual(await self.inserted_user_count(), 8)
+        self.assertEqual(await self.inserted_user_count(), 16)
         code, stdout, stderr = await self.cli(seed)
         self.assertEqual(code, 0, stderr)
         self.assertIn("users=0", stdout)
@@ -712,7 +801,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.inserted_user_count(), 0)
         code, _, stderr = await self.cli(seed)
         self.assertEqual(code, 0, stderr)
-        self.assertEqual(await self.inserted_user_count(), 8)
+        self.assertEqual(await self.inserted_user_count(), 16)
         code, _, stderr = await self.cli(create, "--reset", "--yes")
         self.assertEqual(code, 0, stderr)
         self.assertEqual(await self.inserted_user_count(), 0)

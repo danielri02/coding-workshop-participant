@@ -106,7 +106,7 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
             users[account.key] = user
             if account.role == "admin" and not user.is_admin:
                 raise ValueError(
-                    "Existing admin@acme.inc is not an admin; refusing to grant a capability"
+                    f"Existing {account.email} is not an admin; refusing to grant a capability"
                 )
             if (
                 account.role == "engineer"
@@ -138,7 +138,8 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
                     counts["seats"] += created
                     locations.append((building, floor, seat))
 
-        for sample in incidents(datetime.now(timezone.utc)):
+        now = datetime.now(timezone.utc)
+        for sample in incidents(now):
             reporter = users[sample.reporter]
             engineer = users[sample.engineer] if sample.engineer else None
             building, floor, seat = locations[sample.location]
@@ -201,7 +202,7 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
                         incident_id=incident.id,
                         author_id=author.id,
                         body=body,
-                        created_at=timestamp,
+                        created_at=min(timestamp, now),
                     )
                 )
             counts["notes"] += len(updates)

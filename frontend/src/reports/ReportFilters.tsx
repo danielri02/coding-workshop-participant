@@ -3,18 +3,17 @@ import { useAuth } from '../auth/context'
 import { categories } from '../generated/domain'
 import { useLookups } from '../hooks/useLookups'
 import type { ReportKey } from './definitions'
-import { periods, type LocationLevel, type ReportFilters as Filters, type Scope } from './query'
+import { periods, type LocationLevel, type ReportFilters as Filters } from './query'
 
 interface Props {
   report: ReportKey
-  scope: Scope
   level: LocationLevel
   filters: Filters
   onChange: (values: Record<string, string>) => void
 }
 
-/** Share period and scope controls while keeping each report's dimensions explicit. */
-export function ReportFilters({ report, scope, level, filters, onChange }: Props) {
+/** Share period controls while keeping each admin report's dimensions explicit. */
+export function ReportFilters({ report, level, filters, onChange }: Props) {
   const { user } = useAuth()
   const lookups = useLookups({
     lookups:
@@ -56,13 +55,6 @@ export function ReportFilters({ report, scope, level, filters, onChange }: Props
       )}
       <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', gap: 2 }}>
         {select('Period', filters.period, 'period', periods)}
-        {select('Incident scope', scope, 'scope', [
-          { value: 'visible', label: user?.is_admin ? 'All incidents' : 'All visible incidents' },
-          { value: 'personal', label: 'My reported incidents' },
-          ...(user?.engineer_profile
-            ? [{ value: 'assigned', label: 'My assigned incidents' }]
-            : []),
-        ])}
         {report === 'locations' &&
           select('Group by location', level, 'level', [
             { value: 'building', label: 'Building' },

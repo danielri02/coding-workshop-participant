@@ -216,6 +216,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
     .fill(`test.${suffix}@acme.inc`)
   await page.getByRole('dialog').getByLabel('Initial password').fill('test-password-12345')
   const user = await save(page, '/users')
+  await page.getByRole('textbox', { name: 'Search users', exact: true }).fill(suffix)
   for (const label of ['Grant admin access', 'Remove admin access']) {
     await page.getByRole('button', { name: `More actions for users ${user.id}` }).click()
     await page.getByRole('menuitem', { name: label, exact: true }).click()
@@ -236,6 +237,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await page.getByRole('button', { name: 'New engineer', exact: true }).click()
   await select(page, 'Employee', `Engineer ${suffix} · test.${suffix}@acme.inc`)
   await save(page, '/engineer-profiles')
+  await page.getByRole('textbox', { name: 'Search engineers', exact: true }).fill(suffix)
   await page.getByRole('button', { name: `Edit engineers ${user.id}`, exact: true }).click()
   await page.getByRole('switch', { name: 'Available for assignment' }).uncheck()
   await save(page, `/engineer-profiles/${user.id}`, 'PATCH')
@@ -291,8 +293,10 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
   await remove(page, 'incidents', incident.id)
   await navigate(page, 'Engineers')
+  await page.getByRole('textbox', { name: 'Search engineers', exact: true }).fill(suffix)
   await remove(page, 'engineers', user.id)
   await navigate(page, 'Users')
+  await page.getByRole('textbox', { name: 'Search users', exact: true }).fill(suffix)
   await remove(page, 'users', user.id)
   await navigate(page, 'Seats')
   await page.getByRole('textbox', { name: 'Search seats' }).fill(suffix)
@@ -659,6 +663,112 @@ test('incident grid defaults to newest first and filters assignment with server 
   await expect(page.getByText('No records to show', { exact: true })).toBeVisible()
 })
 
+test('admin incident quick views reset stale filters and expose workflow reasons', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(90000)
+  const suffix = `quickview${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  for (const status of ['Open', 'Assigned', 'Blocked', 'Resolved']) {
+    const result = await request.post(`${apiUrl}/incidents`, {
+      headers,
+      data: {
+        title: `${suffix} ${status}`,
+        description: 'Quick view verification',
+        category: 'Other',
+        building_id: building.id,
+        ...(status === 'Open' ? { escalation_reason: 'Escalation quick view fixture' } : {}),
+      },
+    })
+    expect(result.ok()).toBeTruthy()
+    const incident = await result.json()
+    cleanup.unshift(`/incidents/${incident.id}`)
+    if (status !== 'Open') {
+      const updated = await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
+        headers,
+        data: {
+          status,
+          ...(status === 'Blocked' ? { blocked_reason: 'Blocked quick view fixture' } : {}),
+        },
+      })
+      expect(updated.ok(), await updated.text()).toBeTruthy()
+    }
+  }
+  await page.goto('/admin/incidents')
+  await signIn(page)
+  await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
+  await page.getByRole('option', { name: '10', exact: true }).click()
+  await page.getByRole('button', { name: 'Go to next page' }).click()
+  await page
+    .getByRole('textbox', { name: 'Search incidents', exact: true })
+    .fill('this search should be cleared')
+  for (const [view, field, value, reason] of [
+    ['Blocked', 'status', 'Blocked', 'Blocked reason'],
+    ['Escalated', 'escalated', 'true', 'Escalation reason'],
+    ['Ready to close', 'status', 'Resolved', ''],
+    ['Awaiting acceptance', 'status', 'Assigned', ''],
+    ['Needs assignment', 'unassigned', 'true', ''],
+  ]) {
+    const loaded = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return (
+        browserPath(url) === '/incidents/grid' &&
+        url.searchParams.get('page') === '0' &&
+        !url.searchParams.has('search') &&
+        (field
+          ? url.searchParams.get(field) === value
+          : !url.searchParams.has('status') &&
+            !url.searchParams.has('escalated') &&
+            !url.searchParams.has('unassigned'))
+      )
+    })
+    await page.getByRole('combobox', { name: 'Quick view', exact: true }).click()
+    await page.getByRole('option', { name: view, exact: true }).click()
+    const response = await loaded
+    expect(response.status()).toBe(200)
+    const data = await response.json()
+    expect(data.rows.length).toBeGreaterThan(0)
+    expect(data.page).toBe(0)
+    await expect(page.getByRole('textbox', { name: 'Search incidents', exact: true })).toHaveValue(
+      '',
+    )
+    await expect(page.getByRole('combobox', { name: 'Quick view', exact: true })).toHaveText(view)
+    if (reason) {
+      await expect(page.getByRole('columnheader', { name: reason, exact: true })).toBeVisible()
+      await expect(
+        page.getByRole('gridcell', {
+          name: `${reason === 'Blocked reason' ? 'Blocked' : 'Escalation'} quick view fixture`,
+          exact: true,
+        }),
+      ).toBeVisible()
+    } else {
+      await expect(
+        page.getByRole('columnheader', { name: 'Blocked reason', exact: true }),
+      ).toBeHidden()
+      await expect(
+        page.getByRole('columnheader', { name: 'Escalation reason', exact: true }),
+      ).toBeHidden()
+    }
+  }
+  await page.getByRole('combobox', { name: 'Quick view', exact: true }).click()
+  await page.getByRole('option', { name: 'All incidents', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Quick view', exact: true })).toHaveText(
+    'All incidents',
+  )
+  await expect(page.getByRole('link', { name: `${suffix} Resolved`, exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: 'Blocked reason', exact: true })).toBeHidden()
+  await expect(
+    page.getByRole('columnheader', { name: 'Escalation reason', exact: true }),
+  ).toBeHidden()
+  await page.getByRole('textbox', { name: 'Search incidents', exact: true }).fill(suffix)
+  await expect(page.getByRole('combobox', { name: 'Quick view', exact: true })).toHaveText('Custom')
+  await page.setViewportSize({ width: 320, height: 640 })
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+    .toBeLessThanOrEqual(1)
+})
+
 test('reports provide aggregate grids and backend timing search, paging and sorting', async ({
   request,
   page,
@@ -791,8 +901,7 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   await page.getByRole('button', { name: `View incident ${ids[0]}`, exact: true }).click()
   await expect(page.getByRole('dialog').getByText(`${suffix} 00`, { exact: true })).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Incident scope' }).click()
-  await page.getByRole('option', { name: 'My reported incidents', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Incident scope' })).toBeHidden()
   await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
   await page.getByRole('combobox', { name: 'Category', exact: true }).click()
   await page.getByRole('option', { name: 'Other', exact: true }).click()
@@ -805,7 +914,10 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   await expect(page.getByText('1 recorded of 1 matching incidents', { exact: true })).toHaveCount(3)
   await page.getByRole('combobox', { name: 'Period', exact: true }).click()
   await page.getByRole('option', { name: 'All time', exact: true }).click()
-  await page.reload()
+  const legacy = new URL(page.url())
+  legacy.searchParams.set('scope', 'personal')
+  await page.goto(legacy.toString())
+  await expect.poll(() => new URL(page.url()).searchParams.has('scope')).toBe(false)
   await expect(page.getByRole('combobox', { name: 'Current engineer', exact: true })).toHaveText(
     engineerUser.name,
   )

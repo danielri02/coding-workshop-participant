@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/material'
 import Refresh from '@mui/icons-material/Refresh'
@@ -14,7 +14,6 @@ import {
   periods,
   type LocationLevel,
   type Report,
-  type Scope,
   type ReportFilters as FilterValues,
 } from '../reports/query'
 
@@ -22,12 +21,17 @@ import {
 export function ReportPage({ definition }: { definition: ReportDefinition }) {
   const [params, setParams] = useSearchParams()
   const client = useQueryClient()
-  const scope: Scope =
-    params.get('scope') === 'personal'
-      ? 'personal'
-      : params.get('scope') === 'assigned'
-        ? 'assigned'
-        : 'visible'
+  useEffect(() => {
+    if (!params.has('scope')) return
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        next.delete('scope')
+        return next
+      },
+      { replace: true },
+    )
+  }, [params, setParams])
   const level: LocationLevel =
     params.get('level') === 'floor' ? 'floor' : params.get('level') === 'seat' ? 'seat' : 'building'
   const filters: FilterValues = {
@@ -44,7 +48,7 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
   const [sorting, setSorting] = useState<GridSortModel>([{ field: 'created_at', sort: 'desc' }])
   const path = reportQuery(
     definition.key,
-    scope,
+    'visible',
     level,
     pagination,
     sorting,
@@ -81,7 +85,6 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
       </Box>
       <ReportFilters
         report={definition.key}
-        scope={scope}
         level={level}
         filters={filters}
         onChange={changeFilters}

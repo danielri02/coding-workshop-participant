@@ -4,6 +4,11 @@ import { incidentQuery } from '../src/resources/incidentQuery'
 import { formPayload, type Field } from '../src/resources/forms'
 import { decorateRow } from '../src/resources/rows'
 import {
+  defaultIncidentColumns,
+  incidentViews,
+  incidentViewState,
+} from '../src/resources/incidentViews'
+import {
   activeStatuses,
   adminTransitions,
   noteStatuses,
@@ -91,6 +96,29 @@ test('grid queries retain false filters, ignore cleared values and encode litera
   assert.equal(params.get('escalated'), 'false')
   assert.equal(params.has('status'), false)
   assert.equal(params.has('internal_field'), false)
+})
+
+test('incident presets reset queues and show only their relevant reason columns', () => {
+  const states = Object.fromEntries(incidentViews.map((view) => [view.id, incidentViewState(view)]))
+  const query = (id: string) =>
+    new URL(
+      incidentQuery({ page: 0, pageSize: 25 }, states[id].sorting, states[id].filters, '', {
+        unassigned: states[id].assignment === 'unassigned' ? true : undefined,
+      }),
+      'http://localhost',
+    ).searchParams
+  assert.equal(query('blocked').get('status'), 'Blocked')
+  assert.equal(states.blocked.columns.blocked_reason, true)
+  assert.equal(states.blocked.columns.escalation_reason, false)
+  assert.equal(query('escalated').get('escalated'), 'true')
+  assert.equal(states.escalated.columns.escalation_reason, true)
+  assert.equal(query('unassigned').get('unassigned'), 'true')
+  assert.equal(query('unassigned').get('status'), 'Open')
+  assert.equal(query('assigned').get('status'), 'Assigned')
+  assert.equal(query('resolved').get('status'), 'Resolved')
+  assert.equal(query('all').has('status'), false)
+  assert.deepEqual(states.all.columns, defaultIncidentColumns)
+  assert.equal(defaultIncidentColumns.blocked_reason, false)
 })
 
 test('employee grid scope cannot be replaced by an incidental reporter filter', () => {

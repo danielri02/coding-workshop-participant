@@ -6,6 +6,7 @@ import MoreHoriz from '@mui/icons-material/MoreHoriz'
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
 import {
   type GridColDef,
+  type GridColumnVisibilityModel,
   type GridFilterModel,
   type GridPaginationModel,
   type GridSortModel,
@@ -14,6 +15,7 @@ import PropTypes from 'prop-types'
 import { DataTable } from './DataTable'
 import type { AdminRow, ResourceKey } from '../types'
 import { incidentCommands } from '../resources/incidentActions'
+import { defaultIncidentColumns } from '../resources/incidentViews'
 
 export type RowAction =
   'view' | 'edit' | 'delete' | 'admin' | 'assignment' | 'priority' | 'status' | 'notes'
@@ -102,6 +104,8 @@ interface GridProps {
   pagination: GridPaginationModel
   sorting: GridSortModel
   filters: GridFilterModel
+  visibility?: GridColumnVisibilityModel
+  onVisibility?: (model: GridColumnVisibilityModel) => void
   onPagination: (model: GridPaginationModel) => void
   onSorting: (model: GridSortModel) => void
   onFilters: (model: GridFilterModel) => void
@@ -119,6 +123,8 @@ export function ResourceGrid({
   pagination,
   sorting,
   filters,
+  visibility,
+  onVisibility,
   onPagination,
   onSorting,
   onFilters,
@@ -147,7 +153,7 @@ export function ResourceGrid({
       loading={loading}
       initialState={{
         columns: {
-          columnVisibilityModel: server ? { id: false, category: false, building_id: false } : {},
+          columnVisibilityModel: server ? defaultIncidentColumns : {},
         },
       }}
       rowCount={server ? rowCount : undefined}
@@ -160,6 +166,8 @@ export function ResourceGrid({
       onSortModelChange={onSorting}
       filterModel={filters}
       onFilterModelChange={onFilters}
+      columnVisibilityModel={server ? visibility : undefined}
+      onColumnVisibilityModelChange={server ? onVisibility : undefined}
       onRowDoubleClick={({ row }) => {
         if (!disabled) onAction('view', row)
       }}
@@ -177,6 +185,8 @@ ResourceGrid.propTypes = {
   pagination: PropTypes.object.isRequired,
   sorting: PropTypes.array.isRequired,
   filters: PropTypes.object.isRequired,
+  visibility: PropTypes.object,
+  onVisibility: PropTypes.func,
   onPagination: PropTypes.func.isRequired,
   onSorting: PropTypes.func.isRequired,
   onFilters: PropTypes.func.isRequired,

@@ -71,7 +71,13 @@ export const resources: ResourceDefinition[] = [
           ),
         },
         tag('status', 'Status', statuses),
+        { ...text('blocked_reason', 'Blocked reason', 320), sortable: false, filterable: false },
         tag('priority', 'Priority', priorities),
+        {
+          ...text('escalation_reason', 'Escalation reason', 320),
+          sortable: false,
+          filterable: false,
+        },
         {
           ...text('category', 'Category', 145),
           type: 'singleSelect',

@@ -31,11 +31,26 @@ ACCOUNTS = (
     Account("engineer4", "Morgan Reed", "engineer"),
     Account("employee2", "Taylor Morgan", "employee"),
     Account("employee3", "Casey Jordan", "employee"),
+    Account("admin2", "Jamie Brooks", "admin"),
+    Account("engineer5", "Riley Singh", "engineer"),
+    Account("engineer6", "Jordan Rivera", "engineer"),
+    Account("engineer7", "Alex Kim", "engineer", available=False),
+    Account("engineer8", "Cameron Lee", "engineer"),
+    Account("employee4", "Dana Wilson", "employee"),
+    Account("employee5", "Chris Nguyen", "employee"),
+    Account("employee6", "Robin Garcia", "employee"),
 )
-BUILDINGS = ("Demo Headquarters", "Demo Annex", "Demo Operations")
+BUILDINGS = (
+    "Demo Headquarters",
+    "Demo Annex",
+    "Demo Operations",
+    "Demo Research",
+    "Demo Training",
+    "Demo Warehouse",
+)
 FLOORS = ("1", "2", "3")
 SEATS = ("A1", "A2", "A3", "B1", "B2", "B3")
-INCIDENT_COUNT = 120
+INCIDENT_COUNT = 240
 CATEGORIES = (
     (Category.HVAC,) * 5
     + (Category.NETWORK,) * 4
@@ -104,13 +119,19 @@ class SampleIncident:
 
 
 def incidents(now: datetime) -> Iterator[SampleIncident]:
-    """Cover eight weeks, weighted categories and hotspots, plus a fresh unassigned queue."""
+    """Rolling samples spanning days to years, including completed work this week."""
 
     anchor = now.replace(minute=0, second=0, microsecond=0)
     for index in range(INCIDENT_COUNT):
         category = CATEGORIES[(index * 7) % len(CATEGORIES)]
-        status = Status.OPEN if index >= 108 else STATUSES[index % len(STATUSES)]
-        assigned = index < 108 and (status != Status.OPEN or index % 3 != 0)
+        status = (
+            Status.OPEN
+            if index >= INCIDENT_COUNT - 6
+            else STATUSES[index % len(STATUSES)]
+        )
+        assigned = status != Status.OPEN or (
+            index < INCIDENT_COUNT - 6 and index % 3 != 0
+        )
         if assigned and status == Status.OPEN:
             status = Status.ASSIGNED
         acknowledged = status not in {Status.OPEN, Status.ASSIGNED}
@@ -126,21 +147,33 @@ def incidents(now: datetime) -> Iterator[SampleIncident]:
                 else Priority.LOW
             )
         )
-        created = anchor - timedelta(hours=(INCIDENT_COUNT - 1 - index) * 14)
+        if index < 24:
+            age = timedelta(days=600 - index * 9)
+        elif index < 72:
+            age = timedelta(days=350 - (index - 24) * 6)
+        elif index < 168:
+            age = timedelta(hours=29 * 24 - (index - 72) * 5)
+        else:
+            age = timedelta(hours=6 + (INCIDENT_COUNT - 1 - index) * 2)
+        created = anchor - age
         assigned_at = (
-            created + timedelta(minutes=(5, 15, 30, 60, 120, 360)[index % 6])
+            created
+            + min(timedelta(minutes=(5, 15, 30, 60, 120, 360)[index % 6]), age / 10)
             if assigned
             else None
         )
         acknowledged_at = (
-            assigned_at + timedelta(minutes=10 + index % 90) if acknowledged else None
+            assigned_at + min(timedelta(minutes=10 + index % 90), age / 10)
+            if acknowledged
+            else None
         )
         resolved_at = (
-            acknowledged_at + timedelta(hours=2 + (index * 7) % 72)
+            acknowledged_at + min(timedelta(hours=2 + (index * 7) % 72), age / 2)
             if resolved
             else None
         )
-        location = (index * 13) % (len(BUILDINGS) * len(FLOORS) * len(SEATS))
+        # Preserve the first 120 samples' natural keys when adding to an older seed.
+        location = (index * 13) % 54 + (54 if index >= 120 else 0)
         if category == Category.HVAC and index % 4:
             location = 0
         elif category == Category.NETWORK and index % 3:
@@ -151,15 +184,30 @@ def incidents(now: datetime) -> Iterator[SampleIncident]:
         yield SampleIncident(
             reporter="employee"
             if index % 5
-            else ("employee2" if index % 2 else "employee3"),
+            else (
+                ("employee2" if index % 2 else "employee3")
+                if index < 120
+                else ("employee4", "employee5", "employee6")[(index // 5) % 3]
+            ),
             engineer=(
-                "engineer",
-                "engineer",
-                "engineer",
-                "engineer2",
-                "engineer2",
-                "engineer3",
-            )[index % 6]
+                (
+                    "engineer",
+                    "engineer",
+                    "engineer",
+                    "engineer2",
+                    "engineer2",
+                    "engineer3",
+                )[index % 6]
+                if index < 120
+                else (
+                    "engineer",
+                    "engineer5",
+                    "engineer6",
+                    "engineer7",
+                    "engineer",
+                    "engineer2",
+                )[index % 6]
+            )
             if assigned
             else None,
             location=location,
