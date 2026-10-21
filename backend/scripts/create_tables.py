@@ -17,26 +17,13 @@ from pathlib import Path
 if __package__ in {None, "", "scripts"}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from backend.app.database.diagnostics import database_error_message
 from backend.app.database.session import engine
-from backend.app.models import Base
-from backend.scripts import SETUP_LOCK_ID
+from backend.app.maintenance.tables import initialize_database
 
-
-async def initialize_database(
-    database_engine: AsyncEngine, *, reset: bool = False
-) -> None:
-    """Create missing tables; reset drops only application tables and their data."""
-
-    async with database_engine.begin() as connection:
-        await connection.execute(select(func.pg_advisory_xact_lock(SETUP_LOCK_ID)))
-        if reset:
-            await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+__all__ = ["initialize_database"]
 
 
 async def run(reset: bool) -> None:

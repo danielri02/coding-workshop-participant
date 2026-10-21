@@ -53,7 +53,7 @@ class CloudTerraformTests(unittest.TestCase):
                 environment,
                 capture=True,
             )
-            self.assertIn("3 passed, 0 failed", output)
+            self.assertIn("4 passed, 0 failed", output)
             self.assertNotRegex(
                 output,
                 r'resource "aws_(?:security_group(?:_rule)?|vpc_security_group_(?:ingress|egress)_rule)"',

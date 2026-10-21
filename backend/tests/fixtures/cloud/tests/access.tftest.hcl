@@ -10,7 +10,13 @@ mock_provider "aws" {
 }
 variables {
   facilities_local_environment = { DATABASE_URL = "postgresql://local/local", JWT_SECRET_KEY = "local-only" }
-  facilities_cloud_environment = { JWT_SECRET_KEY = "cloud-fixture-signing-key-at-least-32-characters" }
+  facilities_cloud_environment = {
+    JWT_SECRET_KEY         = "cloud-fixture-signing-key-at-least-32-characters"
+    DATABASE_RESET_KEY     = "cloud-fixture-reset-key-at-least-32-characters"
+    SEED_ADMIN_PASSWORD    = "cloud-fixture-admin-password"
+    SEED_EMPLOYEE_PASSWORD = "cloud-fixture-employee-password"
+    SEED_ENGINEER_PASSWORD = "cloud-fixture-engineer-password"
+  }
 }
 run "cloud_uses_cloud_only_settings_and_url_grants" {
   command = plan
@@ -21,6 +27,10 @@ run "cloud_uses_cloud_only_settings_and_url_grants" {
   assert {
     condition     = !contains(keys(module.lambda["example"].environment), "JWT_SECRET_KEY") && module.lambda["facilities"].memory == 256 && module.lambda["example"].memory == 128
     error_message = "Facilities changes must leave other services alone."
+  }
+  assert {
+    condition     = module.lambda["facilities"].environment["DATABASE_RESET_KEY"] == var.facilities_cloud_environment["DATABASE_RESET_KEY"] && module.lambda["facilities"].environment["SEED_ADMIN_PASSWORD"] == var.facilities_cloud_environment["SEED_ADMIN_PASSWORD"] && !contains(keys(module.lambda["example"].environment), "DATABASE_RESET_KEY")
+    error_message = "Only the facilities backend receives the reset key and configured seed credentials."
   }
   assert {
     condition     = module.lambda["facilities"].docker && module.lambda["facilities"].docker_options == tolist(["--platform=linux/amd64"]) && length(keys(module.lambda["facilities"].cors)) == 0
@@ -62,5 +72,15 @@ run "local_settings_and_access_still_work" {
 run "cloud_without_signing_key_is_rejected" {
   command = plan
   variables { facilities_cloud_environment = {} }
+  expect_failures = [var.facilities_cloud_environment]
+}
+run "weak_database_reset_key_is_rejected" {
+  command = plan
+  variables {
+    facilities_cloud_environment = {
+      JWT_SECRET_KEY     = "cloud-fixture-signing-key-at-least-32-characters"
+      DATABASE_RESET_KEY = "short"
+    }
+  }
   expect_failures = [var.facilities_cloud_environment]
 }

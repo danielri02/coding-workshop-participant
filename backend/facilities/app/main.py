@@ -12,6 +12,7 @@ from .errors import ErrorResponseMiddleware
 from .routes import (
     auth,
     buildings,
+    dev,
     engineer_profiles,
     floors,
     incidents,
@@ -58,5 +59,6 @@ for api_router in (
     incidents.router,
     notes.router,
     reports.router,
+    dev.router,
 ):
     app.include_router(api_router)

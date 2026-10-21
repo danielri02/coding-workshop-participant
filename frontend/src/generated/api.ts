@@ -77,6 +77,23 @@ export interface components {
       percentage: number
     }
     /**
+     * DatabaseInitRequest
+     * @description An optional empty body; no arbitrary database credentials or reset flags.
+     */
+    DatabaseInitRequest: Record<string, never>
+    /** DatabaseInitResult */
+    DatabaseInitResult: {
+      /**
+       * Initialized
+       * @default true
+       */
+      initialized: boolean
+      /** Inserted */
+      inserted: {
+        [key: string]: number
+      }
+    }
+    /**
      * EngineerProfileCreate
      * @description Admin-only promotion of an existing employee to an engineer.
      */

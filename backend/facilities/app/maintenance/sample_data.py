@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from backend.app.models import IncidentCategory as Category
-from backend.app.models import IncidentPriority as Priority
-from backend.app.models import IncidentStatus as Status
+from ..models import IncidentCategory as Category
+from ..models import IncidentPriority as Priority
+from ..models import IncidentStatus as Status
 
 
 @dataclass(frozen=True)

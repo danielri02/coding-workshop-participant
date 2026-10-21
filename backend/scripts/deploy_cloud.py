@@ -2,7 +2,8 @@
 
 Commands: plan (default), backend, frontend, database [--seed], smoke [--login].
 Configuration: repository-root .env.cloud; --env-file or APP_ENV_FILE overrides it.
-No database reset runs during deployment. Requires a committed, clean checkout.
+The database command explicitly resets application data to the seed dataset.
+Requires a committed, clean checkout.
 """
 
 import argparse
@@ -32,6 +33,10 @@ RUNTIME_KEYS = (
     "ACCESS_TOKEN_EXPIRE_MINUTES",
     "REFRESH_TOKEN_EXPIRE_DAYS",
     "FRONTEND_ORIGIN",
+    "DATABASE_RESET_KEY",
+    "SEED_ADMIN_PASSWORD",
+    "SEED_EMPLOYEE_PASSWORD",
+    "SEED_ENGINEER_PASSWORD",
 )
 ROLES = ("admin", "employee", "engineer")
 
@@ -147,6 +152,11 @@ def runtime_settings(environment: dict[str, str]) -> dict[str, str]:
     from backend.app.security.config import get_security_settings
 
     get_security_settings(environment)
+    key = environment.get("DATABASE_RESET_KEY", "")
+    if key and (len(key.encode("utf-8")) < 32 or not key.strip()):
+        raise CloudError(
+            "DATABASE_RESET_KEY must contain at least 32 bytes when enabled."
+        )
     origin = environment.get("FRONTEND_ORIGIN", "")
     if origin and not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?/?", origin):
         raise CloudError("FRONTEND_ORIGIN must be an HTTPS origin without a path.")
@@ -317,43 +327,67 @@ def prepare(
     return environment
 
 
-def deployed_environment(root: Path, environment: dict[str, str]) -> dict[str, str]:
-    """Read the actual Lambda environment; no second database URL or password file."""
+def maintain_database(root: Path, environment: dict[str, str]) -> None:
+    """Run reset/seed through the backend API instead of a VDI PostgreSQL connection."""
+
+    key = environment.get("DATABASE_RESET_KEY", "")
+    if len(key.encode("utf-8")) < 32 or not key.strip():
+        raise CloudError(
+            "Configure DATABASE_RESET_KEY and deploy the backend before database setup."
+        )
     function = command(
         ["terraform", "-chdir=infra", "output", "-raw", "facilities_function_name"],
         root,
         environment,
         capture=True,
     ).strip()
-    actual = aws_json(
-        root,
-        environment,
-        "lambda",
-        "get-function-configuration",
-        "--function-name",
-        function,
-    )["Environment"]["Variables"]
-    if (
-        actual.get("IS_LOCAL") != "false"
-        or not actual.get("POSTGRES_HOST")
-        or actual.get("DATABASE_URL")
-    ):
-        raise CloudError(
-            "Deployed facilities database settings are not the expected cloud configuration."
+    urls = json.loads(
+        command(
+            ["terraform", "-chdir=infra", "output", "-json", "lambda_urls"],
+            root,
+            environment,
+            capture=True,
         )
-    runtime_settings(actual)
-    return {**clean_environment(environment), **actual, "APP_ENV_FILE": ""}
+    )
+    url = urls.get(function) if isinstance(urls, dict) else None
+    if not isinstance(url, str) or not re.fullmatch(
+        r"https://[a-z0-9-]+\.lambda-url\.[a-z0-9-]+\.on\.aws/?", url
+    ):
+        raise CloudError("Terraform did not return an HTTPS facilities Function URL.")
+    # The Function URL serves the same API without CloudFront's shorter timeout.
+    print(
+        "Reinitializing application data to seed data through the backend API…",
+        flush=True,
+    )
+    result = request_json(
+        url.rstrip("/") + "/api/facilities/dev/database/init",
+        payload={},
+        extra_headers={"X-Database-Reset-Key": key},
+        timeout=330,
+    )
+    if not isinstance(result, dict) or result.get("initialized") is not True:
+        raise CloudError("The backend did not confirm database initialization.")
+    counts = result.get("inserted")
+    if not isinstance(counts, dict) or not all(
+        type(count) is int and count >= 0 for count in counts.values()
+    ):
+        raise CloudError("The backend returned invalid database setup counts.")
+    print(
+        f"Application database reinitialized to seed data: {sum(counts.values())} records inserted."
+    )
 
 
-def request_json(url: str, *, payload=None, token=None, expected=200):
-    headers = {"Accept": "application/json"}
+def request_json(
+    url: str, *, payload=None, token=None, expected=200, extra_headers=None, timeout=45
+):
+    headers = {"Accept": "application/json", **(extra_headers or {})}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = None if payload is None else json.dumps(payload).encode()
     if data is not None:
         headers["Content-Type"] = "application/json"
     try:
-        response = urlopen(Request(url, data=data, headers=headers), timeout=45)  # nosec B310
+        response = urlopen(Request(url, data=data, headers=headers), timeout=timeout)  # nosec B310
     except HTTPError as exc:
         response = exc
     with response:
@@ -361,8 +395,22 @@ def request_json(url: str, *, payload=None, token=None, expected=200):
             expected != 204
             and "application/json" not in response.headers.get("Content-Type", "")
         ):
+            hints = {
+                403: "Check DATABASE_RESET_KEY matches the deployed backend.",
+                404: "Deploy the updated backend to add /dev/database/init.",
+                422: "Check the deployed SEED_*_PASSWORD configuration.",
+                503: "Check DATABASE_RESET_KEY is enabled and the backend is available.",
+            }
+            hint = (
+                hints.get(
+                    response.status,
+                    "Check backend logs and Lambda-to-Aurora connectivity.",
+                )
+                if url.endswith("/dev/database/init")
+                else "Check backend availability and the API configuration."
+            )
             raise CloudError(
-                "Cloud API smoke check returned an unexpected status or content type."
+                f"Backend API request failed (HTTP {response.status}). {hint}"
             )
         return json.load(response) if expected != 204 else None
 
@@ -443,7 +491,7 @@ def main() -> None:
     parser.add_argument(
         "--seed",
         action="store_true",
-        help="Seed after non-destructive initialization (database only)",
+        help="Compatibility option: database always reinitializes application data to the seed dataset",
     )
     parser.add_argument(
         "--login", action="store_true", help="Also check demo logins (smoke only)"
@@ -465,7 +513,7 @@ def main() -> None:
         # Prevent package imports from reading the local root .env.
         os.environ["APP_ENV_FILE"] = ""
         runtime_settings(environment)
-        if args.seed or args.login:
+        if args.login:
             validate_seed(environment)
         for tool in ("git", "bash", "aws", "terraform", "curl", "jq", "dig"):
             if not shutil.which(tool, path=environment.get("PATH")):
@@ -501,22 +549,14 @@ def main() -> None:
                 command(["npm", "ci"], root / "frontend", environment)
                 command(["bash", "bin/deploy-frontend.sh", "aws"], root, environment)
             elif args.action == "database":
-                actual = deployed_environment(root, environment)
-                for script in (
-                    "check_database",
-                    "initialize_database",
-                    *(["seed_database"] if args.seed else []),
-                ):
-                    command(
-                        [sys.executable, f"backend/scripts/{script}.py"], root, actual
-                    )
+                maintain_database(root, environment)
             else:
                 smoke(root, environment, args.login)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as exc:
         message = (
             str(exc)
             if isinstance(exc, ValueError)
-            else "Cloud command failed. Check tool output, AWS access, and VPC connectivity; no reset was attempted."
+            else "Cloud command failed. Check tool output, AWS access and backend connectivity."
         )
         parser.exit(1, message + "\n")
 

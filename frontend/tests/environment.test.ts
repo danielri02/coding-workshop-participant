@@ -14,7 +14,7 @@ function fixture() {
   )
   writeFileSync(
     resolve(root, '.env'),
-    'VITE_API_MODE=workshop\nPOSTGRES_PASS=private-password\nJWT_SECRET_KEY=private-signing-key\nVITE_UNAPPROVED=private-canary\n',
+    'VITE_API_MODE=workshop\nPOSTGRES_PASS=private-password\nJWT_SECRET_KEY=private-signing-key\nDATABASE_RESET_KEY=private-reset-key\nSEED_ADMIN_PASSWORD=private-admin-password\nVITE_UNAPPROVED=private-canary\n',
   )
   return root
 }
@@ -68,7 +68,10 @@ test('only approved API values enter the browser definitions', () => {
   try {
     const definitions = publicEnvironmentDefinitions(applicationEnvironment(root, {}))
     assert.equal(Object.keys(definitions).length, 3)
-    assert.doesNotMatch(JSON.stringify(definitions), /private-|POSTGRES|JWT|UNAPPROVED/)
+    assert.doesNotMatch(
+      JSON.stringify(definitions),
+      /private-|POSTGRES|JWT|DATABASE_RESET|SEED_|UNAPPROVED/,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

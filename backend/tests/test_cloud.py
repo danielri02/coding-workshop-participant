@@ -24,6 +24,7 @@ class CloudTests(unittest.TestCase):
             "PARTICIPANT_CODE": "fixture",
             "AWS_REGION": "us-east-1",
             "JWT_SECRET_KEY": secrets.token_urlsafe(48),
+            "DATABASE_RESET_KEY": secrets.token_urlsafe(48),
             **{
                 f"SEED_{role.upper()}_PASSWORD": secrets.token_urlsafe(24)
                 for role in cloud.ROLES
@@ -296,34 +297,109 @@ class CloudTests(unittest.TestCase):
                     )
                 )
 
-    def test_maintenance_uses_deployed_configuration_instead_of_local_database_settings(
-        self,
-    ):
-        actual = {
-            "IS_LOCAL": "false",
-            "POSTGRES_HOST": "database.internal",
-            "POSTGRES_NAME": "cloud_database",
-            "POSTGRES_PASS": secrets.token_urlsafe(24),
-            "JWT_SECRET_KEY": secrets.token_urlsafe(48),
-        }
+    def maintenance_fixture(self, url="https://fixture.lambda-url.us-east-1.on.aws/"):
+        def run(args, root, environment, *, capture=False):
+            self.assertEqual(args[:3], ["terraform", "-chdir=infra", "output"])
+            if args[-1] == "facilities_function_name":
+                return "coding-workshop-facilities-abcd1234"
+            self.assertEqual(args[-1], "lambda_urls")
+            return json.dumps({"coding-workshop-facilities-abcd1234": url})
+
+        return run
+
+    def test_database_command_calls_the_key_protected_backend_api(self):
+        environment = self.environment()
+        output = io.StringIO()
         with (
-            patch.object(cloud, "command", return_value="facilities-cloud"),
             patch.object(
-                cloud, "aws_json", return_value={"Environment": {"Variables": actual}}
-            ),
+                cloud, "command", side_effect=self.maintenance_fixture()
+            ) as run,
+            patch.object(
+                cloud,
+                "request_json",
+                return_value={"initialized": True, "inserted": {"users": 8}},
+            ) as request,
+            contextlib.redirect_stdout(output),
         ):
-            values = cloud.deployed_environment(
-                Path.cwd(),
-                {
-                    **self.environment(),
-                    "DATABASE_URL": "postgresql://localhost/local",
-                    "POSTGRES_NAME": "wrong",
-                },
+            cloud.maintain_database(Path.cwd(), environment)
+        request.assert_called_once_with(
+            "https://fixture.lambda-url.us-east-1.on.aws/api/facilities/dev/database/init",
+            payload={},
+            extra_headers={"X-Database-Reset-Key": environment["DATABASE_RESET_KEY"]},
+            timeout=330,
+        )
+        self.assertIn("reinitialized to seed data", output.getvalue())
+        self.assertEqual(run.call_count, 2)
+        command_args = [call.args[0] for call in run.call_args_list]
+        for role in cloud.ROLES:
+            self.assertNotIn(
+                environment[f"SEED_{role.upper()}_PASSWORD"],
+                str(command_args) + str(request.call_args_list) + output.getvalue(),
             )
-        self.assertNotIn("DATABASE_URL", values)
-        self.assertEqual(values["POSTGRES_NAME"], "cloud_database")
-        self.assertEqual(values["POSTGRES_PASS"], actual["POSTGRES_PASS"])
-        self.assertEqual(values["APP_ENV_FILE"], "")
+        self.assertNotIn(
+            environment["DATABASE_RESET_KEY"],
+            str(command_args) + output.getvalue(),
+        )
+
+    def test_reset_key_is_sent_only_in_an_http_header(self):
+        key = secrets.token_urlsafe(48)
+        response = io.BytesIO(b'{"initialized":true,"inserted":{}}')
+        response.status = 200
+        response.headers = {"Content-Type": "application/json"}
+        with patch.object(cloud, "urlopen", return_value=response) as request:
+            cloud.request_json(
+                "https://fixture.lambda-url.us-east-1.on.aws/api/facilities/dev/database/init",
+                payload={},
+                extra_headers={"X-Database-Reset-Key": key},
+                timeout=330,
+            )
+        sent = request.call_args.args[0]
+        self.assertEqual(sent.get_method(), "POST")
+        self.assertNotIn(key, sent.full_url)
+        self.assertNotIn(key, sent.data.decode())
+        self.assertEqual(sent.get_header("X-database-reset-key"), key)
+        self.assertEqual(request.call_args.kwargs["timeout"], 330)
+
+    def test_database_setup_rejects_missing_keys_and_non_lambda_urls(self):
+        with (
+            patch.object(cloud, "command") as run,
+            patch.object(cloud, "request_json") as request,
+        ):
+            for key in ("", "short"):
+                with self.subTest(key=key), self.assertRaises(cloud.CloudError):
+                    cloud.maintain_database(
+                        Path.cwd(), {**self.environment(), "DATABASE_RESET_KEY": key}
+                    )
+            run.assert_not_called()
+            request.assert_not_called()
+        with (
+            patch.object(
+                cloud,
+                "command",
+                side_effect=self.maintenance_fixture("https://untrusted.example"),
+            ),
+            patch.object(cloud, "request_json") as request,
+            self.assertRaises(cloud.CloudError),
+        ):
+            cloud.maintain_database(Path.cwd(), self.environment())
+        request.assert_not_called()
+
+    def test_database_errors_do_not_echo_private_response_details(self):
+        private = secrets.token_urlsafe(24)
+        error = HTTPError(
+            "https://fixture.lambda-url.us-east-1.on.aws",
+            403,
+            "Forbidden",
+            {"Content-Type": "application/json"},
+            io.BytesIO(json.dumps({"detail": private}).encode()),
+        )
+        with (
+            patch.object(cloud, "urlopen", side_effect=error),
+            self.assertRaises(cloud.CloudError) as caught,
+        ):
+            cloud.request_json(error.url, payload={})
+        self.assertNotIn(private, str(caught.exception))
+        self.assertIn("403", str(caught.exception))
 
     def test_smoke_requires_json_errors_and_rejects_spa_fallbacks(self):
         url = "https://fixture.cloudfront.net/api/facilities/missing"
@@ -347,7 +423,9 @@ class CloudTests(unittest.TestCase):
         ):
             cloud.request_json(url, expected=404)
 
-    def test_main_delegates_workshop_commands_and_never_resets_database(self):
+    def test_main_delegates_workshop_commands_and_uses_api_instead_of_local_db_scripts(
+        self,
+    ):
         for action in ("backend", "frontend", "database"):
             environment = cloud.clean_environment(self.environment())
             with tempfile.TemporaryDirectory() as directory:
@@ -371,9 +449,7 @@ class CloudTests(unittest.TestCase):
                         return_value=contextlib.nullcontext(root),
                     ),
                     patch.object(cloud, "prepare", return_value=environment),
-                    patch.object(
-                        cloud, "deployed_environment", return_value=environment
-                    ),
+                    patch.object(cloud, "maintain_database") as maintenance,
                     patch.object(cloud, "command", return_value="") as run,
                 ):
                     cloud.main()
@@ -385,14 +461,8 @@ class CloudTests(unittest.TestCase):
                     )
                 )
                 if action == "database":
-                    self.assertEqual(
-                        [args[-1] for args in commands],
-                        [
-                            "backend/scripts/check_database.py",
-                            "backend/scripts/initialize_database.py",
-                            "backend/scripts/seed_database.py",
-                        ],
-                    )
+                    maintenance.assert_called_once_with(root, environment)
+                    self.assertEqual(commands, [])
                 else:
                     self.assertIn(["bash", f"bin/deploy-{action}.sh", "aws"], commands)
                     if action == "frontend":

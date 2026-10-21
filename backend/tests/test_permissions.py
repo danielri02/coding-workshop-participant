@@ -197,6 +197,9 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                     or (path == "/users" and method == "post")
                 ):
                     continue
+                if path == "/dev/database/init":
+                    self.assertEqual(operation["security"], [{"DatabaseResetKey": []}])
+                    continue  # Bootstrap uses its own key, tested independently.
                 self.assertTrue(operation.get("security"), f"{method} {path}")
                 target = re.sub(r"\{[^}]+\}", "1", path)
                 response = await self.client.request(method, target, json={})

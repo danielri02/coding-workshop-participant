@@ -2,7 +2,8 @@
 
 Use the application wrapper below. The supplied `bin/*` scripts remain unchanged;
 the wrapper calls their AWS branches in a cloud-only context. It never starts
-LocalStack and never resets application tables.
+LocalStack. The explicit `database` command reinitializes application data to the
+seed dataset; plan/backend/frontend commands do not reset data.
 
 ## Configure once
 
@@ -25,7 +26,10 @@ Edit `.env.cloud` to enter the generated JWT key. Keep that key stable across
 deployments. Workshop event, participant ID/code and AWS region are inherited from
 the VDI environment; do not duplicate them in this file. `AWS_REGION` takes
 precedence over `AWS_DEFAULT_REGION`, with `us-east-1` as the fallback. Optional
-overrides are commented in the sample for use outside the VDI. Fill in the expected
+overrides are commented in the sample for use outside the VDI. Generate a separate
+`DATABASE_RESET_KEY` with the same command and set the three `SEED_*_PASSWORD`
+values (12–128 nonblank characters) before deploying the reset API. Leaving the
+reset key empty disables that endpoint. Fill in the expected
 AWS account ID when known. Values are literal dotenv values; exported shell
 settings take precedence. `--env-file /path/to/cloud.env` selects another cloud file, and
 `APP_ENV_FILE=''` selects environment variables only. The local `.env` is not read.
@@ -87,54 +91,63 @@ Sensitive inputs, database passwords and saved plans still exist in Terraform
 state/plan data. Restrict access to the workshop state bucket and keep `.cloud`
 private. These files, real cloud settings and generated inputs are ignored by Git.
 
-## Initialize and optionally seed the database
+## Reinitialize application data through the backend API
 
-Run maintenance on a machine with network connectivity to the Aurora VPC, such as
-the workshop WorkSpace. The existing workshop rules must also permit PostgreSQL
-from that machine. If they do not, the workshop administrator needs to permit the
-required private connection; this application does not modify workshop networking.
-The previous `TF_VAR_facilities_maintenance_security_group_ids` setting is no longer
-used and can be removed. Use a connected runner rather than exposing PostgreSQL
-publicly.
+The VDI does not connect to Aurora's private PostgreSQL port. Database setup runs
+inside the existing facilities Lambda through its normal FastAPI application:
 
-The read-only connection check honors the deployed `PGCONNECT_TIMEOUT` (30 seconds
-by default), so a paused Aurora instance has time to resume. An explicit
-`connect_timeout` in `DATABASE_URL` takes precedence for direct script invocations.
-If the check times out, it stops before table initialization or seeding. Check
-instance availability and TCP 5432 reachability from the VDI; opening Swagger or
-`/health` does not establish database connectivity. A persistent timeout is not
-evidence of a bad database password. No security groups or public database access
-are changed by the maintenance command.
+- `POST /dev/database/init` (under `/api/facilities` in the deployed API).
+- Supply `X-Database-Reset-Key`, matching `DATABASE_RESET_KEY` in Lambda.
+- No application login is required: this operation creates the initial accounts.
+- Missing/invalid keys are rejected before database access. The endpoint is disabled
+  unless a key of at least 32 bytes is explicitly configured.
+- The optional JSON body is `{}`; database targets and operation flags cannot be
+  supplied by the caller. The target is Lambda's deployed PostgreSQL configuration.
 
-If a previous backend deployment failed with `ec2:CreateSecurityGroup`, pull the
-updated `cloud` branch, review `plan`, then rerun `backend`. Terraform reuses the
-resources already created by the partial deployment; no cleanup/reset is needed.
+**This operation replaces all application data with the seed dataset.** It creates
+missing application tables, clears application rows, and inserts demo accounts,
+facilities, incidents and notes in one transaction. A seeding failure rolls back
+the reset. Unrelated tables remain intact. ID sequences keep advancing so old
+access tokens cannot identify newly seeded users; old refresh tokens are removed.
+It does not migrate existing table definitions.
+
+Configure a separate `DATABASE_RESET_KEY` and the three `SEED_*_PASSWORD` values in
+`.env.cloud`. Those values are injected into the facilities Lambda during backend
+deployment. Keep them out of frontend/VITE variables. After pulling this change,
+run plan/backend to deploy the route and its settings, then:
 
 ```bash
 ./backend/scripts/deploy-cloud.sh database
-```
-
-This reads the **actual deployed Lambda environment**, checks its database target,
-then calls `initialize_database.py` to create missing tables without deleting any
-records. It does not use a separately edited database password/URL. Existing table
-definitions are not migrated; later schema changes need an explicit upgrade plan.
-
-For the optional demo dataset, configure `SEED_ADMIN_PASSWORD`,
-`SEED_EMPLOYEE_PASSWORD` and `SEED_ENGINEER_PASSWORD` with 12–128 nonblank characters
-in the same cloud file, then run:
-
-```bash
+# Compatibility alias: the --seed option now performs the same reset-and-seed.
 ./backend/scripts/deploy-cloud.sh database --seed
 ```
 
-The account names remain `admin@acme.inc`, `employee@acme.inc` and
-`engineer@acme.inc`. Additional sample staff use their role's configured password.
-Local seeding retains `admin`, `employee` and `engineer` as defaults. Seed reruns
-preserve existing passwords, roles and edited data; changing the cloud password
-settings does not reset accounts. No separate cloud seed program is introduced.
+Run one of these commands, not both. Each invocation resets application data.
+The wrapper sends the key only in an HTTPS header, not the URL, body or command
+arguments. It calls the existing Lambda Function URL API directly to avoid
+CloudFront's shorter origin response timeout during setup. There is no custom
+Lambda event handler, new Lambda resource, public database access, or security-group
+change. You can also use the CloudFront Swagger page: authorize DatabaseResetKey
+and execute the Development operation; normal user JWTs do not grant reset access.
 
-**Do not use `create_tables.py` as a cloud deployment step. It deliberately wipes
-application data.**
+The seed account names remain `admin@acme.inc`, `employee@acme.inc`, and
+`engineer@acme.inc`. Their passwords are the deployed `SEED_*_PASSWORD` values;
+additional sample staff use their role's configured password. Changing these values
+requires redeploying the backend. An explicit reset replaces accounts/passwords;
+normal redeployments and the standalone additive seed script do not.
+
+The reset key can be cleared followed by backend redeployment to disable this
+operation after initialization. Other authenticated endpoints continue normally.
+Local scripts retain their existing behavior: `create_tables.py` wipes/recreates
+application tables and `seed_database.py` adds missing samples. Direct scripts
+still require a network connection to the configured database. The cloud wrapper
+no longer runs those scripts on the VDI.
+
+If a previous deployment failed with `ec2:CreateSecurityGroup`, pull the updated
+branch, review plan, and rerun backend; no infrastructure cleanup is needed.
+Lambda and Aurora retain the preprovisioned workshop security group. The reset API
+still requires Lambda-to-Aurora connectivity; reaching Swagger alone does not prove
+that connection works.
 
 ## Publish the frontend and verify
 
@@ -167,7 +180,8 @@ connection timeout is 30 seconds. `/health` alone does not establish DB readines
 ## Verification and limits
 
 The automated checks include real PostgreSQL tests for non-destructive
-initialization and cloud seed credentials, cloud wrapper isolation tests,
+initialization, atomic reset rollback, reset-key authorization and cloud seed
+credentials, cloud wrapper isolation tests,
 CloudFront request-rewrite tests, full Terraform validation, and mock AWS plans
 for cloud/local configurations. They require no AWS credentials. The infrastructure
 test runs with `python -m unittest backend.tests.test_cloud_terraform` when Terraform

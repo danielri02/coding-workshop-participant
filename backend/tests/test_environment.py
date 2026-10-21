@@ -125,6 +125,8 @@ class SharedEnvironmentTests(unittest.IsolatedAsyncioTestCase):
                 "JWT_SECRET_KEY": secrets.token_urlsafe(32),
                 "FRONTEND_ORIGIN": "http://localhost:3000",
                 "SEED_PASSWORD": secrets.token_urlsafe(18),
+                "DATABASE_RESET_KEY": secrets.token_urlsafe(48),
+                "SEED_ADMIN_PASSWORD": secrets.token_urlsafe(24),
                 "VITE_API_URL": "not-a-backend-setting",
             },
             clear=True,
@@ -138,6 +140,8 @@ class SharedEnvironmentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(values["POSTGRES_USER"], "worker")
             self.assertEqual(values["POSTGRES_PASS"], password)
             self.assertIn("JWT_SECRET_KEY", values)
+            self.assertIn("DATABASE_RESET_KEY", values)
+            self.assertIn("SEED_ADMIN_PASSWORD", values)
             self.assertNotIn("SEED_PASSWORD", values)
             self.assertNotIn("VITE_API_URL", values)
 
