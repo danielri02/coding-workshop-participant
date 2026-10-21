@@ -446,14 +446,16 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delete_response.status_code, 204, delete_response.text)
         self.assertEqual(await self.token_count(), 0)
 
-    async def test_missing_auth_configuration_fails_closed_on_business_routes(
+    async def test_invalid_auth_configuration_fails_closed_on_business_routes(
         self,
     ) -> None:
         """Business routes fail closed while public registration/health remain usable."""
 
         app.dependency_overrides.pop(auth_settings)
         try:
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(
+                os.environ, {"JWT_SECRET_KEY": secrets.token_urlsafe(6)}, clear=True
+            ):
                 response = await self.client.post(
                     "/auth/login",
                     json={"email": "employee@acme.inc", "password": self.password},
@@ -484,6 +486,41 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
                     },
                 )
                 self.assertEqual(response.status_code, 201, response.text)
+        finally:
+            app.dependency_overrides[auth_settings] = lambda: self.settings
+
+    async def test_development_login_and_refresh_work_without_env_configuration(
+        self,
+    ) -> None:
+        """Authorize the default admin, rotate tokens and access routes with no env."""
+
+        async with self.factory() as session:
+            await seed_database(session, SecretStr(self.password))
+        app.dependency_overrides.pop(auth_settings)
+        try:
+            with patch.dict(os.environ, {}, clear=True):
+                response = await self.client.post(
+                    "/auth/token",
+                    data={
+                        "username": "admin@acme.inc",
+                        "password": DEFAULT_ADMIN_PASSWORD,
+                    },
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                tokens = response.json()
+                self.assertEqual(tokens["expires_in"], 15 * 60)
+                self.assertEqual(tokens["refresh_expires_in"], 30 * 24 * 60 * 60)
+                response = await self.client.post(
+                    "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                response = await self.client.get(
+                    "/users",
+                    headers={
+                        "Authorization": f"Bearer {response.json()['access_token']}"
+                    },
+                )
+                self.assertEqual(response.status_code, 200, response.text)
         finally:
             app.dependency_overrides[auth_settings] = lambda: self.settings
 

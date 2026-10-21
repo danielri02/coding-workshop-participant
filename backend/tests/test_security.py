@@ -80,10 +80,10 @@ class PasswordTests(unittest.TestCase):
 
 
 class SecurityConfigTests(unittest.TestCase):
-    """Token configuration has safe defaults and no fallback signing key."""
+    """Token configuration supports local defaults and validates env overrides."""
 
-    def test_signing_key_is_required_and_hidden(self) -> None:
-        """No token can be signed with an absent, short, or blank default secret."""
+    def test_explicit_signing_keys_are_validated_and_hidden(self) -> None:
+        """Reject invalid supplied keys and preserve valid environment overrides."""
 
         for key in ("", "short", " " * 40):
             with (
@@ -94,6 +94,7 @@ class SecurityConfigTests(unittest.TestCase):
         secret = secrets.token_urlsafe(48)
         with patch.dict(os.environ, {"JWT_SECRET_KEY": secret}, clear=True):
             settings = get_security_settings()
+        self.assertEqual(settings.jwt_secret_key.get_secret_value(), secret)
         self.assertNotIn(secret, repr(settings))
         self.assertEqual(settings.access_token_minutes, 15)
         self.assertEqual(settings.refresh_token_days, 30)

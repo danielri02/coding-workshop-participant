@@ -1,13 +1,16 @@
-"""Authentication configuration; signing keys have no built-in default."""
+"""Authentication configuration with environment overrides and local dev defaults."""
 
 import os
 from dataclasses import dataclass
 
 from pydantic import SecretStr
 
+# Stable across local restarts; environment configuration overrides this dev key.
+DEFAULT_JWT_SECRET_KEY = "coding-workshop-local-development-signing-key"  # nosec B105
+
 
 class SecurityConfigurationError(ValueError):
-    """Authentication configuration is missing or invalid."""
+    """An explicitly configured authentication setting is invalid."""
 
 
 @dataclass(frozen=True)
@@ -43,7 +46,7 @@ class SecuritySettings:
 
 
 def get_security_settings() -> SecuritySettings:
-    """Read auth settings only when needed; missing configuration fails closed."""
+    """Use development defaults for settings absent from the environment."""
 
     try:
         access_minutes = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
@@ -51,7 +54,9 @@ def get_security_settings() -> SecuritySettings:
     except ValueError:
         raise SecurityConfigurationError("Token lifetimes must be integers") from None
     return SecuritySettings(
-        jwt_secret_key=SecretStr(os.environ.get("JWT_SECRET_KEY", "")),
+        jwt_secret_key=SecretStr(
+            os.environ.get("JWT_SECRET_KEY", DEFAULT_JWT_SECRET_KEY)
+        ),
         access_token_minutes=access_minutes,
         refresh_token_days=refresh_days,
     )

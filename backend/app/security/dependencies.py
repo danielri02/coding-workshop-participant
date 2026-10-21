@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def auth_settings() -> SecuritySettings:
-    """Require signing configuration without preventing public registration/health."""
+    """Load auth defaults/overrides and reject explicitly invalid settings."""
 
     try:
         return get_security_settings()
