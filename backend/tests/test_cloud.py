@@ -89,6 +89,24 @@ class CloudTests(unittest.TestCase):
         self.assertEqual(values["TF_VAR_aws_vpc_id"], "vpc-123")
         self.assertEqual(values["IS_LOCAL"], "false")
 
+    def test_vdi_settings_are_inherited_without_duplication_in_cloud_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shell = self.environment()
+            shell.pop("AWS_REGION")
+            shell["AWS_DEFAULT_REGION"] = "eu-west-1"
+            (root / ".env.cloud").write_text(
+                f"JWT_SECRET_KEY={shell.pop('JWT_SECRET_KEY')}\n"
+            )
+            values = cloud.clean_environment(cloud.settings_file(root, None, shell))
+            self.assertEqual(values["PARTICIPANT_ID"], shell["PARTICIPANT_ID"])
+            self.assertEqual(values["PARTICIPANT_CODE"], shell["PARTICIPANT_CODE"])
+            self.assertEqual(values["AWS_REGION"], "eu-west-1")
+            self.assertEqual(values["AWS_DEFAULT_REGION"], "eu-west-1")
+            shell["AWS_REGION"] = "eu-central-1"
+            values = cloud.clean_environment(cloud.settings_file(root, None, shell))
+            self.assertEqual(values["AWS_DEFAULT_REGION"], "eu-central-1")
+
     def test_snapshot_excludes_vendor_and_settings_and_refuses_dirty_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -128,7 +146,7 @@ class CloudTests(unittest.TestCase):
             ):
                 self.fail("Dirty worktree was archived")
 
-    def prepare_fixture(self, root, account="123456789012"):
+    def prepare_fixture(self, root, account="123456789012", groups=None):
         calls = []
 
         def command(args, work, environment, *, capture=False):
@@ -140,8 +158,13 @@ class CloudTests(unittest.TestCase):
             if args[:3] == ["aws", "sts", "get-caller-identity"]:
                 return json.dumps({"Account": account})
             responses = {
-                "describe-vpcs": {"Vpcs": [{"VpcId": "vpc-123", "IsDefault": True}]},
-                "describe-security-groups": {"SecurityGroups": [{"GroupId": "sg-123"}]},
+                "describe-security-groups": {
+                    "SecurityGroups": (
+                        [{"GroupId": "sg-123", "VpcId": "vpc-123"}]
+                        if groups is None
+                        else groups
+                    )
+                },
                 "describe-subnets": {
                     "Subnets": [
                         {"AvailabilityZone": "us-east-1a"},
@@ -174,6 +197,13 @@ class CloudTests(unittest.TestCase):
                 ".cloud/abcd1234/us-east-1/terraform", prepared["TF_DATA_DIR"]
             )
             self.assertEqual(prepared["AWS_ACCESS_KEY_ID"], "fixture-real")
+            self.assertEqual(prepared["TF_VAR_aws_vpc_id"], "vpc-123")
+            self.assertFalse(any("describe-vpcs" in args for args, _ in calls))
+            group_call = next(
+                args for args, _ in calls if "describe-security-groups" in args
+            )
+            self.assertIn("Name=group-name,Values=coding-workshop-abcd1234", group_call)
+            self.assertFalse(any(arg.startswith("Name=vpc-id") for arg in group_call))
             self.assertNotIn("AWS_ACCESS_KEY_ID", calls[0][1])
             self.assertEqual(
                 json.loads(prepared["TF_VAR_facilities_cloud_environment"])[
@@ -190,6 +220,55 @@ class CloudTests(unittest.TestCase):
             self.assertTrue(
                 all(source["JWT_SECRET_KEY"] not in str(args) for args, _ in calls)
             )
+
+    def test_explicit_vpc_override_constrains_participant_group_discovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, calls = self.prepare_fixture(root)
+            source = cloud.clean_environment(
+                {**self.environment(), "TF_VAR_aws_vpc_id": "vpc-123"}
+            )
+            with (
+                patch.object(cloud, "command", side_effect=run),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                cloud.prepare(root, root, source)
+            group_call = next(
+                args for args, _ in calls if "describe-security-groups" in args
+            )
+            self.assertIn("Name=vpc-id,Values=vpc-123", group_call)
+
+    def test_missing_or_ambiguous_participant_groups_stop_before_terraform(self):
+        for groups, message in (
+            ([], "security group is missing"),
+            (
+                [
+                    {"GroupId": "sg-123", "VpcId": "vpc-123"},
+                    {"GroupId": "sg-456", "VpcId": "vpc-456"},
+                ],
+                "multiple VPCs",
+            ),
+        ):
+            with (
+                self.subTest(groups=groups),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                run, calls = self.prepare_fixture(root, groups=groups)
+                with (
+                    patch.object(cloud, "command", side_effect=run),
+                    contextlib.redirect_stdout(io.StringIO()),
+                    self.assertRaisesRegex(cloud.CloudError, message),
+                ):
+                    cloud.prepare(
+                        root, root, cloud.clean_environment(self.environment())
+                    )
+                self.assertFalse(
+                    any(
+                        args[0] == "terraform" or "describe-subnets" in args
+                        for args, _ in calls
+                    )
+                )
 
     def test_wrong_aws_account_stops_before_terraform_or_bucket_access(self):
         with tempfile.TemporaryDirectory() as directory:

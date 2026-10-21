@@ -21,15 +21,22 @@ chmod 600 .env.cloud
 python3.13 -c 'import secrets; print(secrets.token_urlsafe(48))'
 ```
 
-Edit `.env.cloud`: enter the workshop event, participant ID/code, and the generated
-JWT key. Keep that key stable across deployments. Fill in the expected AWS account
-ID when known. Values are literal dotenv values; exported shell settings take
-precedence. `--env-file /path/to/cloud.env` selects another cloud file, and
+Edit `.env.cloud` to enter the generated JWT key. Keep that key stable across
+deployments. Workshop event, participant ID/code and AWS region are inherited from
+the VDI environment; do not duplicate them in this file. `AWS_REGION` takes
+precedence over `AWS_DEFAULT_REGION`, with `us-east-1` as the fallback. Optional
+overrides are commented in the sample for use outside the VDI. Fill in the expected
+AWS account ID when known. Values are literal dotenv values; exported shell
+settings take precedence. `--env-file /path/to/cloud.env` selects another cloud file, and
 `APP_ENV_FILE=''` selects environment variables only. The local `.env` is not read.
 
 The workshop must already supply its participant state bucket, VPC with subnets
 in at least two availability zones, participant security group and Lambda IAM
-execution role. The wrapper verifies these and the selected Aurora version before
+execution role. The wrapper discovers the VPC containing the participant's
+`coding-workshop-<participant-id>` security group and prints the selected VPC ID.
+`TF_VAR_aws_vpc_id` is only needed if that group name exists in multiple VPCs or
+you intentionally want to constrain selection. It does not select the default VPC.
+The wrapper verifies these resources and the selected Aurora version before
 Terraform runs. It obtains temporary AWS credentials through the unchanged
 `setup-participant.sh`, which updates the AWS CLI default profile as usual. The
 wrapper clears inherited profile/role selectors so stale local credentials cannot

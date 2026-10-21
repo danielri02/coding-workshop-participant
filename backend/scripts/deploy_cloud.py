@@ -123,7 +123,9 @@ def clean_environment(settings: dict[str, str]) -> dict[str, str]:
             "VITE_API_MODE": "workshop",
             "AWS_IGNORE_CONFIGURED_ENDPOINT_URLS": "true",
             "AWS_EC2_METADATA_DISABLED": "true",
-            "AWS_REGION": settings.get("AWS_REGION", "us-east-1"),
+            "AWS_REGION": settings.get("AWS_REGION")
+            or settings.get("AWS_DEFAULT_REGION")
+            or "us-east-1",
         }
     )
     environment["AWS_DEFAULT_REGION"] = environment["AWS_REGION"]
@@ -247,36 +249,35 @@ def prepare(
         environment,
         capture=True,
     )
-    vpc = environment.get("TF_VAR_aws_vpc_id")
-    vpcs = aws_json(
-        root, environment, "ec2", "describe-vpcs", *(["--vpc-ids", vpc] if vpc else [])
-    )["Vpcs"]
-    candidates = (
-        vpcs if len(vpcs) == 1 else [item for item in vpcs if item.get("IsDefault")]
-    )
-    if len(candidates) != 1:
-        raise CloudError("Select the workshop VPC with TF_VAR_aws_vpc_id.")
-    environment["TF_VAR_aws_vpc_id"] = candidates[0]["VpcId"]
+    vpc = environment.get("TF_VAR_aws_vpc_id", "").strip()
     groups = aws_json(
         root,
         environment,
         "ec2",
         "describe-security-groups",
         "--filters",
-        f"Name=vpc-id,Values={candidates[0]['VpcId']}",
         f"Name=group-name,Values=coding-workshop-{participant}",
+        *([f"Name=vpc-id,Values={vpc}"] if vpc else []),
     )
     if not groups["SecurityGroups"]:
         raise CloudError(
-            "The workshop participant security group is missing in the selected VPC."
+            "The workshop participant security group is missing in the selected AWS region/VPC."
         )
+    vpcs = {group["VpcId"] for group in groups["SecurityGroups"]}
+    if len(vpcs) != 1:
+        raise CloudError(
+            "The participant security group exists in multiple VPCs; select one with TF_VAR_aws_vpc_id."
+        )
+    vpc = vpcs.pop()
+    environment["TF_VAR_aws_vpc_id"] = vpc
+    print(f"Workshop VPC: {vpc}", flush=True)
     subnets = aws_json(
         root,
         environment,
         "ec2",
         "describe-subnets",
         "--filters",
-        f"Name=vpc-id,Values={candidates[0]['VpcId']}",
+        f"Name=vpc-id,Values={vpc}",
     )["Subnets"]
     if len({item["AvailabilityZone"] for item in subnets}) < 2:
         raise CloudError(
