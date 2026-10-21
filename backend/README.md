@@ -14,13 +14,24 @@ Use the existing workshop setup. After pulling the new service into an existing
 LocalStack environment, run from the repository root:
 
 ```bash
-./bin/deploy-backend.sh local
+./backend/scripts/deploy-local.sh
 ./bin/start-dev.sh
 ```
 
-The first command registers the new service explicitly; subsequent normal starts
-use `start-dev.sh`. The provided script can skip deployment when unrelated
-previously deployed functions make its service count look sufficient.
+The first command starts LocalStack if needed, waits for its local and S3
+endpoints, installs Python service dependencies for hot reload, and calls the
+unmodified `bin/deploy-backend.sh local`. It loads `ENVIRONMENT.config` when
+present and uses local test credentials. Docker must already be running, and
+Docker, LocalStack CLI, curl, AWS CLI, Terraform, and Python 3.13 with pip must be
+installed. Use `PYTHON=/path/to/python3.13` to select a specific interpreter and
+`LOCALSTACK_WAIT_SECONDS=120` to allow a longer startup wait. The wrapper can run
+from any directory; run it again to explicitly deploy backend changes.
+
+The wrapper leaves existing LocalStack state intact and does not initialize or
+seed the database. `start-dev.sh` handles database and frontend startup; subsequent
+normal starts use that command. Explicit deployment is useful because the
+provided script can skip deployment when unrelated previously deployed functions
+make its service count look sufficient. The workshop scripts remain unchanged.
 
 With PostgreSQL running, initialize its application tables from `backend/` using
 Python 3.13 and an activated virtual environment:
