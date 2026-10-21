@@ -19,6 +19,13 @@ Keep the same `JWT_SECRET_KEY` across application instances/restarts to preserve
 issued tokens. An absent signing key makes login and authenticated requests fail
 closed. Creating tables does not migrate existing table definitions.
 
+If Swagger Authorize reports **Service Unavailable (503)**, inspect the FastAPI
+terminal log or the response from `POST /auth/login` for the configuration error.
+The usual cause is an unset or too-short `JWT_SECRET_KEY`. Export the key in the
+same shell that launches FastAPI, then restart the server. A `.env` file is not
+automatically loaded by `fastapi dev app/main.py`; use an exported variable or an
+explicit environment-file loading option. The key must contain at least 32 bytes.
+
 Open `http://127.0.0.1:8000/docs`, click **Authorize**, and enter:
 
 - **username:** `admin@acme.inc`

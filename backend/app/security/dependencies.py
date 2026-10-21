@@ -1,5 +1,6 @@
 """Bearer authentication and shared capability dependencies for business routes."""
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -14,6 +15,7 @@ from .config import SecurityConfigurationError, SecuritySettings, get_security_s
 from .jwt import InvalidAccessToken, decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+logger = logging.getLogger(__name__)
 
 
 def auth_settings() -> SecuritySettings:
@@ -21,9 +23,12 @@ def auth_settings() -> SecuritySettings:
 
     try:
         return get_security_settings()
-    except SecurityConfigurationError:
+    except SecurityConfigurationError as exc:
+        # Configuration errors contain setting names and rules, never values.
+        logger.error("Authentication configuration error: %s", exc)
         raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "Authentication is not configured"
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"Authentication configuration error: {exc}",
         ) from None
 
 

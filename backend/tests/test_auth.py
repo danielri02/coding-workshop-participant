@@ -459,6 +459,15 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
                     json={"email": "employee@acme.inc", "password": self.password},
                 )
                 self.assertEqual(response.status_code, 503, response.text)
+                self.assertIn("JWT_SECRET_KEY", response.json()["detail"])
+                self.assertNotIn(self.password, response.text)
+                response = await self.client.post(
+                    "/auth/token",
+                    data={"username": "employee@acme.inc", "password": self.password},
+                )
+                self.assertEqual(response.status_code, 503, response.text)
+                self.assertIn("JWT_SECRET_KEY", response.json()["detail"])
+                self.assertNotIn(self.password, response.text)
                 self.assertEqual((await self.client.get("/users")).status_code, 401)
                 response = await self.client.get(
                     "/users",
