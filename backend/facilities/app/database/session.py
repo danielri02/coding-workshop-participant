@@ -1,13 +1,20 @@
 """Async SQLAlchemy engine, session factory, and FastAPI dependency."""
 
+import os
 from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from .config import get_database_url
 
 # Engine construction opens no connection. Tables are managed explicitly by scripts.
-engine = create_async_engine(get_database_url(), pool_pre_ping=True)
+engine = create_async_engine(
+    get_database_url(),
+    pool_pre_ping=True,
+    # Invocation event loops must never inherit connections from an earlier call.
+    **({"poolclass": NullPool} if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") else {}),
+)
 session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
 

@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const apiUrl = process.env.E2E_API_URL || 'http://localhost:8000'
+const browserApiUrl =
+  process.env.E2E_API_MODE === 'workshop' ? 'http://localhost:3011/api/facilities' : apiUrl
+const browserPath = (url: URL) => url.pathname.replace(/^\/api\/facilities(?=\/)/, '')
 const email = process.env.E2E_ADMIN_EMAIL || 'admin@acme.inc'
 const password = process.env.E2E_ADMIN_PASSWORD || 'admin'
 let headers: Record<string, string>
@@ -45,7 +48,8 @@ async function select(page: Page, name: string, option: string) {
 
 async function save(page: Page, path: string, method = 'POST') {
   const responsePromise = page.waitForResponse(
-    (response) => response.url() === `${apiUrl}${path}` && response.request().method() === method,
+    (response) =>
+      response.url() === `${browserApiUrl}${path}` && response.request().method() === method,
   )
   await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click()
   const response = await responsePromise
@@ -124,7 +128,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
     await page.getByRole('menuitem', { name: label, exact: true }).click()
     const updated = page.waitForResponse(
       (response) =>
-        response.url() === `${apiUrl}/users/${user.id}/admin` &&
+        response.url() === `${browserApiUrl}/users/${user.id}/admin` &&
         response.request().method() === 'PATCH',
     )
     await page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }).click()
@@ -218,7 +222,9 @@ test('session refresh restores an expired access token and mobile navigation wor
     session.access_token = 'expired-access-token'
     sessionStorage.setItem('acme.admin.session', JSON.stringify(session))
   })
-  const refreshed = page.waitForResponse((response) => response.url() === `${apiUrl}/auth/refresh`)
+  const refreshed = page.waitForResponse(
+    (response) => response.url() === `${browserApiUrl}/auth/refresh`,
+  )
   await page.reload()
   expect((await refreshed).status()).toBe(200)
   await expect(page.getByRole('heading', { name: 'Incidents', exact: true })).toBeVisible()
@@ -246,7 +252,7 @@ for (const endpoint of ['/auth/login', '/auth/me']) {
   test(`unexpected JSON from ${endpoint} reports API configuration rather than admin denial`, async ({
     page,
   }) => {
-    await page.route(`${apiUrl}${endpoint}`, (route) =>
+    await page.route(`${browserApiUrl}${endpoint}`, (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -329,7 +335,7 @@ test('incident actions validate blocked reasons and preserve note editing after 
   await select(page, 'Building', building.name)
   await page.getByRole('dialog').getByLabel('Floor label').fill(duplicate.label)
   const conflict = page.waitForResponse(
-    (result) => result.url() === `${apiUrl}/floors` && result.request().method() === 'POST',
+    (result) => result.url() === `${browserApiUrl}/floors` && result.request().method() === 'POST',
   )
   await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click()
   expect((await conflict).status()).toBe(409)
@@ -367,7 +373,7 @@ test('incident grid sends backend search, pagination and sorting changes', async
   const sorted = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return (
-      url.pathname === '/incidents/grid' &&
+      browserPath(url) === '/incidents/grid' &&
       url.searchParams.get('sort_by') === 'title' &&
       url.searchParams.get('page') === '0'
     )
@@ -383,7 +389,7 @@ test('incident grid sends backend search, pagination and sorting changes', async
   const filtered = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return (
-      url.pathname === '/incidents/grid' &&
+      browserPath(url) === '/incidents/grid' &&
       url.searchParams.get('status') === 'Closed' &&
       url.searchParams.get('search') === suffix
     )

@@ -1,18 +1,67 @@
 # Coding Workshop - Backend Code
 
-## Incident application: direct local development
+## Incident application: workshop local development
 
-Run these commands from `backend/`, using Python 3.13 and your activated virtual
-environment:
+The application is packaged as `backend/facilities/`, discovered by the provided
+workshop scripts through its `requirements.txt` and `function.py`. Its
+`function.handler` adapts FastAPI with Mangum. All business routes stay in one
+service; no Lambda per table is needed. `backend/app` is a relative symlink to
+`facilities/app`, preserving existing script imports and direct-development paths
+without a second copy of application code. Dependencies installed into the
+service by the workshop are ignored by Git.
+
+Use the existing workshop setup. After pulling the new service into an existing
+LocalStack environment, run from the repository root:
+
+```bash
+./bin/deploy-backend.sh local
+./bin/start-dev.sh
+```
+
+The first command registers the new service explicitly; subsequent normal starts
+use `start-dev.sh`. The provided script can skip deployment when unrelated
+previously deployed functions make its service count look sufficient.
+
+With PostgreSQL running, initialize its application tables from `backend/` using
+Python 3.13 and an activated virtual environment:
 
 ```bash
 python -m pip install -r requirements-dev.txt
-# Set DATABASE_URL to your PostgreSQL connection URL if the default does not fit.
 python scripts/check_database.py
 python scripts/create_tables.py
 SEED_PASSWORD='development-only' python scripts/seed_database.py
+```
+
+These additive commands target the same database/role as the workshop defaults.
+They never run at Lambda startup. Existing tables/data are preserved; changing the
+database configuration does not move data from a previously used database.
+
+### Database configuration
+
+The Lambda consumes the workshop's injected `POSTGRES_HOST`, `POSTGRES_PORT`,
+`POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASS` and `IS_LOCAL`. Host-side commands
+default to localhost:5432, database `postgres`, user `postgres`, and the workshop's
+local password `postgres123`. LocalStack injects the Docker-reachable host address.
+`IS_LOCAL=true` disables TLS; false requires TLS. An explicit `DATABASE_URL`
+overrides component settings and preserves its own SSL/query parameters, which is
+useful for isolated tests and direct development.
+
+`check_database.py` reports the selected host/database/role and configuration
+source without printing credentials. Configure host-side commands to match the
+Lambda database if your workshop setup uses different values. Lambda requests
+use NullPool so connections cannot leak between invocation event loops.
+
+### Direct development override
+
+For environments without LocalStack, set DATABASE_URL if required and run from
+`backend/`:
+
+```bash
 fastapi dev app/main.py
 ```
+
+Then use `VITE_API_MODE=direct VITE_API_URL=http://localhost:8000 npm run dev` in
+`frontend/`. This is an explicit alternative to the workshop default.
 
 Authentication works without environment configuration for local development.
 Unset variables use these defaults:
@@ -98,7 +147,8 @@ command. The exporter imports the application without connecting to PostgreSQL.
 
 ### Swagger login
 
-Open `http://127.0.0.1:8000/docs`, click **Authorize**, and enter:
+Open `http://localhost:3000/api/facilities/docs` in workshop mode (or
+`http://127.0.0.1:8000/docs` for direct development), click **Authorize**, and enter:
 
 - **username:** `admin@acme.inc`
 - **password:** `admin`
@@ -158,8 +208,12 @@ Unknown/already-invalidated credentials also return 204. Independent logins stay
 active. Already issued access JWTs remain usable until their short expiration
 (15 minutes by default); logout invalidates the refresh chain.
 
-The workshop Lambda/LocalStack packaging and cloud configuration below are a
-separate path; the direct application is not yet wired into that deployment path.
+The service accepts both the local stripped path and `/api/facilities` prefixes.
+The provided workshop files are unchanged. The application-owned
+`infra/facilities_override.tf` raises only this service to 256 MiB: a clean Python
+runtime login peaked around 139 MiB, exceeding the supplied 128 MiB setting.
+Other services retain the provided 128 MiB allocation. AWS deployment has not
+been run or verified as part of this local integration.
 
 ## Overview
 

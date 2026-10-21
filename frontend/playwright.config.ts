@@ -31,6 +31,15 @@ export default defineConfig({
     command: 'npm run dev -- --host localhost --port 3011',
     url: 'http://localhost:3011',
     reuseExistingServer: false,
-    env: { VITE_API_URL: process.env.E2E_API_URL || 'http://localhost:8000' },
+    env: {
+      VITE_API_MODE: process.env.E2E_API_MODE || 'direct',
+      VITE_API_URL:
+        process.env.E2E_API_MODE === 'workshop'
+          ? 'http://localhost:3001'
+          : process.env.E2E_API_URL || 'http://localhost:8000',
+      VITE_API_ENDPOINTS: JSON.stringify({
+        facilities: process.env.E2E_API_URL || 'http://localhost:8000',
+      }),
+    },
   },
 })

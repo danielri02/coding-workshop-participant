@@ -24,6 +24,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://workshop:ci-test-password@localhost:5432/workshop
       FRONTEND_ORIGIN: http://localhost:3011
       SEED_PASSWORD: ci-demo-password
+      E2E_API_MODE: workshop
     defaults:
       run:
         working-directory: frontend
@@ -38,7 +39,9 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
-          cache-dependency-path: backend/requirements*.txt
+          cache-dependency-path: |
+            backend/requirements*.txt
+            backend/facilities/requirements.txt
       - run: python -m pip install -r ../backend/requirements-dev.txt
       - run: npm ci
       - name: Verify generated contracts match the backend
@@ -57,7 +60,7 @@ jobs:
           python ../backend/scripts/create_tables.py
           python ../backend/scripts/seed_database.py
           cd ..
-          python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
+          python backend/tests/support/lambda_server.py --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
           api_pid=$!
           trap 'kill "$api_pid" || true' EXIT
           for attempt in {1..30}; do

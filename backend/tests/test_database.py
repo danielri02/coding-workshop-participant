@@ -42,6 +42,51 @@ class DatabaseConfigTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(get_database_url(), make_url(DEFAULT_DATABASE_URL))
 
+    def test_workshop_settings_escape_credentials_and_select_local_tls(self) -> None:
+        """Injected Lambda DB components are used without manual URL escaping."""
+
+        credential = "p@ss:/?#" + secrets.token_hex(4)
+        with patch.dict(
+            os.environ,
+            {
+                "POSTGRES_HOST": "172.17.0.1",
+                "POSTGRES_PORT": "5433",
+                "POSTGRES_NAME": "incidents",
+                "POSTGRES_USER": "a@user",
+                "POSTGRES_PASS": credential,
+                "IS_LOCAL": "true",
+            },
+            clear=True,
+        ):
+            url = get_database_url()
+            self.assertEqual(url.host, "172.17.0.1")
+            self.assertEqual(url.port, 5433)
+            self.assertEqual(url.database, "incidents")
+            self.assertEqual(url.username, "a@user")
+            self.assertEqual(url.password, credential)
+            self.assertEqual(url.query["sslmode"], "disable")
+            os.environ["IS_LOCAL"] = "false"
+            self.assertEqual(get_database_url().query["sslmode"], "require")
+            os.environ["DATABASE_URL"] = "postgresql://override@localhost/other"
+            self.assertEqual(get_database_url().database, "other")
+            self.assertNotIn("sslmode", get_database_url().query)
+
+    def test_component_settings_fail_without_exposing_values(self) -> None:
+        """Reject invalid modes/ports and missing nonlocal credentials."""
+
+        for environment in (
+            {"POSTGRES_PORT": "private"},
+            {"POSTGRES_PORT": "70000"},
+            {"IS_LOCAL": "invalid"},
+            {"IS_LOCAL": "false"},
+        ):
+            with (
+                self.subTest(environment=environment),
+                patch.dict(os.environ, environment, clear=True),
+                self.assertRaises(ValueError),
+            ):
+                get_database_url()
+
     def test_plain_postgres_urls_are_normalized_and_preserve_options(self) -> None:
         """Support conventional deployment URLs and SSL settings with psycopg 3."""
 
@@ -91,6 +136,7 @@ class DatabaseDiagnosticTests(unittest.TestCase):
         url = url.update_query_dict({"sslpassword": private_value})
         for environment, expected in (
             ({}, "DEFAULT_DATABASE_URL"),
+            ({"POSTGRES_HOST": "configured"}, "workshop POSTGRES_*"),
             ({"DATABASE_URL": "configured"}, "DATABASE_URL environment variable"),
         ):
             with (

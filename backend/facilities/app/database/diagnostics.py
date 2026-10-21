@@ -5,6 +5,8 @@ import os
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 
+from .config import POSTGRES_SETTINGS
+
 
 def connection_summary(url: URL) -> str:
     """Describe the selected target without exposing password or query values."""
@@ -12,6 +14,8 @@ def connection_summary(url: URL) -> str:
     source = (
         "DATABASE_URL environment variable"
         if "DATABASE_URL" in os.environ
+        else "workshop POSTGRES_* environment variables"
+        if any(name in os.environ for name in POSTGRES_SETTINGS)
         else "DEFAULT_DATABASE_URL in app/database/config.py"
     )
     password_present = url.password is not None or "password" in url.query
@@ -36,17 +40,17 @@ def database_error_message(error: SQLAlchemyError) -> str:
     if "no password supplied" in message:
         return (
             "PostgreSQL requires a password, but none was supplied. "
-            "Set the password in DATABASE_URL."
+            "Set the password in POSTGRES_* or DATABASE_URL."
         )
     if code == "28P01" or "password authentication failed" in message:
         return (
             "PostgreSQL rejected the database role/password. "
-            "Check the credentials in DATABASE_URL."
+            "Check the credentials in POSTGRES_* or DATABASE_URL."
         )
     if "role" in message and "does not exist" in message:
         return (
             "The configured PostgreSQL role does not exist. "
-            "Use an existing database role in DATABASE_URL."
+            "Use an existing database role in POSTGRES_* or DATABASE_URL."
         )
     if code == "3D000" or ("database" in message and "does not exist" in message):
         return (
@@ -81,7 +85,7 @@ def database_error_message(error: SQLAlchemyError) -> str:
     ):
         return (
             "The PostgreSQL hostname could not be resolved. "
-            "Check the host in DATABASE_URL."
+            "Check the host in POSTGRES_* or DATABASE_URL."
         )
     if "timeout" in message or "timed out" in message:
         return (

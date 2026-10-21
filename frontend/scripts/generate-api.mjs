@@ -18,6 +18,7 @@ const gridParameters = document.paths['/incidents/grid'].get.parameters.filter(
   (parameter) => parameter.in === 'query',
 )
 const domain = {
+  workshopService: document['x-workshop-service'],
   incidentGrid: {
     filterFields: gridParameters
       .map((parameter) => parameter.name)

@@ -1,0 +1,6 @@
+# start-dev.sh installs third-party dependencies here with pip --target.
+/*
+!/app/
+!/function.py
+!/requirements.txt
+!/.gitignore

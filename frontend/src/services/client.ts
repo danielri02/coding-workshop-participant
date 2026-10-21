@@ -1,8 +1,9 @@
 import type { TokenPair } from '../types'
 import { getSession, setSession } from './session'
 import { isTokenPair } from './authContracts'
+import { apiBaseUrl } from './apiConfig'
 
-const apiUrl = (import.meta.env?.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const apiUrl = apiBaseUrl(import.meta.env || {}, Boolean(import.meta.env?.DEV))
 let refreshInFlight: Promise<TokenPair> | null = null
 
 /** A safe HTTP failure, with validation messages mapped to form fields. */
@@ -35,7 +36,7 @@ async function readResponse<T>(
   if (response.ok) {
     if (body === null || typeof body !== 'object' || (validate && !validate(body)))
       throw new ApiError(
-        `The configured API returned an unexpected response for ${path}. Check that VITE_API_URL points to your FastAPI backend, then restart the frontend.`,
+        `The configured API returned an unexpected response for ${path}. Check VITE_API_MODE, VITE_API_URL and the workshop-generated API mapping, then restart the frontend.`,
         502,
       )
     return body as T
