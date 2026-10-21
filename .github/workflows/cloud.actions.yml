@@ -1,0 +1,28 @@
+name: Cloud configuration checks
+
+on: [pull_request, push]
+
+permissions:
+  contents: read
+
+jobs:
+  infrastructure:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV_FILE: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.13.5'
+          terraform_wrapper: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r backend/requirements-dev.txt
+      - name: Validate the complete workshop configuration without a state backend
+        run: |
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+      - name: Verify cloud and local plans using mocked AWS
+        run: python -m unittest backend.tests.test_cloud_terraform

@@ -5,12 +5,15 @@ From backend/: python scripts/seed_database.py
 
 Primary logins: admin@acme.inc / admin, employee@acme.inc / employee,
 engineer@acme.inc / engineer. Additional sample staff use their role as password.
-No SEED_PASSWORD is required. Existing passwords, roles and content are preserved.
+Local defaults need no password setting. Cloud seeding requires explicit
+SEED_ADMIN_PASSWORD, SEED_EMPLOYEE_PASSWORD and SEED_ENGINEER_PASSWORD.
+Existing passwords, roles and content are preserved.
 Run create_tables.py first when a completely fresh demo database is wanted.
 """
 
 import argparse
 import asyncio
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,7 +39,7 @@ from backend.app.models import (
     Seat,
     User,
 )
-from backend.app.security.passwords import hash_password
+from backend.app.security.passwords import hash_password, validate_password
 from backend.scripts import SETUP_LOCK_ID
 from backend.scripts.sample_data import ACCOUNTS, BUILDINGS, FLOORS, SEATS, incidents
 
@@ -53,6 +56,27 @@ PASSWORDS = {
     "employee": DEFAULT_EMPLOYEE_PASSWORD,
     "engineer": DEFAULT_ENGINEER_PASSWORD,
 }
+
+
+def seed_passwords() -> dict[str, str]:
+    """Validate every cloud role credential before writing any demo records."""
+
+    cloud = os.environ.get("IS_LOCAL", "true").lower() == "false"
+    passwords = {}
+    for role, default in PASSWORDS.items():
+        name = f"SEED_{role.upper()}_PASSWORD"
+        value = os.environ.get(name, "" if cloud else default)
+        if cloud or name in os.environ:
+            try:
+                validate_password(value)
+                if value in PASSWORDS.values():
+                    raise ValueError
+            except ValueError:
+                raise ValueError(
+                    f"{name} must contain 12–128 nonblank characters and differ from the demo defaults"
+                ) from None
+        passwords[role] = value
+    return passwords
 
 
 async def get_or_create(
@@ -76,6 +100,7 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
     """Create one atomic, repeatable sample dataset under the setup advisory lock."""
 
     counts = {name: 0 for name in Base.metadata.tables}
+    passwords = seed_passwords()
     users: dict[str, User] = {}
     async with session.begin():
         await session.execute(select(func.pg_advisory_xact_lock(SETUP_LOCK_ID)))
@@ -84,7 +109,7 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
             new_user = user is None
             if new_user:
                 password_hash = await asyncio.to_thread(
-                    hash_password, PASSWORDS[account.role]
+                    hash_password, passwords[account.role]
                 )
                 user, _ = await get_or_create(
                     session,

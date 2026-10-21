@@ -1,6 +1,7 @@
 """Authentication configuration with environment overrides and local dev defaults."""
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from pydantic import SecretStr
@@ -45,18 +46,27 @@ class SecuritySettings:
             )
 
 
-def get_security_settings() -> SecuritySettings:
-    """Use development defaults for settings absent from the environment."""
+def get_security_settings(
+    environment: Mapping[str, str] | None = None,
+) -> SecuritySettings:
+    """Keep local defaults; cloud deployments must supply their own signing key."""
 
+    settings = os.environ if environment is None else environment
+    key = settings.get("JWT_SECRET_KEY", DEFAULT_JWT_SECRET_KEY)
+    if (
+        settings.get("IS_LOCAL", "true").lower() == "false"
+        and key == DEFAULT_JWT_SECRET_KEY
+    ):
+        raise SecurityConfigurationError(
+            "A dedicated JWT_SECRET_KEY is required outside local development"
+        )
     try:
-        access_minutes = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-        refresh_days = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+        access_minutes = int(settings.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+        refresh_days = int(settings.get("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
     except ValueError:
         raise SecurityConfigurationError("Token lifetimes must be integers") from None
     return SecuritySettings(
-        jwt_secret_key=SecretStr(
-            os.environ.get("JWT_SECRET_KEY", DEFAULT_JWT_SECRET_KEY)
-        ),
+        jwt_secret_key=SecretStr(key),
         access_token_minutes=access_minutes,
         refresh_token_days=refresh_days,
     )

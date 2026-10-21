@@ -11,6 +11,7 @@ from argon2 import PasswordHasher
 from pydantic import SecretStr
 
 from backend.app.security.config import (
+    DEFAULT_JWT_SECRET_KEY,
     SecurityConfigurationError,
     SecuritySettings,
     get_security_settings,
@@ -81,6 +82,28 @@ class PasswordTests(unittest.TestCase):
 
 class SecurityConfigTests(unittest.TestCase):
     """Token configuration supports local defaults and validates env overrides."""
+
+    def test_cloud_requires_a_dedicated_key_while_local_defaults_remain(self) -> None:
+        self.assertEqual(
+            get_security_settings({}).jwt_secret_key.get_secret_value(),
+            DEFAULT_JWT_SECRET_KEY,
+        )
+        for changes in (
+            {},
+            {"JWT_SECRET_KEY": DEFAULT_JWT_SECRET_KEY},
+        ):
+            with (
+                self.subTest(changes=changes),
+                self.assertRaises(SecurityConfigurationError),
+            ):
+                get_security_settings({"IS_LOCAL": "false", **changes})
+        key = secrets.token_urlsafe(48)
+        self.assertEqual(
+            get_security_settings(
+                {"IS_LOCAL": "false", "JWT_SECRET_KEY": key}
+            ).jwt_secret_key.get_secret_value(),
+            key,
+        )
 
     def test_explicit_signing_keys_are_validated_and_hidden(self) -> None:
         """Reject invalid supplied keys and preserve valid environment overrides."""

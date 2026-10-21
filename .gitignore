@@ -261,3 +261,7 @@ tfplan
 
 # Shared application runtime override for the workshop Lambda module.
 !infra/facilities_override.tf
+!infra/facilities_rds_override.tf
+!infra/facilities_frontend_override.tf
+!.env.cloud.sample
+.cloud/

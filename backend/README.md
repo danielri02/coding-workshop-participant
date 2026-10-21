@@ -1,5 +1,9 @@
 # Coding Workshop - Backend Code
 
+For AWS deployment, use the application-owned wrapper described in [CLOUD.md](CLOUD.md).
+It keeps cloud settings and state separate from local development and delegates to
+the unchanged workshop scripts.
+
 ## Incident application: workshop local development
 
 The application is packaged as `backend/facilities/`, discovered by the provided

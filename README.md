@@ -10,6 +10,9 @@ Navigate to [Coding Workshop - Main Guide](./docs/README.md) to get started.
 
 ## Application configuration
 
+For AWS deployment, see the [cloud deployment guide](backend/CLOUD.md) and
+`.env.cloud.sample`. Local development continues to use the shared `.env` below.
+
 Copy [.env.sample](./.env.sample) to `.env` in the repository root and edit that
 one file for backend, frontend and local Lambda deployment settings. The API and
 all Python maintenance scripts load it automatically from any working directory.

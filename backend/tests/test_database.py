@@ -465,6 +465,45 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 0,
             )
 
+    async def test_cloud_seed_requires_explicit_passwords_and_preserves_them_on_rerun(
+        self,
+    ) -> None:
+        with patch.dict(os.environ, {"IS_LOCAL": "false"}, clear=True):
+            async with self.factory() as session:
+                with self.assertRaisesRegex(ValueError, "SEED_ADMIN_PASSWORD"):
+                    await seed_database(session)
+        self.assertEqual(await self.inserted_user_count(), 0)
+        passwords = {
+            role: secrets.token_urlsafe(24)
+            for role in ("admin", "employee", "engineer")
+        }
+        environment = {
+            "IS_LOCAL": "false",
+            **{
+                f"SEED_{role.upper()}_PASSWORD": value
+                for role, value in passwords.items()
+            },
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            async with self.factory() as session:
+                await seed_database(session)
+                self.assertTrue(
+                    all(count == 0 for count in (await seed_database(session)).values())
+                )
+                for user in (await session.scalars(select(User))).all():
+                    role = (
+                        "admin"
+                        if user.is_admin
+                        else "engineer"
+                        if user.email.startswith("engineer")
+                        else "employee"
+                    )
+                    self.assertTrue(
+                        await asyncio.to_thread(
+                            PasswordHasher().verify, user.password_hash, passwords[role]
+                        )
+                    )
+
     async def test_seed_does_not_promote_an_existing_admin_email(self) -> None:
         """An email collision cannot turn a registered employee into an admin."""
 
@@ -601,6 +640,25 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 code, _, stderr = await self.cli(create, invocation=invocation)
                 self.assertEqual(code, 0, stderr)
                 self.assertEqual(await self.inserted_user_count(), 0)
+
+    async def test_cloud_initialization_cli_preserves_existing_records(self) -> None:
+        async with self.factory.begin() as session:
+            session.add(Building(name="Keep this data"))
+        for invocation in (
+            "root-module",
+            "backend-module",
+            "root-file",
+            "backend-file",
+        ):
+            code, stdout, stderr = await self.cli(
+                "backend.scripts.initialize_database", invocation=invocation
+            )
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("existing data preserved", stdout)
+        async with self.factory() as session:
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(Building)), 1
+            )
 
     async def test_cli_create_tables_always_resets_application_data(self) -> None:
         """A plain script invocation wipes seeded data and supports a fresh reseed."""
