@@ -34,6 +34,13 @@ normal starts use that command. Explicit deployment is useful because the
 provided script can skip deployment when unrelated previously deployed functions
 make its service count look sufficient. The workshop scripts remain unchanged.
 
+`infra/facilities_local_access.tf` grants the local `facilities` Function URL the
+invocation permissions needed to reach FastAPI. These permissions apply only in
+LocalStack; direct function invocation is not granted. Application login and
+role checks still apply. Redeploy with the wrapper after pulling access changes.
+Check `http://localhost:3000/api/facilities/health` after starting the frontend:
+it should return JSON with `status: ok`; a 403 here occurs before any database use.
+
 ### Shared application configuration
 
 The repository-root `.env` is shared by the backend, Python scripts, local
