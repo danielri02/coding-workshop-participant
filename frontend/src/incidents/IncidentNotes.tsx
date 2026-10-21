@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Alert, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
 import { RecordFormDialog } from '../components/RecordFormDialog'
-import { activeStatuses } from '../generated/domain'
+import { noteStatuses } from '../generated/domain'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { noteFields } from '../resources/incidentFields'
 import { api } from '../services/client'
@@ -17,7 +17,7 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
   const client = useQueryClient()
   const path = `/incidents/${incident.id}/notes`
   const query = useApiQuery<Note[]>(path, [])
-  const active = activeStatuses.some((status) => status === incident.status)
+  const canAddNotes = noteStatuses.some((status) => status === incident.status)
   const refresh = () => void client.invalidateQueries({ queryKey: ['api', path] })
   const save = async (payload: Record<string, unknown>) => {
     await api<Note>(path, { method: 'POST', body: JSON.stringify(payload) })
@@ -30,13 +30,13 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
         <Typography variant="h6" component="h2">
           Notes and updates
         </Typography>
-        {active && (
+        {canAddNotes && (
           <Button variant="outlined" onClick={() => setAdding(true)}>
             Add note
           </Button>
         )}
       </Stack>
-      {!active && (
+      {!canAddNotes && (
         <Alert severity="info" sx={{ mb: 2 }}>
           This incident is {incident.status.toLowerCase()}. Its updates remain available to read.
         </Alert>
@@ -53,7 +53,7 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
       )}
       {!query.loading && !query.error && !query.data.length && (
         <Typography variant="body2" color="text.secondary">
-          {active
+          {canAddNotes
             ? 'No updates yet. Add a note to share more information with facilities.'
             : 'No updates were recorded for this incident.'}
         </Typography>
@@ -80,7 +80,7 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
           </Box>
         ))}
       </Stack>
-      {adding && active && (
+      {adding && canAddNotes && (
         <RecordFormDialog
           title="Add note"
           fields={noteFields}

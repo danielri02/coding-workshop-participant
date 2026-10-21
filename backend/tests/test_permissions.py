@@ -580,6 +580,21 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         await self.request(
             "engineer", "PATCH", incident_path + "/status", 200, {"status": "Resolved"}
         )
+        resolved = (await self.request("admin", "GET", incident_path, 200)).json()
+        for actor in self.ids:
+            visible = actor in {"employee", "engineer", "admin", "combined"}
+            response = await self.request(
+                actor,
+                "POST",
+                incident_path + "/notes",
+                201 if visible else 403,
+                {"body": "Follow-up after resolution"},
+            )
+            if visible:
+                self.assertEqual(response.json()["author_id"], self.ids[actor])
+        after_notes = (await self.request("admin", "GET", incident_path, 200)).json()
+        self.assertEqual(after_notes["status"], "Resolved")
+        self.assertEqual(after_notes["resolved_at"], resolved["resolved_at"])
         await self.request(
             "admin", "PATCH", incident_path + "/status", 200, {"status": "Closed"}
         )

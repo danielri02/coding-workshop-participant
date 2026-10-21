@@ -16,6 +16,7 @@ from backend.app.domain.incidents import (
     ACTIVE_STATUSES,
     ADMIN_TRANSITIONS,
     ENGINEER_TRANSITIONS,
+    NOTE_STATUSES,
 )
 from backend.app.main import app
 
@@ -36,6 +37,9 @@ def main() -> None:
         },
         "activeStatuses": [
             state.value for state in ENGINEER_TRANSITIONS if state in ACTIVE_STATUSES
+        ],
+        "noteStatuses": [
+            state.value for state in ENGINEER_TRANSITIONS if state in NOTE_STATUSES
         ],
     }
     print(json.dumps(document, sort_keys=True))

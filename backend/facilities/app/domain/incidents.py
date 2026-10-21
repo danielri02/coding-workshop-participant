@@ -16,3 +16,6 @@ ADMIN_TRANSITIONS = {
 ACTIVE_STATUSES = frozenset(
     {IncidentStatus.OPEN, IncidentStatus.IN_PROGRESS, IncidentStatus.BLOCKED}
 )
+NOTE_STATUSES = frozenset(
+    state for state in IncidentStatus if state != IncidentStatus.CLOSED
+)

@@ -4,7 +4,7 @@ from .base import Body, Name, PatchSchema, PositiveID, Schema, UTCDateTime
 
 
 class NoteCreate(Schema):
-    """Post to an active incident; incident and author come from route/auth context."""
+    """Post until closure; incident and author come from route/auth context."""
 
     body: Body
 

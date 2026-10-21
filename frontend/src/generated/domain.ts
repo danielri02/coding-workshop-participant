@@ -49,6 +49,8 @@ export const adminTransitions = {
 
 export const activeStatuses = ['Open', 'In Progress', 'Blocked'] as const
 
+export const noteStatuses = ['Open', 'In Progress', 'Blocked', 'Resolved'] as const
+
 export const constraints = {
   BuildingCreate: { name: { minLength: 1, maxLength: 100 } },
   BuildingRead: { name: { minLength: 1, maxLength: 100 } },

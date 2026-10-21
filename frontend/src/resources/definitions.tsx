@@ -7,6 +7,7 @@ import { ValueChip } from '../components/ValueChip'
 import { statuses, priorities, categories, constraints } from '../generated/domain'
 import type { Field } from './forms'
 import { adminIncidentFields, locationFields, noteFields } from './incidentFields'
+import { userFields } from './userFields'
 import { floorLabel } from './rows'
 import type { AdminRow, Lookups, ResourceKey } from '../types'
 
@@ -141,26 +142,7 @@ export const resources: ResourceDefinition[] = [
     endpoint: '/users',
     description: 'Manage employee accounts and administrator access.',
     lookups: [],
-    fields: [
-      { name: 'name', label: 'Name', required: true, ...constraints.UserCreate.name },
-      {
-        name: 'email',
-        label: 'Email',
-        type: 'email',
-        required: true,
-        ...constraints.UserCreate.email,
-        helper: 'Use an @acme.inc email address.',
-      },
-      {
-        name: 'password',
-        label: 'Initial password',
-        type: 'password',
-        required: true,
-        ...constraints.UserCreate.password,
-        createOnly: true,
-        helper: '12–128 characters. Admin access can be granted after creation.',
-      },
-    ],
+    fields: userFields,
     columns: () => [
       { ...text('name', 'Name', 220), flex: 1 },
       text('email', 'Email address', 290),

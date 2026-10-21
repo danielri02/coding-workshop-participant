@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
 from ..database import crud
-from ..domain.incidents import ACTIVE_STATUSES
+from ..domain.incidents import NOTE_STATUSES
 from ..models import Note
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
 from ..security.dependencies import AdminUser, CurrentUser
@@ -40,12 +40,12 @@ async def create_note(
     session: DatabaseSession,
     user: CurrentUser,
 ) -> Note:
-    """Post as the authenticated viewer while the incident remains active."""
+    """Post as an authorized viewer, including after resolution, until closure."""
 
     incident = await accessible_incident(session, incident_id, user, for_update=True)
-    if incident.status not in ACTIVE_STATUSES:
+    if incident.status not in NOTE_STATUSES:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "New notes require an active incident"
+            status.HTTP_409_CONFLICT, "New notes are not allowed on closed incidents"
         )
     return await crud.create_record(
         session,

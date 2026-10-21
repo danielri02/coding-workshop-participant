@@ -347,6 +347,114 @@ test('employee credentials open their workspace and exclude admin navigation', a
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
 })
 
+test('new employees register on mobile, sign in and add follow-up notes after resolution', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(90000)
+  const suffix = `registration${Date.now()}`
+  const newEmail = `${suffix}@acme.inc`
+  const newPassword = '  registration-password-12345  '
+  const posts: string[] = []
+  page.on('request', (request) => {
+    if (browserPath(new URL(request.url())) === '/users' && request.method() === 'POST')
+      posts.push(request.postData() || '')
+  })
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.goto('/employee/incidents')
+  await page.getByRole('button', { name: 'Create an account', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Create your account' })
+  const create = dialog.getByRole('button', { name: 'Create account', exact: true })
+  await dialog.getByLabel('Name', { exact: false }).fill(`Employee ${suffix}`)
+  await dialog.getByLabel('Email', { exact: false }).fill(`${suffix}@example.com`)
+  await dialog.getByLabel('Password', { exact: false }).fill('short')
+  await dialog.getByLabel('Name', { exact: false }).focus()
+  await expect(create).toBeDisabled()
+  await expect(
+    dialog.getByText('Use a valid @acme.inc email address.', { exact: true }),
+  ).toBeVisible()
+  await expect(dialog.getByText('Use at least 12 characters.', { exact: true })).toBeVisible()
+  expect(posts).toEqual([])
+  await dialog.getByLabel('Email', { exact: false }).fill('employee@acme.inc')
+  await dialog.getByLabel('Password', { exact: false }).fill(newPassword)
+  const duplicate = page.waitForResponse(
+    (response) =>
+      browserPath(new URL(response.url())) === '/users' && response.request().method() === 'POST',
+  )
+  await create.click()
+  expect((await duplicate).status()).toBe(409)
+  await expect(dialog.getByRole('alert')).toContainText('Sign in instead')
+  await expect(dialog.getByText('This email is already registered.', { exact: true })).toBeVisible()
+  await expect(dialog.getByLabel('Name', { exact: false })).toHaveValue(`Employee ${suffix}`)
+  await dialog.getByLabel('Email', { exact: false }).fill(newEmail.toUpperCase())
+  const registered = page.waitForResponse(
+    (response) =>
+      browserPath(new URL(response.url())) === '/users' && response.request().method() === 'POST',
+  )
+  await create.click()
+  const result = await registered
+  expect(result.status()).toBe(201)
+  const account = await result.json()
+  cleanup.unshift(`/users/${account.id}`)
+  expect(account.email).toBe(newEmail)
+  expect(account.is_admin).toBe(false)
+  expect(account.engineer_profile).toBeNull()
+  expect(JSON.parse(posts.at(-1)!)).toEqual({
+    name: `Employee ${suffix}`,
+    email: newEmail.toUpperCase(),
+    password: newPassword,
+  })
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('alert')).toContainText('Your account has been created')
+  await expect(page.getByRole('textbox', { name: 'Email address' })).toHaveValue(newEmail)
+  await expect(page.getByLabel('Password', { exact: false })).toHaveValue('')
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+    .toBeLessThanOrEqual(1)
+  await signIn(page, newEmail, newPassword)
+  await expectSummary(page, 'personal', { Active: 0, Resolved: 0, Closed: 0 })
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  await page.getByRole('button', { name: 'New incident', exact: true }).click()
+  await page.getByRole('dialog').getByLabel('Title', { exact: false }).fill(suffix)
+  await page
+    .getByRole('dialog')
+    .getByLabel('Description', { exact: false })
+    .fill('A newly registered employee can report workplace issues.')
+  await select(page, 'Category', 'Other')
+  await select(page, 'Building', building.name)
+  const incident = await save(page, '/incidents')
+  expect(incident.reporter_id).toBe(account.id)
+  expect(incident.priority).toBe('Low')
+  const resolved = await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
+    headers,
+    data: { status: 'Resolved' },
+  })
+  expect(resolved.status()).toBe(200)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await page.getByRole('button', { name: 'Add note', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('Note', { exact: false })
+    .fill('Thanks, this is working after resolution.')
+  const note = await save(page, `/incidents/${incident.id}/notes`)
+  expect(note.author_id).toBe(account.id)
+  await page.reload()
+  await expect(
+    page.getByText('Thanks, this is working after resolution.', { exact: true }),
+  ).toBeVisible()
+  const closed = await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
+    headers,
+    data: { status: 'Closed' },
+  })
+  expect(closed.status()).toBe(200)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  await expect(
+    page.getByText('Thanks, this is working after resolution.', { exact: true }),
+  ).toBeVisible()
+})
+
 for (const endpoint of ['/auth/login', '/auth/me']) {
   test(`unexpected JSON from ${endpoint} reports API configuration rather than admin denial`, async ({
     page,
@@ -419,6 +527,15 @@ test('incident actions validate blocked reasons and preserve note editing after 
         })
       ).ok(),
     ).toBeTruthy()
+    if (status === 'Resolved') {
+      await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+      await page.getByRole('button', { name: 'New note', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByLabel('Note', { exact: false })
+        .fill('Admin follow-up after resolution')
+      await save(page, `/incidents/${incident.id}/notes`)
+    }
   }
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(page.getByRole('button', { name: 'New note', exact: true })).toBeDisabled()
@@ -1146,8 +1263,17 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
       })
     } else
       await expect(page.getByRole('alert').filter({ hasText: 'Work is blocked:' })).toBeHidden()
-    if (status === 'Resolved')
-      await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+    if (status === 'Resolved') {
+      await page.getByRole('button', { name: 'Add note', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByLabel('Note', { exact: false })
+        .fill('Engineer follow-up after resolution')
+      await save(page, `/incidents/${incident.id}/notes`)
+      await expect(
+        page.getByText('Engineer follow-up after resolution', { exact: true }).last(),
+      ).toBeVisible()
+    }
   }
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()

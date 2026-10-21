@@ -614,10 +614,10 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                 await self.client.post(
                     f"/incidents/{report['id']}/notes",
                     params={"author_id": self.reporter_id},
-                    json={"body": "Too late"},
+                    json={"body": "Follow-up after resolution"},
                 )
             ).status_code,
-            409,
+            201,
         )
         response = await self.client.patch(path, json={"status": "Closed"})
         self.assertEqual(response.status_code, 200, response.text)

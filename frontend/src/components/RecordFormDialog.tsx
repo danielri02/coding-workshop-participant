@@ -25,6 +25,7 @@ interface FormProps {
   lookups: Lookups
   row?: FormRow | null
   subtitle?: string
+  submitLabel?: string
   onSave: (payload: Record<string, unknown>) => Promise<void>
   onClose: () => void
 }
@@ -52,6 +53,7 @@ export function RecordFormDialog({
   lookups,
   row = null,
   subtitle,
+  submitLabel = 'Save',
   onSave,
   onClose,
 }: FormProps) {
@@ -86,7 +88,7 @@ export function RecordFormDialog({
     setServerErrors((previous) => ({ ...previous, [field.name]: '' }))
   }
   const save = async () => {
-    if (invalid || !Object.keys(payload).length) return
+    if (submitting || invalid || !Object.keys(payload).length) return
     setSubmitting(true)
     setError('')
     try {
@@ -191,7 +193,7 @@ export function RecordFormDialog({
           form="record-form"
           disabled={submitting || invalid || !Object.keys(payload).length}
         >
-          {submitting ? 'Saving…' : 'Save'}
+          {submitting ? 'Saving…' : submitLabel}
         </Button>
       </DialogActions>
     </Dialog>
@@ -204,6 +206,7 @@ RecordFormDialog.propTypes = {
   lookups: PropTypes.object.isRequired,
   row: PropTypes.object,
   subtitle: PropTypes.string,
+  submitLabel: PropTypes.string,
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 }

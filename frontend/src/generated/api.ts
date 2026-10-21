@@ -389,7 +389,7 @@ export interface components {
     }
     /**
      * NoteCreate
-     * @description Post to an active incident; incident and author come from route/auth context.
+     * @description Post until closure; incident and author come from route/auth context.
      */
     NoteCreate: {
       /** Body */

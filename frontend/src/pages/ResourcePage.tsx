@@ -24,7 +24,7 @@ import { ResourceGrid } from '../components/ResourceGrid'
 import { useApiQuery, useDebouncedValue } from '../hooks/useApiQuery'
 import { useLookups } from '../hooks/useLookups'
 import { useResourceActions } from '../hooks/useResourceActions'
-import { activeStatuses, incidentGrid } from '../generated/domain'
+import { noteStatuses, incidentGrid } from '../generated/domain'
 import type { ResourceDefinition } from '../resources/definitions'
 import { incidentQuery } from '../resources/incidentQuery'
 import { decorateRow } from '../resources/rows'
@@ -93,7 +93,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     query.loading || lookups.loading || incidents.loading || (server && search !== debouncedSearch)
   const failure = query.error || lookups.error || incidents.error
   const columns = useMemo(() => resource.columns(lookups.data), [resource, lookups.data])
-  const activeNotes = activeStatuses.some((status) => status === selectedIncident?.status)
+  const canAddNotes = noteStatuses.some((status) => status === selectedIncident?.status)
   return (
     <Stack spacing={3} sx={{ minWidth: 0, width: '100%' }}>
       <Stack
@@ -113,7 +113,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           startIcon={<Add />}
           onClick={() => setEditor({ action: 'create', row: null })}
           disabled={
-            loading || Boolean(failure) || (resource.key === 'notes' && (!scope || !activeNotes))
+            loading || Boolean(failure) || (resource.key === 'notes' && (!scope || !canAddNotes))
           }
         >
           New {resource.singular}
@@ -141,10 +141,10 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           </TextField>
         </Paper>
       )}
-      {resource.key === 'notes' && selectedIncident && !activeNotes && (
+      {resource.key === 'notes' && selectedIncident && !canAddNotes && (
         <Alert severity="info">
           This incident is {String(selectedIncident.status).toLowerCase()}. Existing notes can be
-          read, corrected or deleted; new notes require an active incident.
+          read, corrected or deleted; new notes are allowed until the incident is closed.
         </Alert>
       )}
       {failure && (

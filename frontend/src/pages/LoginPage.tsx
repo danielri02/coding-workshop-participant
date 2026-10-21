@@ -3,18 +3,49 @@ import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/ma
 import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined'
 import ArrowForward from '@mui/icons-material/ArrowForward'
 import { useAuth } from '../auth/context'
-import { errorMessage } from '../services/client'
+import { api, ApiError, errorMessage } from '../services/client'
+import { isUser } from '../services/authContracts'
+import { RecordFormDialog } from '../components/RecordFormDialog'
+import { registrationFields } from '../resources/userFields'
+import type { Lookups, User } from '../types'
 
-/** Sign employees and administrators in with visible request and credential errors. */
+const emptyLookups: Lookups = { users: [], buildings: [], floors: [], seats: [] }
+
+/** Sign in or register an employee account with visible validation errors. */
 export function LoginPage() {
   const { login, notice } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [registering, setRegistering] = useState(false)
+  const [success, setSuccess] = useState('')
+  const register = async (payload: Record<string, unknown>) => {
+    let account: User
+    try {
+      account = await api<User>(
+        '/users',
+        { method: 'POST', body: JSON.stringify(payload) },
+        false,
+        isUser,
+      )
+    } catch (failure) {
+      if (failure instanceof ApiError && failure.status === 409)
+        throw new ApiError('An account with this email already exists. Sign in instead.', 409, {
+          email: 'This email is already registered.',
+        })
+      throw failure
+    }
+    setEmail(account.email)
+    setPassword('')
+    setError('')
+    setRegistering(false)
+    setSuccess('Your account has been created. Sign in with your new password.')
+  }
   const submit = async () => {
     setBusy(true)
     setError('')
+    setSuccess('')
     try {
       await login(email, password)
     } catch (failure) {
@@ -93,7 +124,8 @@ export function LoginPage() {
               void submit()
             }}
           >
-            {(error || notice) && <Alert severity="error">{error || notice}</Alert>}
+            {success && <Alert severity="success">{success}</Alert>}
+            {(error || (!success && notice)) && <Alert severity="error">{error || notice}</Alert>}
             <TextField
               label="Email address"
               type="email"
@@ -125,11 +157,34 @@ export function LoginPage() {
               {busy ? 'Signing in…' : 'Sign in'}
             </Button>
           </Stack>
+          <Button
+            fullWidth
+            disabled={busy}
+            sx={{ mt: 2 }}
+            onClick={() => {
+              setError('')
+              setSuccess('')
+              setRegistering(true)
+            }}
+          >
+            Create an account
+          </Button>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 3, display: 'block' }}>
             Your account determines the workspace and actions available to you.
           </Typography>
         </Paper>
       </Stack>
+      {registering && (
+        <RecordFormDialog
+          title="Create your account"
+          subtitle="Use your ACME email to report workplace issues and follow their progress."
+          fields={registrationFields}
+          lookups={emptyLookups}
+          onSave={register}
+          onClose={() => setRegistering(false)}
+          submitLabel="Create account"
+        />
+      )}
     </Box>
   )
 }

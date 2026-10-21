@@ -3,7 +3,12 @@ import { test } from 'node:test'
 import { incidentQuery } from '../src/resources/incidentQuery'
 import { formPayload, type Field } from '../src/resources/forms'
 import { decorateRow } from '../src/resources/rows'
-import { adminTransitions, transitions } from '../src/generated/domain'
+import {
+  activeStatuses,
+  adminTransitions,
+  noteStatuses,
+  transitions,
+} from '../src/generated/domain'
 import { createQueryClient, invalidateResourceQueries } from '../src/services/queries'
 import type { Lookups, EngineerProfile } from '../src/types'
 
@@ -42,6 +47,12 @@ test('registration payloads preserve meaningful password spaces', () => {
     ),
     { password: '  keep my spaces  ' },
   )
+})
+
+test('resolved incidents accept notes without becoming active work', () => {
+  assert.ok(noteStatuses.some((status) => status === 'Resolved'))
+  assert.ok(!noteStatuses.some((status: string) => status === 'Closed'))
+  assert.ok(!activeStatuses.some((status: string) => status === 'Resolved'))
 })
 
 test('resuming work clears the blocked reason without reopening the incident', () => {

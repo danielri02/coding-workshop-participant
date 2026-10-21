@@ -262,6 +262,11 @@ through `POST /users`; it grants employee access only. `GET /auth/me` returns th
 authenticated account and its current capabilities, without credential fields;
 the frontend uses it when restoring a login.
 
+On the frontend sign-in screen, **Create an account** accepts a name, an exact
+`@acme.inc` email address and a 12–128 character password. New accounts have
+employee access only. Successful registration returns to sign-in with the email
+filled in; duplicate accounts show a field error without discarding the form.
+
 Development seed logins are `admin@acme.inc` / `admin`, `employee@acme.inc` /
 `employee`, and `engineer@acme.inc` / `engineer`. No password environment variable
 is needed. Additional sample staff (`employee2`, `employee3`, `engineer2`,
@@ -292,7 +297,7 @@ logout authenticate the supplied refresh credential rather than an access JWT.
 | Correct submitted incident details, assign/unassign, delete incidents | Admin |
 | Change incident status | Assigned engineer: In Progress → Blocked/Resolved, Blocked/Resolved → In Progress; admin: any status, including Open and Closed |
 | Change priority/escalation | Admin |
-| Post notes | Reporter, assigned engineer or admin on an active incident; author comes from the access token |
+| Post notes | Reporter, assigned engineer or admin until closure, including Resolved; author comes from the access token |
 | Edit/delete existing notes | Admin, including after resolution/closure |
 | Read facilities and engineer profiles | Any signed-in employee, for location/assignee lookups |
 | Create/update/delete facilities or engineer profiles | Admin |

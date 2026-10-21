@@ -39,6 +39,7 @@ const domain = {
   transitions: document['x-incident-workflow'].transitions,
   adminTransitions: document['x-incident-workflow'].adminTransitions,
   activeStatuses: document['x-incident-workflow'].activeStatuses,
+  noteStatuses: document['x-incident-workflow'].noteStatuses,
 }
 const constraints = {}
 for (const [name, schema] of Object.entries(schemas)) {
