@@ -149,11 +149,12 @@ export function ResourceGrid({
     },
   ]
   return (
-    <Box sx={{ height: 590, width: '100%' }}>
+    <Box sx={{ height: 'clamp(300px, calc(100dvh - 300px), 590px)', width: '100%', minWidth: 0 }}>
       <DataGrid
         rows={rows}
         columns={allColumns}
         loading={loading}
+        scrollbarSize={14}
         disableRowSelectionOnClick
         initialState={{
           columns: {
@@ -191,6 +192,8 @@ export function ResourceGrid({
         }}
         sx={{
           border: 0,
+          minWidth: 0,
+          maxWidth: '100%',
           '& .MuiDataGrid-columnHeaders': { fontSize: 12, color: 'text.secondary' },
           '& .MuiDataGrid-cell': { borderColor: 'divider' },
           '& .MuiDataGrid-toolbarContainer': {
@@ -198,7 +201,15 @@ export function ResourceGrid({
             py: 1,
             borderBottom: '1px solid',
             borderColor: 'divider',
+            flexWrap: 'wrap',
           },
+          '& .MuiDataGrid-scrollbar--horizontal': {
+            overflowX: 'scroll',
+            '&::-webkit-scrollbar': { height: 14 },
+            '&::-webkit-scrollbar-thumb': { bgcolor: '#a9b6c8', borderRadius: 7 },
+            '&::-webkit-scrollbar-track': { bgcolor: '#edf1f7' },
+          },
+          '& .MuiTablePagination-selectLabel': { display: { xs: 'none', sm: 'block' } },
         }}
       />
     </Box>

@@ -17,10 +17,13 @@ import {
   Toolbar,
   Tooltip,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
 import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined'
 import AssignmentOutlined from '@mui/icons-material/AssignmentOutlined'
 import ChairOutlined from '@mui/icons-material/ChairOutlined'
+import ChevronLeftOutlined from '@mui/icons-material/ChevronLeftOutlined'
 import EngineeringOutlined from '@mui/icons-material/EngineeringOutlined'
 import GroupOutlined from '@mui/icons-material/GroupOutlined'
 import LayersOutlined from '@mui/icons-material/LayersOutlined'
@@ -37,7 +40,8 @@ import { resources } from '../resources/definitions'
 export interface AdminOutlet {
   changed: (message: string, resource?: ResourceKey) => void
 }
-const width = 248
+const expandedWidth = 248
+const collapsedWidth = 72
 const icons = {
   incidents: <AssignmentOutlined />,
   users: <GroupOutlined />,
@@ -52,7 +56,18 @@ const icons = {
 export function AdminLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const theme = useTheme()
+  const desktop = useMediaQuery(theme.breakpoints.up('md'))
+  const wide = useMediaQuery(theme.breakpoints.up('lg'))
+  const [expanded, setExpanded] = useState<boolean | null>(null)
+  const sidebarExpanded = expanded ?? wide
+  const sidebarWidth = sidebarExpanded ? expandedWidth : collapsedWidth
   const [mobileOpen, setMobileOpen] = useState(false)
+  const navigationLabel = desktop
+    ? sidebarExpanded
+      ? 'Collapse navigation'
+      : 'Expand navigation'
+    : 'Open navigation'
   const queryClient = useQueryClient()
   const [message, setMessage] = useState('')
   const current = resources.find((resource) => location.pathname.endsWith(`/${resource.key}`))
@@ -71,7 +86,7 @@ export function AdminLayout() {
       )
     setMessage(notice)
   }
-  const navigation = (
+  const navigation = (showLabels: boolean) => (
     <Box
       sx={{
         height: '100%',
@@ -81,11 +96,20 @@ export function AdminLayout() {
         bgcolor: '#12253b',
       }}
     >
-      <Stack direction="row" spacing={1.5} sx={{ px: 3, py: 3.5, alignItems: 'center' }}>
+      <Stack
+        direction="row"
+        spacing={showLabels ? 1.5 : 0}
+        sx={{
+          px: showLabels ? 3 : 0,
+          py: 2.5,
+          alignItems: 'center',
+          justifyContent: showLabels ? 'flex-start' : 'center',
+        }}
+      >
         <Box sx={{ bgcolor: '#2c6bed', p: 1, borderRadius: 2, display: 'flex' }}>
           <ApartmentOutlined sx={{ color: 'white' }} />
         </Box>
-        <Box>
+        <Box sx={{ display: showLabels ? 'block' : 'none' }}>
           <Typography sx={{ fontWeight: 800, letterSpacing: 2 }} color="white">
             ACME
           </Typography>
@@ -95,39 +119,49 @@ export function AdminLayout() {
         </Box>
       </Stack>
       <Divider sx={{ borderColor: '#ffffff12', mx: 2 }} />
-      <Typography
-        variant="overline"
-        sx={{ px: 3, pt: 3, pb: 1, color: '#7e98b2', fontSize: 10, letterSpacing: 1.6 }}
+      {showLabels && (
+        <Typography
+          variant="overline"
+          sx={{ px: 3, pt: 2, pb: 1, color: '#7e98b2', fontSize: 10, letterSpacing: 1.6 }}
+        >
+          Administration
+        </Typography>
+      )}
+      <List
+        component="nav"
+        aria-label="Administration"
+        sx={{ px: 1.5, minHeight: 0, overflowY: 'auto', mt: showLabels ? 0 : 1 }}
       >
-        Administration
-      </Typography>
-      <List component="nav" aria-label="Administration" sx={{ px: 1.5 }}>
         {resources.map((resource) => (
-          <ListItemButton
-            key={resource.key}
-            component={NavLink}
-            to={`/admin/${resource.key}`}
-            onClick={() => setMobileOpen(false)}
-            sx={{
-              mb: 0.5,
-              px: 1.5,
-              py: 1,
-              borderRadius: 1.5,
-              '&.active': { bgcolor: '#25446a', color: '#fff' },
-              '&:hover': { bgcolor: '#ffffff0c' },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>
-              {icons[resource.key]}
-            </ListItemIcon>
-            <ListItemText
-              primary={resource.title}
-              slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 600 } } }}
-            />
-          </ListItemButton>
+          <Tooltip key={resource.key} title={showLabels ? '' : resource.title} placement="right">
+            <ListItemButton
+              component={NavLink}
+              aria-label={resource.title}
+              to={`/admin/${resource.key}`}
+              onClick={() => setMobileOpen(false)}
+              sx={{
+                mb: 0.5,
+                px: 1.5,
+                py: 1,
+                borderRadius: 1.5,
+                justifyContent: showLabels ? 'flex-start' : 'center',
+                '&.active': { bgcolor: '#25446a', color: '#fff' },
+                '&:hover': { bgcolor: '#ffffff0c' },
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: showLabels ? 38 : 0, color: 'inherit' }}>
+                {icons[resource.key]}
+              </ListItemIcon>
+              <ListItemText
+                primary={resource.title}
+                sx={{ display: showLabels ? 'block' : 'none' }}
+                slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 600 } } }}
+              />
+            </ListItemButton>
+          </Tooltip>
         ))}
       </List>
-      <Box sx={{ mt: 'auto', p: 2.5 }}>
+      <Box sx={{ mt: 'auto', p: 2.5, display: showLabels ? 'block' : 'none' }}>
         <Divider sx={{ borderColor: '#ffffff12', mb: 2 }} />
         <Chip
           label="Admin workspace"
@@ -141,21 +175,26 @@ export function AdminLayout() {
     </Box>
   )
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <Box component="aside" sx={{ width: { md: width }, flexShrink: { md: 0 } }}>
+    <Box sx={{ display: 'flex', minHeight: '100dvh', width: '100%', minWidth: 0 }}>
+      <Box component="aside" sx={{ width: { xs: 0, md: sidebarWidth }, flexShrink: 0 }}>
         <Drawer
+          id="desktop-admin-navigation"
           variant="permanent"
-          sx={{ display: { xs: 'none', md: 'block' }, '& .MuiDrawer-paper': { width, border: 0 } }}
+          sx={{
+            display: { xs: 'none', md: 'block' },
+            '& .MuiDrawer-paper': { width: sidebarWidth, border: 0 },
+          }}
         >
-          {navigation}
+          {navigation(sidebarExpanded)}
         </Drawer>
         <Drawer
+          id="mobile-admin-navigation"
           variant="temporary"
           open={mobileOpen}
           onClose={() => setMobileOpen(false)}
-          sx={{ display: { md: 'none' }, '& .MuiDrawer-paper': { width } }}
+          sx={{ display: { md: 'none' }, '& .MuiDrawer-paper': { width: expandedWidth } }}
         >
-          {navigation}
+          {navigation(true)}
         </Drawer>
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -165,20 +204,26 @@ export function AdminLayout() {
             bgcolor: 'background.paper',
             borderBottom: '1px solid',
             borderColor: 'divider',
-            gap: 2,
+            gap: { xs: 1, sm: 2 },
+            px: { xs: 1.5, sm: 2 },
           }}
         >
-          <IconButton
-            aria-label="Open navigation"
-            onClick={() => setMobileOpen(true)}
-            sx={{ display: { md: 'none' } }}
-          >
-            <MenuOutlined />
-          </IconButton>
+          <Tooltip title={navigationLabel}>
+            <IconButton
+              aria-label={navigationLabel}
+              aria-expanded={desktop ? sidebarExpanded : mobileOpen}
+              aria-controls={desktop ? 'desktop-admin-navigation' : 'mobile-admin-navigation'}
+              onClick={() => (desktop ? setExpanded(!sidebarExpanded) : setMobileOpen(true))}
+              sx={{ flexShrink: 0 }}
+            >
+              {desktop && sidebarExpanded ? <ChevronLeftOutlined /> : <MenuOutlined />}
+            </IconButton>
+          </Tooltip>
           <Breadcrumbs
             sx={{
               flex: 1,
-              '& .MuiBreadcrumbs-separator:first-of-type': { display: { xs: 'none', sm: 'flex' } },
+              minWidth: 0,
+              '& .MuiBreadcrumbs-separator': { display: { xs: 'none', sm: 'flex' } },
             }}
           >
             <Typography
@@ -193,12 +238,19 @@ export function AdminLayout() {
             </Typography>
           </Breadcrumbs>
           <Avatar
-            sx={{ width: 32, height: 32, bgcolor: '#e9effc', color: 'primary.main', fontSize: 13 }}
+            sx={{
+              width: 32,
+              height: 32,
+              flexShrink: 0,
+              bgcolor: '#e9effc',
+              color: 'primary.main',
+              fontSize: 13,
+            }}
           >
             {user?.name.slice(0, 2).toUpperCase()}
           </Avatar>
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          <Box sx={{ display: { xs: 'none', sm: 'block' }, minWidth: 0, maxWidth: 180 }}>
+            <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
               {user?.name}
             </Typography>
             <Typography sx={{ fontSize: 11 }} color="text.secondary">
@@ -211,7 +263,16 @@ export function AdminLayout() {
             </IconButton>
           </Tooltip>
         </Toolbar>
-        <Box component="main" sx={{ p: { xs: 2, sm: 3, lg: 4 }, maxWidth: 1700, mx: 'auto' }}>
+        <Box
+          component="main"
+          sx={{
+            p: { xs: 2, sm: 3, lg: 4 },
+            minWidth: 0,
+            width: '100%',
+            maxWidth: 1700,
+            mx: 'auto',
+          }}
+        >
           <Outlet context={{ changed } satisfies AdminOutlet} />
         </Box>
       </Box>

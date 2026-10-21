@@ -24,7 +24,7 @@ const text = (field: keyof AdminRow, headerName: string, width = 180): GridColDe
   field,
   headerName,
   width,
-  minWidth: 100,
+  minWidth: Math.min(width, 220),
 })
 const flag = (field: keyof AdminRow, headerName: string): GridColDef<AdminRow> => ({
   field,

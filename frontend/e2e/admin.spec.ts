@@ -74,6 +74,80 @@ async function remove(page: Page, resource: string, id: number) {
   await expect(page.getByRole('dialog')).toBeHidden()
 }
 
+test('desktop navigation collapses without losing accessible resource links', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/admin/incidents')
+  await signIn(page)
+  const collapse = page.getByRole('button', { name: 'Collapse navigation', exact: true })
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true')
+  const expanded = await page.getByRole('main').boundingBox()
+  await collapse.click()
+  const expand = page.getByRole('button', { name: 'Expand navigation', exact: true })
+  await expect(expand).toHaveAttribute('aria-expanded', 'false')
+  await expect
+    .poll(async () => (await page.getByRole('main').boundingBox())?.width || 0)
+    .toBeGreaterThan((expanded?.width || 0) + 150)
+  await navigate(page, 'Users')
+  await expect(expand).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('collapsed-desktop.png'), fullPage: true })
+  await expand.click()
+  await expect(collapse).toHaveAttribute('aria-expanded', 'true')
+})
+
+test('compact and mobile layouts scroll grid columns without widening the page', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 640 })
+  await page.goto('/admin/users')
+  await signIn(page)
+  await expect(page.getByRole('button', { name: 'Expand navigation', exact: true })).toBeVisible()
+  const grid = page.getByRole('grid')
+  await expect.poll(async () => Number(await grid.getAttribute('aria-rowcount'))).toBeGreaterThan(1)
+  for (const width of [1024, 820, 390, 320]) {
+    await page.setViewportSize({ width, height: 640 })
+    if (width < 900)
+      await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toBeVisible()
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+      .toBeLessThanOrEqual(1)
+    const scrollbar = grid.locator('.MuiDataGrid-scrollbar--horizontal')
+    await expect(scrollbar).toBeVisible()
+    await expect
+      .poll(() => scrollbar.evaluate((element) => element.scrollWidth - element.clientWidth))
+      .toBeGreaterThan(0)
+    const viewport = grid.locator('.MuiDataGrid-virtualScroller')
+    await viewport.evaluate((element) => {
+      element.scrollLeft = 0
+    })
+    await viewport.hover()
+    await page.mouse.wheel(500, 0)
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+    await scrollbar.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth
+    })
+    await expect
+      .poll(() =>
+        grid.locator('.MuiDataGrid-virtualScroller').evaluate((element) => element.scrollLeft),
+      )
+      .toBeGreaterThan(0)
+    const view = grid.getByRole('button', { name: /^View users / }).first()
+    await view.click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+    if (width === 390)
+      await page.screenshot({ path: test.info().outputPath('mobile-grid.png'), fullPage: true })
+  }
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  await navigate(page, 'Buildings')
+  await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+    .toBeLessThanOrEqual(1)
+})
+
 test('admin CRUD across all seven business tables with persisted browser data', async ({
   page,
 }) => {

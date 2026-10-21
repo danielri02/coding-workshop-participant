@@ -83,6 +83,13 @@ and invalidates affected collections/details after mutations. Explicit Refresh
 also reloads the page's relationships. Cached data is cleared at login/logout.
 The administrator routes and grid code are loaded separately from the login UI.
 
+The header menu button collapses desktop navigation to an icon rail; links keep
+their accessible names and show tooltips. Windows from 900 to 1199 pixels wide
+start with the rail; smaller windows use an overlay menu. Grids retain readable
+column widths and scroll horizontally within the table, with a scrollbar at the
+bottom and support for horizontal wheel/trackpad input. Grid height adapts to the
+window, and search/actions stack vertically on narrow screens.
+
 ### API contracts and dependencies
 
 `src/generated/` contains backend-generated transport types, enums, workflow

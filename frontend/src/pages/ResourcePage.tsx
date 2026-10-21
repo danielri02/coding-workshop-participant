@@ -79,7 +79,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   const columns = useMemo(() => resource.columns(lookups.data), [resource, lookups.data])
   const activeNotes = activeStatuses.some((status) => status === selectedIncident?.status)
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3} sx={{ minWidth: 0, width: '100%' }}>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between', gap: 2 }}
@@ -139,14 +139,14 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           {failure}
         </Alert>
       )}
-      <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+      <Paper variant="outlined" sx={{ minWidth: 0, width: '100%', overflow: 'hidden' }}>
         <Stack
-          direction="row"
+          direction={{ xs: 'column', sm: 'row' }}
           sx={{
             p: 2,
             borderBottom: '1px solid',
             borderColor: 'divider',
-            alignItems: 'center',
+            alignItems: { xs: 'stretch', sm: 'center' },
             gap: 2,
           }}
         >
@@ -170,19 +170,19 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
               },
               htmlInput: { maxLength: server ? incidentGrid.searchMaxLength : undefined },
             }}
-            sx={{ width: { xs: '100%', sm: 360 } }}
+            sx={{ width: { xs: '100%', sm: 360 }, minWidth: 0 }}
           />
           <Button
             startIcon={<Refresh />}
             onClick={() => changed('Reloading records…')}
             disabled={loading}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: { sm: 'auto' }, flexShrink: 0 }}
           >
             Refresh
           </Button>
         </Stack>
         {resource.key === 'notes' && !scope ? (
-          <Box sx={{ p: 8, textAlign: 'center' }}>
+          <Box sx={{ p: { xs: 3, sm: 8 }, textAlign: 'center' }}>
             <Typography sx={{ fontWeight: 600 }}>Choose an incident to view its notes</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               The conversation includes updates from employees, engineers and admins.
