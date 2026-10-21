@@ -16,6 +16,17 @@ export function workshopProxy(environment: ApiEnvironment): Record<string, Proxy
       changeOrigin: true,
       // The Lambda adapter handles unprefixed local and prefixed CloudFront paths.
       rewrite: (path) => path.slice(workshopService.prefix.length) || '/',
+      configure(proxy) {
+        // Match the workshop's server-to-server CORS workaround. LocalStack's
+        // edge rejects browser origins before Lambda, even with URL CORS set.
+        // Preserve Authorization, Content-Type and the request body for FastAPI.
+        proxy.on('proxyReq', (request) => {
+          for (const name of request.getHeaderNames()) {
+            if (name === 'origin' || name === 'referer' || name.startsWith('sec-fetch-'))
+              request.removeHeader(name)
+          }
+        })
+      },
     },
   }
 }

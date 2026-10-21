@@ -27,6 +27,10 @@ map and sends browser `/api/facilities/...` requests to the mapped Lambda URL.
 This preserves Authorization through an application-owned development proxy.
 The supplied port-3001 proxy remains unchanged; its header whitelist would strip
 bearer tokens. No manual edits to the generated file are needed.
+The Vite proxy removes browser `Origin`, `Referer` and `Sec-Fetch-*` headers on its
+server-to-server hop, matching the workshop's LocalStack CORS workaround while
+retaining Authorization and JSON request bodies. This avoids LocalStack's empty
+403 response before Lambda invocation. Production CloudFront routing is unaffected.
 
 The frontend exposes only `VITE_API_MODE`, `VITE_API_URL` and `VITE_API_ENDPOINTS`
 to the browser. Backend credentials/signing keys and arbitrary `VITE_*` settings
@@ -130,6 +134,10 @@ database configuration used by the seed scripts. Run
 and admin capability. A 403 on `/auth/login` itself is not the response for an
 incorrect password (that is 401); if `/api/facilities/health` also returns 403,
 inspect Lambda Function URL access before changing database users or permissions.
+If health succeeds with curl but adding `-H 'Origin: http://localhost:3000'` returns
+an empty 403, restart Vite after pulling the proxy header fix. The request is being
+rejected by LocalStack before reaching FastAPI; changing database credentials or
+application CORS settings does not address that rejection.
 
 ## Browser verification
 
