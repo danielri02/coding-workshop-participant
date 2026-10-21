@@ -305,9 +305,13 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def cli(
-        self, module: str, *args: str, password: SecretStr | None = None
+        self,
+        module: str,
+        *args: str,
+        password: SecretStr | None = None,
+        invocation: str = "root-module",
     ) -> tuple[int, str, str]:
-        """Invoke the actual module entry point against the isolated schema."""
+        """Invoke supported module/file entry points against the isolated schema."""
 
         environment = {
             **os.environ,
@@ -316,18 +320,53 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         environment.pop("SEED_PASSWORD", None)
         if password is not None:
             environment["SEED_PASSWORD"] = password.get_secret_value()
+        repository = Path(__file__).resolve().parents[2]
+        backend_module = module.removeprefix("backend.")
+        directory, command = {
+            "root-module": (repository, ["-m", module]),
+            "backend-module": (repository / "backend", ["-m", backend_module]),
+            "root-file": (repository, [module.replace(".", "/") + ".py"]),
+            "backend-file": (
+                repository / "backend",
+                [backend_module.replace(".", "/") + ".py"],
+            ),
+        }[invocation]
         process = await asyncio.create_subprocess_exec(
             sys.executable,
-            "-m",
-            module,
+            *command,
             *args,
-            cwd=Path(__file__).resolve().parents[2],
+            cwd=directory,
             env=environment,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await process.communicate()
         return process.returncode, stdout.decode(), stderr.decode()
+
+    async def test_script_entrypoints_from_backend_and_direct_files(self) -> None:
+        """Create, seed, and safely reset using each previously failing invocation."""
+
+        create = "backend.scripts.create_tables"
+        seed = "backend.scripts.seed_database"
+        for invocation in ("backend-module", "backend-file", "root-file"):
+            with self.subTest(invocation=invocation):
+                code, _, stderr = await self.cli(create, invocation=invocation)
+                self.assertEqual(code, 0, stderr)
+                code, _, stderr = await self.cli(
+                    seed, password=self.password, invocation=invocation
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(await self.inserted_user_count(), 3)
+                code, _, stderr = await self.cli(
+                    create, "--reset", invocation=invocation
+                )
+                self.assertEqual(code, 2, stderr)
+                self.assertEqual(await self.inserted_user_count(), 3)
+                code, _, stderr = await self.cli(
+                    create, "--reset", "--yes", invocation=invocation
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(await self.inserted_user_count(), 0)
 
     async def test_cli_create_seed_guard_and_reset(self) -> None:
         """Exercise real commands, including refusal of an unconfirmed reset."""

@@ -3,6 +3,10 @@
 From the repository root, after creating tables:
     python -m backend.scripts.seed_database
 
+From backend/:
+    python -m scripts.seed_database
+    python scripts/seed_database.py
+
 DATABASE_URL selects the database. Set SEED_PASSWORD (12–128 nonblank characters)
 when creating demo accounts for the first time. Passwords are Argon2-hashed and
 never printed. Reruns preserve existing passwords, roles, availability, and content.
@@ -12,8 +16,14 @@ Demo accounts: demo.admin@acme.inc, demo.engineer@acme.inc, demo.employee@acme.i
 import argparse
 import asyncio
 import os
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import TypeVar
+
+# Resolve from this file, rather than depending on the caller's working directory.
+if __package__ in {None, "", "scripts"}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import func, select

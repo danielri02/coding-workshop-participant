@@ -4,11 +4,21 @@ From the repository root:
     python -m backend.scripts.create_tables
     python -m backend.scripts.create_tables --reset --yes
 
+From backend/:
+    python -m scripts.create_tables
+    python scripts/create_tables.py
+
 DATABASE_URL selects the database. Creation does not migrate existing tables.
 """
 
 import argparse
 import asyncio
+import sys
+from pathlib import Path
+
+# Module and direct-file entry points must resolve the same application package.
+if __package__ in {None, "", "scripts"}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
