@@ -30,6 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.database.diagnostics import database_error_message
 from backend.app.database.session import engine, session_factory
 from backend.app.models import (
     Base,
@@ -273,10 +274,7 @@ def main() -> None:
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
     except SQLAlchemyError as exc:
-        parser.exit(
-            1,
-            f"Seeding failed ({type(exc).__name__}); create tables first and check PostgreSQL access.\n",
-        )
+        parser.exit(1, database_error_message(exc) + "\n")
     print("Inserted: " + ", ".join(f"{name}={count}" for name, count in counts.items()))
 
 

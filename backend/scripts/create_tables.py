@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from backend.app.database.diagnostics import database_error_message
 from backend.app.database.session import engine
 from backend.app.models import Base
 from backend.scripts import SETUP_LOCK_ID
@@ -74,10 +75,7 @@ def main() -> None:
     try:
         asyncio.run(run(args.reset))
     except SQLAlchemyError as exc:
-        parser.exit(
-            1,
-            f"Database operation failed ({type(exc).__name__}); check DATABASE_URL and PostgreSQL access.\n",
-        )
+        parser.exit(1, database_error_message(exc) + "\n")
     print(
         "Application tables reset."
         if args.reset

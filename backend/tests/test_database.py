@@ -13,10 +13,12 @@ from argon2 import PasswordHasher
 from pydantic import SecretStr
 from sqlalchemy import create_engine, func, inspect, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from backend.app.database.config import DEFAULT_DATABASE_URL, get_database_url
+from backend.app.database.diagnostics import connection_summary, database_error_message
 from backend.app.database.session import get_session
 from backend.app.models import (
     Base,
@@ -76,6 +78,64 @@ class DatabaseConfigTests(unittest.TestCase):
                     get_database_url()
                 if value:
                     self.assertNotIn(value, str(result.exception))
+
+
+class DatabaseDiagnosticTests(unittest.TestCase):
+    """Connection failures must be useful without exposing credentials or SQL."""
+
+    def test_summary_reports_configuration_source_and_omits_secrets(self) -> None:
+        """Report the target, preserving privacy for password and query values."""
+
+        private_value = secrets.token_urlsafe(24)
+        url = make_url(DEFAULT_DATABASE_URL).set(password=private_value)
+        url = url.update_query_dict({"sslpassword": private_value})
+        for environment, expected in (
+            ({}, "DEFAULT_DATABASE_URL"),
+            ({"DATABASE_URL": "configured"}, "DATABASE_URL environment variable"),
+        ):
+            with (
+                self.subTest(source=expected),
+                patch.dict(os.environ, environment, clear=True),
+            ):
+                summary = connection_summary(url)
+                self.assertIn(expected, summary)
+                self.assertIn(f"Database: {url.database}", summary)
+                self.assertIn(f"Database role: {url.username}", summary)
+                self.assertIn("URL password: configured", summary)
+                self.assertNotIn(private_value, summary)
+                self.assertNotIn("sslpassword", summary)
+
+    def test_connection_errors_are_actionable_without_echoing_details(self) -> None:
+        """Classify libpq errors while excluding arbitrary sensitive details."""
+
+        private_value = secrets.token_urlsafe(24)
+        cases = (
+            ("no password supplied", "requires a password"),
+            ("password authentication failed", "rejected the database role/password"),
+            ('role "missing" does not exist', "role does not exist"),
+            ('database "missing" does not exist', "database does not exist"),
+            ("no pg_hba.conf entry", "authentication rules"),
+            ("peer authentication failed", "authentication rules"),
+            ("permission denied for schema public", "permissions"),
+            ('relation "users" does not exist', "create_tables"),
+            ("connection refused", "running and listening"),
+            ("could not translate host name", "hostname could not be resolved"),
+            ("connection timed out", "timed out"),
+            ("certificate verify failed", "trusted CA"),
+            ("server does not support SSL", "TLS settings"),
+            ("unrecognized connection failure", "Database operation failed"),
+        )
+        for detail, expected in cases:
+            with self.subTest(detail=detail):
+                error = OperationalError(
+                    f"SELECT '{private_value}'",
+                    {},
+                    Exception(f"{detail}; secret={private_value}"),
+                )
+                message = database_error_message(error)
+                self.assertIn(expected, message)
+                self.assertNotIn(private_value, message)
+                self.assertNotIn("SELECT", message)
 
 
 class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
@@ -310,12 +370,14 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         *args: str,
         password: SecretStr | None = None,
         invocation: str = "root-module",
+        database_url: str | None = None,
     ) -> tuple[int, str, str]:
         """Invoke supported module/file entry points against the isolated schema."""
 
         environment = {
             **os.environ,
-            "DATABASE_URL": self.test_url.render_as_string(hide_password=False),
+            "DATABASE_URL": database_url
+            or self.test_url.render_as_string(hide_password=False),
         }
         environment.pop("SEED_PASSWORD", None)
         if password is not None:
@@ -342,6 +404,41 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         )
         stdout, stderr = await process.communicate()
         return process.returncode, stdout.decode(), stderr.decode()
+
+    async def test_connection_check_entrypoints_preserve_data(self) -> None:
+        """Check connectivity from either directory without writing any data."""
+
+        async with self.factory.begin() as session:
+            session.add(Building(name="Preserve this building"))
+        for invocation in (
+            "root-module",
+            "backend-module",
+            "root-file",
+            "backend-file",
+        ):
+            with self.subTest(invocation=invocation):
+                code, stdout, stderr = await self.cli(
+                    "backend.scripts.check_database", invocation=invocation
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("Connection successful.", stdout)
+                self.assertIn("DATABASE_URL environment variable", stdout)
+        async with self.factory() as session:
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(Building)), 1
+            )
+
+    async def test_missing_database_has_actionable_safe_cli_error(self) -> None:
+        """Real connection failures identify a missing database without a traceback."""
+
+        missing_url = self.test_url.set(database=f"missing_{uuid4().hex}")
+        code, stdout, stderr = await self.cli(
+            "backend.scripts.check_database",
+            database_url=missing_url.render_as_string(hide_password=False),
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("database does not exist", stderr)
+        self.assertNotIn("Traceback", stdout + stderr)
 
     async def test_script_entrypoints_from_backend_and_direct_files(self) -> None:
         """Create, seed, and safely reset using each previously failing invocation."""

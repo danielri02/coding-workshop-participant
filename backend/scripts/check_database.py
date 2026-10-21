@@ -1,0 +1,54 @@
+"""Check PostgreSQL connectivity without creating, changing, or deleting data.
+
+From backend/: python scripts/check_database.py
+From repo root: python -m backend.scripts.check_database
+
+Shows which configuration source and connection target are in use. Passwords
+and connection query values are never printed.
+"""
+
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+
+if __package__ in {None, "", "scripts"}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from backend.app.database.config import get_database_url
+from backend.app.database.diagnostics import connection_summary, database_error_message
+
+
+async def check_connection() -> None:
+    """Make one read-only request, with a bounded connection timeout."""
+
+    url = get_database_url()
+    engine = create_async_engine(url, connect_args={"connect_timeout": 5})
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    finally:
+        await engine.dispose()
+
+
+def main() -> None:
+    """Report the effective target and a safe connection result."""
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.parse_args()
+    print(connection_summary(get_database_url()), flush=True)
+    try:
+        asyncio.run(check_connection())
+    except SQLAlchemyError as exc:
+        parser.exit(1, database_error_message(exc) + "\n")
+    print("Connection successful.")
+
+
+if __name__ == "__main__":
+    main()
