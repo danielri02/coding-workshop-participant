@@ -105,6 +105,7 @@ class IncidentRead(Schema):
     description: Body
     category: IncidentCategory
     reporter_id: PositiveID
+    reporter_name: Name | None = None
     assignee_id: PositiveID | None = None
     assignee_name: Name | None = None
     building_id: PositiveID

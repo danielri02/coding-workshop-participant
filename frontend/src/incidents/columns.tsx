@@ -6,8 +6,8 @@ import { categories, priorities, statuses } from '../generated/domain'
 import { recordLabel } from '../resources/rows'
 import type { Incident, Lookups } from '../types'
 
-/** Display names supplied with incidents; employees never need a user directory. */
-export function employeeColumns(lookups: Lookups): GridColDef<Incident>[] {
+/** Display names supplied with incidents; members never need a user directory. */
+export function incidentColumns(lookups: Lookups, path: string): GridColDef<Incident>[] {
   const columns: GridColDef<Incident>[] = [
     {
       field: 'title',
@@ -16,11 +16,7 @@ export function employeeColumns(lookups: Lookups): GridColDef<Incident>[] {
       minWidth: 230,
       flex: 1,
       renderCell: ({ row, hasFocus }) => (
-        <Link
-          component={RouterLink}
-          to={`/employee/incidents/${row.id}`}
-          tabIndex={hasFocus ? 0 : -1}
-        >
+        <Link component={RouterLink} to={`${path}/${row.id}`} tabIndex={hasFocus ? 0 : -1}>
           #{row.id} · {row.title}
         </Link>
       ),

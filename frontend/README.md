@@ -10,6 +10,10 @@ The backend-verified account selects the workspace after login:
 - Employee: submit incidents and track submitted reports, progress and updates.
   Demo: `employee@acme.inc` / `employee`.
 
+- Engineer: assigned incidents, shared notes and status changes, plus access to
+  their own submitted reports. Demo: `demo.engineer@acme.inc` with the configured
+  `SEED_PASSWORD` (the sample value is `development-only`).
+
 Run the backend seed command to add the demo employee and expanded samples to an
 existing development database. Existing seeded accounts and passwords are preserved.
 
@@ -77,7 +81,7 @@ npm test
 ```
 
 Production builds include TypeScript checking. `src/App.tsx` owns authentication
-and loads `pages/AdminRoutes.tsx` or `pages/EmployeeRoutes.tsx` after login. The seven resources share grids,
+and loads `pages/AdminRoutes.tsx` or `pages/MemberRoutes.tsx` after login. The seven resources share grids,
 forms and dialogs; `hooks/useResourceActions.ts` owns mutations, while
 `resources/incidentActions.ts`, `incidentQuery.ts`, `forms.ts` and `rows.ts` keep
 workflow inputs, query translation, payload construction and presentation adapters
@@ -113,9 +117,30 @@ uses incident and note display names without requesting user directories or
 engineer profiles. Direct admin URLs return employees to their incident grid;
 backend authorization also protects direct API calls and other employees' records.
 
-Non-admin engineers can use this submission/tracking view for their own reports;
-it deliberately filters by reporter even when the account has additional incident
-read grants. Dedicated engineering workflow pages are separate work.
+Engineers retain this submission/tracking view under the My incidents tab. It
+filters by reporter independently of the Assigned to me tab.
+
+### Engineer workspace
+
+Engineers enter `/engineer/incidents` by default. Assigned to me uses the same
+server-paginated grid and search/filter/sort machinery, locked to the current
+engineer's assignee ID. Own reports stay under `/employee/incidents`. Each detail
+page verifies the matching scope; an incident owned by the engineer but assigned
+to someone else does not appear as assigned work.
+
+Assigned incident details show the reporter, location, workflow and shared notes.
+Change status uses the same valid transitions and blocked-reason validation as the
+admin form. Engineers can post notes on active assignments; resolved/closed notes
+remain readable. Current assignment is checked by the backend on every operation,
+so reassignment removes workflow access. Refresh reloads the incident and its
+notes. Priority changes remain a reporter/admin capability, and engineer pages
+provide no assignment, deletion or people-management controls.
+
+`src/incidents/` shares list/detail/notes/progress components across employee and
+engineer scopes. `components/MemberLayout.tsx` owns their responsive account
+controls and tabs; routes require the backend-verified engineer profile. The API
+includes `reporter_name`, `assignee_name` and note `author_name` within authorized
+records, avoiding a people-directory request.
 
 ### Reports
 

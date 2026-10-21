@@ -257,6 +257,8 @@ export interface components {
       priority: components['schemas']['IncidentPriority']
       /** Reporter Id */
       reporter_id: number
+      /** Reporter Name */
+      reporter_name?: string | null
       /** Resolved At */
       resolved_at?: string | null
       /** Seat Id */

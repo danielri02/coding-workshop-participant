@@ -7,7 +7,7 @@ export function incidentQuery(
   sorting: GridSortModel,
   filters: GridFilterModel,
   search: string,
-  reporterId?: number,
+  scope: { reporter_id?: number; assignee_id?: number } = {},
 ): string {
   const sort = sorting[0]
   const params = new URLSearchParams({
@@ -26,6 +26,6 @@ export function incidentQuery(
     )
       params.set(item.field, String(item.value))
   }
-  if (reporterId !== undefined) params.set('reporter_id', String(reporterId))
+  for (const [field, value] of Object.entries(scope)) params.set(field, String(value))
   return `/incidents/grid?${params}`
 }

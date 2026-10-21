@@ -16,10 +16,12 @@ import { incidentQuery } from '../resources/incidentQuery'
 import { api } from '../services/client'
 import { invalidateResourceQueries } from '../services/queries'
 import type { Incident, IncidentPage } from '../types'
-import { employeeColumns } from './columns'
+import { incidentColumns } from './columns'
+import { incidentViews, type IncidentScope } from './scope'
 
-/** Submit incidents and browse only reports created by the current employee. */
-export function EmployeeIncidentsPage() {
+/** Share search/paging and creation while enforcing the selected incident scope. */
+export function IncidentListPage({ scope }: { scope: IncidentScope }) {
+  const view = incidentViews[scope]
   const { user } = useAuth()
   const navigate = useNavigate()
   const client = useQueryClient()
@@ -30,9 +32,15 @@ export function EmployeeIncidentsPage() {
   const [sorting, setSorting] = useState<GridSortModel>([{ field: 'created_at', sort: 'desc' }])
   const [filters, setFilters] = useState<GridFilterModel>({ items: [] })
   const lookups = useLookups({ lookups: ['buildings', 'floors', 'seats'] })
-  const path = incidentQuery(pagination, sorting, filters, debouncedSearch, user!.id)
+  const path = incidentQuery(
+    pagination,
+    sorting,
+    filters,
+    debouncedSearch,
+    scope === 'assigned' ? { assignee_id: user!.id } : { reporter_id: user!.id },
+  )
   const query = useApiQuery<IncidentPage>(path, { rows: [], row_count: 0, page: 0, page_size: 25 })
-  const columns = useMemo(() => employeeColumns(lookups.data), [lookups.data])
+  const columns = useMemo(() => incidentColumns(lookups.data, view.path), [lookups.data, view.path])
   const refresh = () =>
     void invalidateResourceQueries(client, 'incidents', ['buildings', 'floors', 'seats'])
   const resetPage = () => setPagination((previous) => ({ ...previous, page: 0 }))
@@ -43,7 +51,7 @@ export function EmployeeIncidentsPage() {
     })
     await invalidateResourceQueries(client, 'incidents')
     setCreating(false)
-    navigate(`/employee/incidents/${incident.id}`)
+    navigate(`${view.path}/${incident.id}`)
   }
   const failure = query.error || lookups.error
   return (
@@ -55,20 +63,22 @@ export function EmployeeIncidentsPage() {
       >
         <Box>
           <Typography component="h1" variant="h4" sx={{ fontWeight: 750 }}>
-            My incidents
+            {view.title}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Report a workplace issue and follow updates from the facilities team.
+            {view.description}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => setCreating(true)}
-          disabled={lookups.loading || Boolean(lookups.error)}
-        >
-          New incident
-        </Button>
+        {scope === 'reported' && (
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => setCreating(true)}
+            disabled={lookups.loading || Boolean(lookups.error)}
+          >
+            New incident
+          </Button>
+        )}
       </Stack>
       {failure && (
         <Alert severity="error" action={<Button onClick={refresh}>Retry</Button>}>
@@ -82,7 +92,7 @@ export function EmployeeIncidentsPage() {
           sx={{ p: 2, justifyContent: 'space-between' }}
         >
           <TextField
-            label="Search my incidents"
+            label={view.search}
             placeholder="Search titles and descriptions"
             size="small"
             value={search}
@@ -117,10 +127,10 @@ export function EmployeeIncidentsPage() {
             setFilters(model)
             resetPage()
           }}
-          onRowDoubleClick={({ row }) => navigate(`/employee/incidents/${row.id}`)}
+          onRowDoubleClick={({ row }) => navigate(`${view.path}/${row.id}`)}
         />
       </Paper>
-      {creating && (
+      {creating && scope === 'reported' && (
         <RecordFormDialog
           title="New incident"
           fields={incidentFields}

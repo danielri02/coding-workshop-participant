@@ -15,6 +15,7 @@ QueryID = Annotated[int, Query(gt=0, le=2_147_483_647)]
 OptionalQueryID = Annotated[int | None, Query(gt=0, le=2_147_483_647)]
 
 INCIDENT_READ_OPTIONS = (
+    selectinload(Incident.reporter),
     selectinload(Incident.assignee).selectinload(EngineerProfile.user),
 )
 NOTE_READ_OPTIONS = (selectinload(Note.author),)

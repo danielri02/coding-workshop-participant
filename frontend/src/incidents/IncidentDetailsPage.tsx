@@ -7,37 +7,47 @@ import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { RecordFormDialog } from '../components/RecordFormDialog'
 import { ValueChip } from '../components/ValueChip'
-import { activeStatuses } from '../generated/domain'
+import { activeStatuses, transitions } from '../generated/domain'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useLookups } from '../hooks/useLookups'
-import { priorityFields } from '../resources/incidentActions'
+import { priorityFields, statusFields } from '../resources/incidentActions'
 import { floorLabel, recordLabel } from '../resources/rows'
 import { api } from '../services/client'
 import { invalidateResourceQueries } from '../services/queries'
 import type { Incident } from '../types'
 import { IncidentNotes } from './IncidentNotes'
 import { IncidentProgress } from './IncidentProgress'
+import { incidentViews, inIncidentScope, type IncidentScope } from './scope'
 
-/** Show the employee's own report, lifecycle and conversation with facilities. */
-export function EmployeeIncidentPage() {
+/** Show scoped incident details and controls granted to its reporter/assigned engineer. */
+export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
+  const view = incidentViews[scope]
   const { incidentId } = useParams()
   const id = Number(incidentId)
   const validId = Number.isSafeInteger(id) && id > 0 && id <= 2147483647
   const { user } = useAuth()
   const client = useQueryClient()
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState<'priority' | 'status' | null>(null)
   const query = useApiQuery<Incident | null>(validId ? `/incidents/${id}` : null, null)
   const lookups = useLookups({ lookups: ['buildings', 'floors', 'seats'] })
-  const incident = query.data?.id === id && query.data.reporter_id === user?.id ? query.data : null
+  const incident =
+    query.data?.id === id && user && inIncidentScope(query.data, user, scope) ? query.data : null
   const active = activeStatuses.some((status) => status === incident?.status)
+  const canChangePriority = active && incident?.reporter_id === user?.id
+  const canChangeStatus = Boolean(
+    incident &&
+    user?.engineer_profile &&
+    incident.assignee_id === user.id &&
+    transitions[incident.status].length,
+  )
   const refresh = () =>
     void invalidateResourceQueries(client, 'incidents', ['buildings', 'floors', 'seats'])
   const save = async (payload: Record<string, unknown>) => {
-    await api<Incident>(`/incidents/${id}/priority`, {
+    await api<Incident>(`/incidents/${id}/${editing}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
-    setEditing(false)
+    setEditing(null)
     await invalidateResourceQueries(client, 'incidents')
   }
   const details = incident
@@ -53,6 +63,7 @@ export function EmployeeIncidentPage() {
             ? recordLabel(lookups.data.seats, incident.seat_id, 'label')
             : 'Not specified',
         ],
+        ['Reported by', incident.reporter_name || 'Employee'],
         ['Assigned engineer', incident.assignee_name || 'Awaiting assignment'],
         ['Reported', new Date(incident.created_at).toLocaleString()],
         [
@@ -66,8 +77,8 @@ export function EmployeeIncidentPage() {
   return (
     <Stack spacing={3} sx={{ minWidth: 0 }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-        <Button component={Link} to="/employee/incidents" startIcon={<ArrowBack />}>
-          My incidents
+        <Button component={Link} to={view.path} startIcon={<ArrowBack />}>
+          {view.title}
         </Button>
         <Button startIcon={<Refresh />} onClick={refresh} disabled={query.loading}>
           Refresh
@@ -75,9 +86,7 @@ export function EmployeeIncidentPage() {
       </Stack>
       {query.loading && !query.data && <CircularProgress aria-label="Loading incident" />}
       {(!validId || query.error || (!query.loading && !incident)) && (
-        <Alert severity="error">
-          {query.error || 'This incident is not available in your submitted reports.'}
-        </Alert>
+        <Alert severity="error">{query.error || view.unavailable}</Alert>
       )}
       {incident && !query.error && (
         <>
@@ -117,15 +126,26 @@ export function EmployeeIncidentPage() {
               <Typography component="h2" variant="h6">
                 Report details
               </Typography>
-              {active && (
-                <Button
-                  variant="outlined"
-                  onClick={() => setEditing(true)}
-                  disabled={query.loading}
-                >
-                  Priority and escalation
-                </Button>
-              )}
+              <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', gap: 1 }}>
+                {canChangePriority && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => setEditing('priority')}
+                    disabled={query.loading}
+                  >
+                    Priority and escalation
+                  </Button>
+                )}
+                {canChangeStatus && (
+                  <Button
+                    variant="contained"
+                    onClick={() => setEditing('status')}
+                    disabled={query.loading}
+                  >
+                    Change status
+                  </Button>
+                )}
+              </Stack>
             </Stack>
             <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', mb: 3 }}>
               {incident.description}
@@ -156,14 +176,16 @@ export function EmployeeIncidentPage() {
             </Box>
           </Paper>
           <IncidentNotes key={incident.id} incident={incident} />
-          {editing && active && (
+          {editing && (editing === 'status' ? canChangeStatus : canChangePriority) && (
             <RecordFormDialog
-              title="Priority and escalation"
-              fields={priorityFields}
-              row={incident}
+              title={editing === 'status' ? 'Change status' : 'Priority and escalation'}
+              fields={editing === 'status' ? statusFields(incident.status) : priorityFields}
+              row={
+                editing === 'status' ? { ...incident, status: '', blocked_reason: '' } : incident
+              }
               lookups={lookups.data}
               onSave={save}
-              onClose={() => setEditing(false)}
+              onClose={() => setEditing(null)}
             />
           )}
         </>

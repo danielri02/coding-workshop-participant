@@ -84,9 +84,24 @@ test('employee grid scope cannot be replaced by an incidental reporter filter', 
     [],
     { items: [{ field: 'reporter_id', operator: 'is', value: 999 }] },
     '',
-    12,
+    { reporter_id: 12 },
   )
   assert.equal(new URL(path, 'http://localhost').searchParams.get('reporter_id'), '12')
+})
+
+test('assigned grid scope is fixed to the current engineer without requiring own reports', () => {
+  const path = incidentQuery(
+    { page: 1, pageSize: 10 },
+    [{ field: 'status', sort: 'asc' }],
+    { items: [{ field: 'assignee_id', operator: 'is', value: 999 }] },
+    'printer',
+    { assignee_id: 42 },
+  )
+  const params = new URL(path, 'http://localhost').searchParams
+  assert.equal(params.get('assignee_id'), '42')
+  assert.equal(params.has('reporter_id'), false)
+  assert.equal(params.get('page'), '1')
+  assert.equal(params.get('search'), 'printer')
 })
 
 test('queries reuse reads and invalidate affected resources without refetching every table', async () => {

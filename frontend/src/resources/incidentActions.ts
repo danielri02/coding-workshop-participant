@@ -1,5 +1,5 @@
 import { constraints, priorities, transitions } from '../generated/domain'
-import type { AdminRow, FormRow } from '../types'
+import type { AdminRow, FormRow, IncidentStatus } from '../types'
 import type { ResourceDefinition } from './definitions'
 import type { Field } from './forms'
 
@@ -24,6 +24,28 @@ export const priorityFields: Field[] = [
     helper: 'A reason marks this incident as escalated. Clear it to remove escalation.',
   },
 ]
+
+/** Share valid transitions and blocked-reason validation across admin and engineer forms. */
+export function statusFields(status: IncidentStatus): Field[] {
+  const next = transitions[status]
+  return [
+    {
+      name: 'status',
+      label: 'Next status',
+      type: 'select',
+      required: true,
+      options: () => next.map((value) => ({ value, label: value })),
+    },
+    {
+      name: 'blocked_reason',
+      label: 'Blocked reason',
+      type: 'multiline',
+      ...constraints.IncidentStatusUpdate.blocked_reason,
+      when: (values) => values.status === 'Blocked',
+      requiredWhen: (values) => values.status === 'Blocked',
+    },
+  ]
+}
 
 export type IncidentCommand = 'assignment' | 'priority' | 'status'
 
@@ -58,24 +80,7 @@ export function editorForm(resource: ResourceDefinition, editor: Editor | null) 
     ]
   if (editor?.action === 'priority') fields = priorityFields
   if (editor?.action === 'status') {
-    const next = editor.row?.status ? transitions[editor.row.status] : []
-    fields = [
-      {
-        name: 'status',
-        label: 'Next status',
-        type: 'select',
-        required: true,
-        options: () => next.map((value) => ({ value, label: value })),
-      },
-      {
-        name: 'blocked_reason',
-        label: 'Blocked reason',
-        type: 'multiline',
-        ...constraints.IncidentStatusUpdate.blocked_reason,
-        when: (values) => values.status === 'Blocked',
-        requiredWhen: (values) => values.status === 'Blocked',
-      },
-    ]
+    fields = editor.row?.status ? statusFields(editor.row.status) : []
     formRow = editor.row ? { ...editor.row, status: '', blocked_reason: '' } : null
   }
   const formTitle =

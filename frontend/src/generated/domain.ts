@@ -61,6 +61,7 @@ export const constraints = {
     blocked_reason: { minLength: 1, maxLength: 2000 },
     description: { minLength: 1, maxLength: 10000 },
     escalation_reason: { minLength: 1, maxLength: 2000 },
+    reporter_name: { minLength: 1, maxLength: 100 },
     title: { minLength: 1, maxLength: 200 },
   },
   IncidentStatusUpdate: { blocked_reason: { minLength: 1, maxLength: 2000 } },

@@ -307,6 +307,10 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         incident_path = f"/incidents/{self.reports['assigned']}"
         response = await self.request("employee", "GET", incident_path, 200)
         self.assertEqual(response.json()["assignee_name"], "engineer")
+        self.assertEqual(response.json()["reporter_name"], "employee")
+        response = await self.request("engineer", "GET", incident_path, 200)
+        self.assertEqual(response.json()["reporter_name"], "employee")
+        await self.request("engineer", "GET", f"/users/{self.ids['employee']}", 403)
         await self.request("employee", "GET", f"/users/{self.ids['engineer']}", 403)
         response = await self.request(
             "engineer", "POST", incident_path + "/notes", 201, {"body": "Working on it"}

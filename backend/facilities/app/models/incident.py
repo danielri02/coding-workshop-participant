@@ -153,6 +153,12 @@ class Incident(Base):
     )
 
     @property
+    def reporter_name(self) -> str | None:
+        """Expose the reporter's name within an authorized incident."""
+
+        return self.reporter.name if self.reporter is not None else None
+
+    @property
     def assignee_name(self) -> str | None:
         """Expose the assigned engineer's name within an authorized incident."""
 

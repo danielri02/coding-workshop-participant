@@ -168,7 +168,8 @@ matching count. Unsupported sort fields and invalid inputs return 422.
 
 The existing `GET /incidents` still returns the full matching array and supports
 the same search and filter parameters. Incident responses now include
-`assignee_name` (null when unassigned), and note responses include `author_name`.
+`reporter_name` and `assignee_name` (null when unassigned), and note responses
+include `author_name`.
 These names are available only within incidents/notes the caller may read;
 employee access to other users' account records remains restricted.
 

@@ -7,7 +7,7 @@ import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
 import { LoginPage } from './pages/LoginPage'
 const AdminRoutes = lazy(() => import('./pages/AdminRoutes'))
-const EmployeeRoutes = lazy(() => import('./pages/EmployeeRoutes'))
+const MemberRoutes = lazy(() => import('./pages/MemberRoutes'))
 
 /** Route each server-verified account to its permitted workspace. */
 function Application() {
@@ -19,7 +19,7 @@ function Application() {
       </Box>
     )
   if (!user) return <LoginPage />
-  return user.is_admin ? <AdminRoutes /> : <EmployeeRoutes />
+  return user.is_admin ? <AdminRoutes /> : <MemberRoutes />
 }
 
 Application.propTypes = {}

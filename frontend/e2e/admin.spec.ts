@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type APIRequestContext } from '@playwright/test'
 
 const apiUrl = process.env.E2E_API_URL || 'http://localhost:8000'
 const browserApiUrl =
@@ -871,6 +871,9 @@ test('employee workspace and API exclude other reports and privileged operations
       await request.delete(`${apiUrl}/incidents/${own[0].id}`, { headers: employeeHeaders })
     ).status(),
   ).toBe(403)
+  await page.goto('/engineer/incidents')
+  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page.getByRole('tab', { name: 'Assigned to me', exact: true })).toBeHidden()
   await page.goto(`/employee/incidents/${other.id}`)
   await expect(page.getByRole('alert')).toBeVisible()
   await expect(page.getByRole('heading', { name: other.title, exact: true })).toBeHidden()
@@ -892,4 +895,246 @@ test('employee workspace and API exclude other reports and privileged operations
     path: test.info().outputPath('employee-closed-incident.png'),
     fullPage: true,
   })
+})
+
+async function engineerFixture(request: APIRequestContext, count = 1) {
+  const prefix = `engineercheck${Date.now()}`
+  const engineerPassword = 'engineer-browser-password'
+  const registered = await request.post(`${apiUrl}/users`, {
+    data: { name: `Engineer ${prefix}`, email: `${prefix}@acme.inc`, password: engineerPassword },
+  })
+  expect(registered.ok(), await registered.text()).toBeTruthy()
+  const user = await registered.json()
+  cleanup.unshift(`/users/${user.id}`)
+  const profile = await request.post(`${apiUrl}/engineer-profiles`, {
+    headers,
+    data: { user_id: user.id },
+  })
+  expect(profile.ok(), await profile.text()).toBeTruthy()
+  cleanup.unshift(`/engineer-profiles/${user.id}`)
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const assigned = []
+  for (let index = 0; index < count; index++) {
+    const response = await request.post(`${apiUrl}/incidents`, {
+      headers,
+      data: {
+        title: `${prefix} ${String(index).padStart(2, '0')}`,
+        description: 'Repair this assigned workplace issue.',
+        category: 'Equipment',
+        building_id: building.id,
+      },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    const incident = await response.json()
+    cleanup.unshift(`/incidents/${incident.id}`)
+    expect(
+      (
+        await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
+          headers,
+          data: { assignee_id: user.id },
+        })
+      ).ok(),
+    ).toBeTruthy()
+    assigned.push(incident)
+  }
+  const login = await request.post(`${apiUrl}/auth/login`, {
+    data: { email: user.email, password: engineerPassword },
+  })
+  expect(login.ok()).toBeTruthy()
+  const tokens = await login.json()
+  const ownResponse = await request.post(`${apiUrl}/incidents`, {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+    data: {
+      title: `${prefix} own report`,
+      description: 'An issue I personally reported.',
+      category: 'Other',
+      building_id: building.id,
+    },
+  })
+  expect(ownResponse.ok()).toBeTruthy()
+  const own = await ownResponse.json()
+  cleanup.unshift(`/incidents/${own.id}`)
+  await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: tokens.refresh_token } })
+  return { prefix, user, password: engineerPassword, assigned, own }
+}
+
+test('engineer manages assigned incidents, notes and workflow while retaining own reports', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(120000)
+  const fixture = await engineerFixture(request, 12)
+  const incident = fixture.assigned[0]
+  await page.goto('/')
+  await signIn(page, fixture.user.email, fixture.password)
+  await expect(page).toHaveURL(/\/engineer\/incidents$/)
+  await expect(page.getByRole('heading', { name: 'Assigned incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'New incident', exact: true })).toBeHidden()
+  await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
+  await page.getByRole('option', { name: '10', exact: true }).click()
+  await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Go to next page' }).click()
+  await expect(page.getByText('11–12 of 12', { exact: true })).toBeVisible()
+  const searched = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/incidents/grid' &&
+      url.searchParams.get('assignee_id') === String(fixture.user.id) &&
+      url.searchParams.get('search') === incident.title &&
+      url.searchParams.get('page') === '0'
+    )
+  })
+  await page.getByRole('textbox', { name: 'Search assigned incidents' }).fill(incident.title)
+  expect((await searched).status()).toBe(200)
+  await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
+  await expect(page.getByRole('heading', { name: incident.title, exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Priority and escalation', exact: true }),
+  ).toBeHidden()
+  for (const status of ['In Progress', 'Blocked', 'In Progress', 'Resolved', 'Closed']) {
+    await page.getByRole('button', { name: 'Change status', exact: true }).click()
+    await select(page, 'Next status', status)
+    if (status === 'Blocked') {
+      await expect(
+        page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
+      ).toBeDisabled()
+      await page
+        .getByRole('dialog')
+        .getByLabel('Blocked reason')
+        .fill('Replacement equipment is on order')
+    }
+    await save(page, `/incidents/${incident.id}/status`, 'PATCH')
+    if (status === 'Blocked') {
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'Replacement equipment is on order' }),
+      ).toBeVisible()
+      await page.getByRole('button', { name: 'Add note', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByLabel('Note', { exact: false })
+        .fill('I have ordered the replacement and will update you when it arrives.')
+      await save(page, `/incidents/${incident.id}/notes`)
+      await expect(
+        page.getByText('I have ordered the replacement and will update you when it arrives.', {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await page.setViewportSize({ width: 320, height: 640 })
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+        .toBeLessThanOrEqual(1)
+      await page.screenshot({
+        path: test.info().outputPath('engineer-blocked-mobile.png'),
+        fullPage: true,
+      })
+    } else
+      await expect(page.getByRole('alert').filter({ hasText: 'Work is blocked:' })).toBeHidden()
+    if (status === 'Resolved' || status === 'Closed')
+      await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  }
+  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
+  await page.reload()
+  await expect(
+    page.getByText('I have ordered the replacement and will update you when it arrives.', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await page.getByRole('tab', { name: 'My incidents', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: `#${fixture.own.id} · ${fixture.own.title}`, exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }),
+  ).toBeHidden()
+  await page
+    .getByRole('link', { name: `#${fixture.own.id} · ${fixture.own.title}`, exact: true })
+    .click()
+  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
+  await expect(
+    page.getByRole('button', { name: 'Priority and escalation', exact: true }),
+  ).toBeVisible()
+})
+
+test('engineer scope and permissions follow current assignment including reassignment', async ({
+  request,
+  page,
+}) => {
+  const fixture = await engineerFixture(request)
+  const incident = fixture.assigned[0]
+  const reads: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith(browserApiUrl)) reads.push(browserPath(new URL(request.url())))
+  })
+  await page.goto('/admin/users')
+  await signIn(page, fixture.user.email, fixture.password)
+  await expect(page).toHaveURL(/\/engineer\/incidents$/)
+  const accessToken = await page.evaluate(
+    () => JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token,
+  )
+  const engineerHeaders = { Authorization: `Bearer ${accessToken}` }
+  const all = await (await request.get(`${apiUrl}/incidents`, { headers })).json()
+  const other = all.find(
+    (row: { reporter_id: number; assignee_id: number | null }) =>
+      row.assignee_id !== fixture.user.id && row.reporter_id !== fixture.user.id,
+  )
+  expect(
+    (await request.get(`${apiUrl}/incidents/${other.id}`, { headers: engineerHeaders })).status(),
+  ).toBe(403)
+  for (const [path, data] of [
+    [`/incidents/${other.id}/status`, { status: 'In Progress' }],
+    [`/incidents/${fixture.own.id}/status`, { status: 'In Progress' }],
+    [`/incidents/${incident.id}/assignment`, { assignee_id: null }],
+    [`/incidents/${incident.id}/priority`, { priority: 'High' }],
+  ] as const)
+    expect(
+      (await request.patch(`${apiUrl}${path}`, { headers: engineerHeaders, data })).status(),
+    ).toBe(403)
+  expect(
+    (
+      await request.delete(`${apiUrl}/incidents/${incident.id}`, { headers: engineerHeaders })
+    ).status(),
+  ).toBe(403)
+  await page.goto(`/engineer/incidents/${fixture.own.id}`)
+  await expect(page.getByRole('alert')).toContainText('not currently assigned to you')
+  await expect(page.getByRole('heading', { name: fixture.own.title, exact: true })).toBeHidden()
+  expect(reads).not.toContain(`/incidents/${fixture.own.id}/notes`)
+  await page.goto(`/engineer/incidents/${incident.id}`)
+  await expect(page.getByRole('heading', { name: incident.title, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
+  const replacement = (
+    await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json()
+  ).find((row: { user_id: number }) => row.user_id !== fixture.user.id)
+  expect(
+    (
+      await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
+        headers,
+        data: { assignee_id: replacement.user_id },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Incident access denied')
+  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  expect(
+    (
+      await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+        headers: engineerHeaders,
+        data: { body: 'No longer assigned' },
+      })
+    ).status(),
+  ).toBe(403)
+  expect(
+    (
+      await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
+        headers: engineerHeaders,
+        data: { status: 'In Progress' },
+      })
+    ).status(),
+  ).toBe(403)
+  await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
+  await expect(page.getByText('No records to show', { exact: true })).toBeVisible()
+  expect(reads.some((path) => /^\/(users|engineer-profiles|reports)(\/|$)/.test(path))).toBeFalsy()
 })

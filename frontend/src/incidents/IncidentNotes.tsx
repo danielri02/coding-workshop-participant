@@ -87,7 +87,7 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
           lookups={emptyLookups}
           onSave={save}
           onClose={() => setAdding(false)}
-          subtitle="Your note will be visible to the facilities team working on this incident."
+          subtitle="Your note will be shared with the reporter and facilities team."
         />
       )}
     </Paper>

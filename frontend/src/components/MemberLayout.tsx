@@ -1,12 +1,24 @@
-import { Avatar, Box, Button, IconButton, Toolbar, Tooltip, Typography } from '@mui/material'
+import {
+  Avatar,
+  Box,
+  Button,
+  IconButton,
+  Tab,
+  Tabs,
+  Toolbar,
+  Tooltip,
+  Typography,
+} from '@mui/material'
 import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined'
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined'
-import { Link, Outlet } from 'react-router-dom'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 
-/** Give employees a compact workspace containing only their incident workflow. */
-export function EmployeeLayout() {
+/** Share responsive account controls and navigation for employees and engineers. */
+export function MemberLayout() {
   const { user, logout } = useAuth()
+  const location = useLocation()
+  const engineer = Boolean(user?.engineer_profile)
   return (
     <Box sx={{ minHeight: '100dvh', minWidth: 0 }}>
       <Toolbar
@@ -29,17 +41,19 @@ export function EmployeeLayout() {
             variant="caption"
             sx={{ fontSize: { xs: 11, sm: 12 }, color: '#a6b9cd' }}
           >
-            Employee workspace
+            {engineer ? 'Engineer workspace' : 'Employee workspace'}
           </Typography>
         </Box>
-        <Button
-          component={Link}
-          to="/employee/incidents"
-          color="inherit"
-          sx={{ fontSize: { xs: 12, sm: 13 }, px: { xs: 1, sm: 2 }, flexShrink: 0 }}
-        >
-          My incidents
-        </Button>
+        {!engineer && (
+          <Button
+            component={Link}
+            to="/employee/incidents"
+            color="inherit"
+            sx={{ fontSize: { xs: 12, sm: 13 }, px: { xs: 1, sm: 2 }, flexShrink: 0 }}
+          >
+            My incidents
+          </Button>
+        )}
         <Avatar
           sx={{
             display: { xs: 'none', sm: 'flex' },
@@ -77,6 +91,24 @@ export function EmployeeLayout() {
           Sign out
         </Button>
       </Toolbar>
+      {engineer && (
+        <Tabs
+          component="nav"
+          aria-label="Engineer workspace"
+          value={location.pathname.startsWith('/engineer/') ? 'assigned' : 'reported'}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{
+            bgcolor: 'background.paper',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            px: { xs: 1, sm: 3 },
+          }}
+        >
+          <Tab component={Link} to="/engineer/incidents" value="assigned" label="Assigned to me" />
+          <Tab component={Link} to="/employee/incidents" value="reported" label="My incidents" />
+        </Tabs>
+      )}
       <Box
         component="main"
         sx={{ p: { xs: 2, sm: 3, lg: 4 }, maxWidth: 1500, mx: 'auto', minWidth: 0 }}
