@@ -1,26 +1,10 @@
 import type { GridColDef } from '@mui/x-data-grid'
 import { getGridBooleanOperators, getGridSingleSelectOperators } from '@mui/x-data-grid'
 import { ValueChip } from '../components/ValueChip'
-import type { AdminRow, FormValues, Lookups, Option, ResourceKey } from '../types'
-
-/** Declarative input configuration shared by every create/edit dialog. */
-export interface Field {
-  name: string
-  label: string
-  type?: 'text' | 'email' | 'password' | 'select' | 'boolean' | 'multiline'
-  required?: boolean
-  minLength?: number
-  maxLength?: number
-  numeric?: boolean
-  createOnly?: boolean
-  immutable?: boolean
-  defaultValue?: string | number | boolean
-  helper?: string
-  resets?: string[]
-  options?: (lookups: Lookups, values: FormValues) => Option[]
-  when?: (values: FormValues) => boolean
-  requiredWhen?: (values: FormValues) => boolean
-}
+import { statuses, priorities, categories, constraints } from '../generated/domain'
+import type { Field } from './forms'
+import { floorLabel } from './rows'
+import type { AdminRow, Lookups, Option, ResourceKey } from '../types'
 
 /** The only resource-specific configuration required by the reusable CRUD page. */
 export interface ResourceDefinition {
@@ -34,52 +18,31 @@ export interface ResourceDefinition {
   columns: (lookups: Lookups) => GridColDef<AdminRow>[]
 }
 
-export const statuses = ['Open', 'In Progress', 'Blocked', 'Resolved', 'Closed']
-export const priorities = ['Low', 'Medium', 'High']
-export const categories = ['Electrical', 'HVAC', 'Plumbing', 'Network', 'Equipment', 'Other']
-export const transitions: Record<string, string[]> = {
-  Open: ['In Progress'],
-  'In Progress': ['Blocked', 'Resolved'],
-  Blocked: ['In Progress'],
-  Resolved: ['Closed'],
-  Closed: [],
-}
-
-/** Find a human-readable label for a related record. */
-export function recordLabel(rows: AdminRow[], id: unknown, field = 'name'): string {
-  if (id === null || id === undefined || id === '') return '—'
-  const row = rows.find((item) => item.id === Number(id))
-  return row ? String(row[field] ?? row.id) : `#${String(id)}`
-}
-
-/** Label floors with their building so duplicate floor labels remain distinct. */
-export function floorLabel(lookups: Lookups, id: unknown): string {
-  const floor = lookups.floors.find((row) => row.id === Number(id))
-  return floor
-    ? `${recordLabel(lookups.buildings, floor.building_id)} · Floor ${String(floor.label)}`
-    : '—'
-}
-
-const choices = (values: string[]): Option[] => values.map((value) => ({ value, label: value }))
-const text = (field: string, headerName: string, width = 180): GridColDef<AdminRow> => ({
+const choices = (values: readonly string[]): Option[] =>
+  values.map((value) => ({ value, label: value }))
+const text = (field: keyof AdminRow, headerName: string, width = 180): GridColDef<AdminRow> => ({
   field,
   headerName,
   width,
   minWidth: 100,
 })
-const flag = (field: string, headerName: string): GridColDef<AdminRow> => ({
+const flag = (field: keyof AdminRow, headerName: string): GridColDef<AdminRow> => ({
   field,
   headerName,
   width: 130,
   type: 'boolean',
   renderCell: ({ value }) => <ValueChip value={Boolean(value)} />,
 })
-const tag = (field: string, headerName: string, values: string[]): GridColDef<AdminRow> => ({
+const tag = (
+  field: keyof AdminRow,
+  headerName: string,
+  values: readonly string[],
+): GridColDef<AdminRow> => ({
   field,
   headerName,
   width: 150,
   type: 'singleSelect',
-  valueOptions: values,
+  valueOptions: [...values],
   renderCell: ({ value }) => <ValueChip value={String(value)} />,
 })
 const locationFields: Field[] = [
@@ -124,13 +87,13 @@ export const resources: ResourceDefinition[] = [
     description: 'Coordinate workplace issues, assignments and progress.',
     lookups: ['users', 'buildings', 'floors', 'seats'],
     fields: [
-      { name: 'title', label: 'Title', required: true, maxLength: 200 },
+      { name: 'title', label: 'Title', required: true, ...constraints.IncidentCreate.title },
       {
         name: 'description',
         label: 'Description',
         type: 'multiline',
         required: true,
-        maxLength: 10000,
+        ...constraints.IncidentCreate.description,
       },
       {
         name: 'category',
@@ -153,7 +116,7 @@ export const resources: ResourceDefinition[] = [
         name: 'escalation_reason',
         label: 'Escalation reason',
         type: 'multiline',
-        maxLength: 2000,
+        ...constraints.IncidentCreate.escalation_reason,
         createOnly: true,
       },
     ],
@@ -162,7 +125,11 @@ export const resources: ResourceDefinition[] = [
         { ...text('title', 'Incident', 280), flex: 1, minWidth: 220 },
         tag('status', 'Status', statuses),
         tag('priority', 'Priority', priorities),
-        { ...text('category', 'Category', 145), type: 'singleSelect', valueOptions: categories },
+        {
+          ...text('category', 'Category', 145),
+          type: 'singleSelect',
+          valueOptions: [...categories],
+        },
         {
           ...text('building_id', 'Building', 190),
           type: 'singleSelect',
@@ -204,13 +171,13 @@ export const resources: ResourceDefinition[] = [
     description: 'Manage employee accounts and administrator access.',
     lookups: [],
     fields: [
-      { name: 'name', label: 'Name', required: true, maxLength: 100 },
+      { name: 'name', label: 'Name', required: true, ...constraints.UserCreate.name },
       {
         name: 'email',
         label: 'Email',
         type: 'email',
         required: true,
-        maxLength: 254,
+        ...constraints.UserCreate.email,
         helper: 'Use an @acme.inc email address.',
       },
       {
@@ -218,8 +185,7 @@ export const resources: ResourceDefinition[] = [
         label: 'Initial password',
         type: 'password',
         required: true,
-        minLength: 12,
-        maxLength: 128,
+        ...constraints.UserCreate.password,
         createOnly: true,
         helper: '12–128 characters. Admin access can be granted after creation.',
       },
@@ -271,7 +237,9 @@ export const resources: ResourceDefinition[] = [
     endpoint: '/buildings',
     description: 'Maintain the buildings where employees report incidents.',
     lookups: [],
-    fields: [{ name: 'name', label: 'Building name', required: true, maxLength: 100 }],
+    fields: [
+      { name: 'name', label: 'Building name', required: true, ...constraints.UserCreate.name },
+    ],
     columns: () => [{ ...text('name', 'Building name', 320), flex: 1 }],
   },
   {
@@ -283,7 +251,7 @@ export const resources: ResourceDefinition[] = [
     lookups: ['buildings'],
     fields: [
       { ...locationFields[0], immutable: true, resets: undefined },
-      { name: 'label', label: 'Floor label', required: true, maxLength: 50 },
+      { name: 'label', label: 'Floor label', required: true, ...constraints.FloorCreate.label },
     ],
     columns: () => [
       { ...text('building_name', 'Building', 300), flex: 1 },
@@ -308,7 +276,7 @@ export const resources: ResourceDefinition[] = [
         options: (data) =>
           data.floors.map((row) => ({ value: row.id, label: floorLabel(data, row.id) })),
       },
-      { name: 'label', label: 'Seat label', required: true, maxLength: 50 },
+      { name: 'label', label: 'Seat label', required: true, ...constraints.FloorCreate.label },
     ],
     columns: () => [
       { ...text('floor_name', 'Building / floor', 340), flex: 1 },
@@ -322,7 +290,15 @@ export const resources: ResourceDefinition[] = [
     endpoint: '/notes',
     description: 'Read and manage the shared conversation on each incident.',
     lookups: [],
-    fields: [{ name: 'body', label: 'Note', type: 'multiline', required: true, maxLength: 10000 }],
+    fields: [
+      {
+        name: 'body',
+        label: 'Note',
+        type: 'multiline',
+        required: true,
+        ...constraints.NoteCreate.body,
+      },
+    ],
     columns: () => [
       { ...text('body', 'Note', 400), flex: 1 },
       text('author_name', 'Author', 200),
@@ -334,46 +310,3 @@ export const resources: ResourceDefinition[] = [
     ],
   },
 ]
-
-/** Normalize API rows and add display-only relationship labels for local grids. */
-export function decorateRow(key: ResourceKey, row: AdminRow, lookups: Lookups): AdminRow {
-  return {
-    ...row,
-    id: Number(row.id ?? row.user_id),
-    ...(key === 'users' ? { is_engineer: Boolean(row.engineer_profile) } : {}),
-    ...(key === 'engineers'
-      ? {
-          user_name: recordLabel(lookups.users, row.user_id),
-          user_email: recordLabel(lookups.users, row.user_id, 'email'),
-        }
-      : {}),
-    ...(key === 'floors' ? { building_name: recordLabel(lookups.buildings, row.building_id) } : {}),
-    ...(key === 'seats' ? { floor_name: floorLabel(lookups, row.floor_id) } : {}),
-    ...(key === 'incidents' ? { escalated: Boolean(row.escalation_reason) } : {}),
-  }
-}
-
-/** Choose only allowed fields and send changed values for partial updates. */
-export function formPayload(
-  fields: Field[],
-  values: FormValues,
-  row: AdminRow | null,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {}
-  for (const field of fields) {
-    if (row && (field.createOnly || field.immutable)) continue
-    const raw = values[field.name]
-    const value =
-      field.type === 'boolean'
-        ? Boolean(raw)
-        : field.numeric
-          ? raw === ''
-            ? null
-            : Number(raw)
-          : field.type === 'password'
-            ? raw
-            : String(raw ?? '').trim() || null
-    if (!row || (row[field.name] ?? null) !== value) payload[field.name] = value
-  }
-  return payload
-}

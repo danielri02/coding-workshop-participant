@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..database import crud
 from ..database.incident_queries import incident_criteria, incident_order
+from ..domain.incidents import TRANSITIONS
 from ..models import (
     EngineerProfile,
     Incident,
@@ -30,13 +31,6 @@ from ..security.permissions import (
 from .dependencies import INCIDENT_READ_OPTIONS, DatabaseSession, RecordID
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])
-TRANSITIONS = {
-    IncidentStatus.OPEN: {IncidentStatus.IN_PROGRESS},
-    IncidentStatus.IN_PROGRESS: {IncidentStatus.BLOCKED, IncidentStatus.RESOLVED},
-    IncidentStatus.BLOCKED: {IncidentStatus.IN_PROGRESS},
-    IncidentStatus.RESOLVED: {IncidentStatus.CLOSED},
-    IncidentStatus.CLOSED: set(),
-}
 
 
 @router.get("", response_model=list[IncidentRead])

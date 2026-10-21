@@ -29,6 +29,7 @@ from backend.app.security.refresh_tokens import (
     hash_refresh_token,
 )
 from backend.scripts.create_tables import initialize_database
+from backend.scripts.prune_refresh_tokens import prune_expired_tokens
 from backend.scripts.seed_database import DEFAULT_ADMIN_PASSWORD, seed_database
 
 
@@ -234,6 +235,49 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(new.revoked_at)
             self.assertEqual(old.expires_at, new.expires_at)
             self.assertEqual(old.family_id, new.family_id)
+
+    async def test_pruning_expired_hashes_preserves_live_replay_detection(self) -> None:
+        """Maintenance is previewable and keeps consumed ancestors until expiry."""
+
+        original = await self.login()
+        rotated = (
+            await self.client.post(
+                "/auth/refresh", json={"refresh_token": original["refresh_token"]}
+            )
+        ).json()
+        now = datetime.now(timezone.utc)
+        expired_hash = hash_refresh_token(generate_refresh_token())
+        async with self.factory.begin() as session:
+            session.add(
+                RefreshToken(
+                    token_hash=expired_hash,
+                    user_id=self.user_id,
+                    family_id=uuid4(),
+                    created_at=now - timedelta(days=2),
+                    expires_at=now - timedelta(days=1),
+                )
+            )
+        async with self.factory() as session:
+            self.assertEqual(await prune_expired_tokens(session, now=now), 1)
+            self.assertIsNotNone(await session.get(RefreshToken, expired_hash))
+            self.assertEqual(
+                await prune_expired_tokens(session, apply=True, now=now), 1
+            )
+        async with self.factory() as session:
+            self.assertIsNone(await session.get(RefreshToken, expired_hash))
+            self.assertIsNotNone(
+                await session.get(
+                    RefreshToken, hash_refresh_token(original["refresh_token"])
+                )
+            )
+            self.assertEqual(
+                await prune_expired_tokens(session, apply=True, now=now), 0
+            )
+        for token in (original, rotated):
+            response = await self.client.post(
+                "/auth/refresh", json={"refresh_token": token["refresh_token"]}
+            )
+            self.assertEqual(response.status_code, 401)
 
     async def test_swagger_password_flow_authenticates_protected_requests(self) -> None:
         """Swagger Authorize exchanges form credentials for a usable bearer token."""

@@ -11,13 +11,9 @@ import {
 } from '@mui/material'
 import PropTypes from 'prop-types'
 import { useApiQuery } from '../hooks/useApiQuery'
-import {
-  decorateRow,
-  floorLabel,
-  recordLabel,
-  type ResourceDefinition,
-} from '../resources/definitions'
-import type { AdminRow, Lookups } from '../types'
+import { decorateRow, floorLabel, recordLabel } from '../resources/rows'
+import type { ResourceDefinition } from '../resources/definitions'
+import type { AdminRow, ApiRecord, Lookups } from '../types'
 
 interface DetailsProps {
   resource: ResourceDefinition
@@ -28,7 +24,7 @@ interface DetailsProps {
 
 /** Show a fresh record, including descriptions, relationships and lifecycle timestamps. */
 export function RecordDetailsDialog({ resource, row, lookups, onClose }: DetailsProps) {
-  const query = useApiQuery<AdminRow>(`${resource.endpoint}/${row.id}`, row)
+  const query = useApiQuery<ApiRecord | AdminRow>(`${resource.endpoint}/${row.id}`, row)
   const record = decorateRow(resource.key, query.data, lookups)
   const display = (field: string, value: unknown): string => {
     if (value === null || value === undefined || value === '') return '—'

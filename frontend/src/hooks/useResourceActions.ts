@@ -1,0 +1,105 @@
+import { useCallback, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth/context'
+import type { AdminOutlet } from '../components/AdminLayout'
+import type { RowAction } from '../components/ResourceGrid'
+import type { ResourceDefinition } from '../resources/definitions'
+import { editorForm, type Editor } from '../resources/incidentActions'
+import { api, errorMessage } from '../services/client'
+import type { AdminRow, ApiRecord, User } from '../types'
+
+/** Own mutations and dialog state without coupling them to grid presentation. */
+export function useResourceActions(
+  resource: ResourceDefinition,
+  scope: number,
+  changed: AdminOutlet['changed'],
+) {
+  const { user, setAccount, logout } = useAuth()
+  const navigate = useNavigate()
+  const title = resource.singular[0].toUpperCase() + resource.singular.slice(1)
+  const [editor, setEditor] = useState<Editor | null>(null)
+  const [viewing, setViewing] = useState<AdminRow | null>(null)
+  const [confirmation, setConfirmation] = useState<{
+    action: 'delete' | 'admin'
+    row: AdminRow
+  } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const action = useCallback(
+    (command: RowAction, row: AdminRow) => {
+      setError('')
+      if (command === 'notes') navigate(`/admin/notes?incident=${row.id}`)
+      else if (command === 'view') setViewing(row)
+      else if (command === 'delete' || command === 'admin')
+        setConfirmation({ action: command, row })
+      else setEditor({ action: command, row })
+    },
+    [navigate],
+  )
+
+  const save = async (payload: Record<string, unknown>) => {
+    if (!editor) return
+    const creating = editor.action === 'create'
+    const suffix = ['assignment', 'priority', 'status'].includes(editor.action)
+      ? `/${editor.action}`
+      : ''
+    const endpoint = creating
+      ? resource.key === 'notes'
+        ? `/incidents/${scope}/notes`
+        : resource.endpoint
+      : `${resource.endpoint}/${editor.row?.id}${suffix}`
+    const options = {
+      method: creating ? 'POST' : 'PATCH',
+      body: JSON.stringify(payload),
+    }
+    if (resource.key === 'users') {
+      const saved = await api<User>(endpoint, options)
+      if (saved.id === user?.id) setAccount(saved)
+    } else await api<ApiRecord>(endpoint, options)
+    setEditor(null)
+    changed(`${title} ${creating ? 'created' : 'updated'}.`, resource.key)
+  }
+
+  const confirm = async () => {
+    if (!confirmation) return
+    setBusy(true)
+    setError('')
+    try {
+      const { row, action: command } = confirmation
+      if (command === 'delete')
+        await api<void>(`${resource.endpoint}/${row.id}`, { method: 'DELETE' })
+      else {
+        const saved = await api<User>(`/users/${row.id}/admin`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_admin: !row.is_admin }),
+        })
+        if (row.id === user?.id) setAccount(saved)
+      }
+      setConfirmation(null)
+      changed(command === 'delete' ? `${title} deleted.` : 'Admin access updated.', resource.key)
+      if (resource.key === 'users' && row.id === user?.id) {
+        if (command === 'delete') await logout()
+      }
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return {
+    user,
+    editor,
+    setEditor,
+    viewing,
+    setViewing,
+    confirmation,
+    setConfirmation,
+    busy,
+    error,
+    action,
+    save,
+    confirm,
+    ...editorForm(resource, editor),
+  }
+}

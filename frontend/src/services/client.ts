@@ -1,7 +1,7 @@
 import type { TokenPair } from '../types'
 import { getSession, setSession } from './session'
 
-const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const apiUrl = (import.meta.env?.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 let refreshInFlight: Promise<TokenPair> | null = null
 
 /** A safe HTTP failure, with validation messages mapped to form fields. */

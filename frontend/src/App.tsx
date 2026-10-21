@@ -1,11 +1,12 @@
 import { Alert, Box, Button, CircularProgress, Stack } from '@mui/material'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
+import { lazy, Suspense, useState } from 'react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createQueryClient } from './services/queries'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
-import { AdminLayout } from './components/AdminLayout'
 import { LoginPage } from './pages/LoginPage'
-import { ResourcePage } from './pages/ResourcePage'
-import { resources } from './resources/definitions'
+const AdminRoutes = lazy(() => import('./pages/AdminRoutes'))
 
 /** Protect admin pages using the current account verified by the backend. */
 function AdminApplication() {
@@ -26,33 +27,30 @@ function AdminApplication() {
         </Button>
       </Stack>
     )
-  return (
-    <Routes>
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<Navigate to="incidents" replace />} />
-        {resources.map((resource) => (
-          <Route
-            key={resource.key}
-            path={resource.key}
-            element={<ResourcePage key={resource.key} resource={resource} />}
-          />
-        ))}
-      </Route>
-      <Route path="*" element={<Navigate to="/admin/incidents" replace />} />
-    </Routes>
-  )
+  return <AdminRoutes />
 }
 
 AdminApplication.propTypes = {}
 
 /** Compose the router and shared authentication boundary for the admin application. */
 function App() {
+  const [queryClient] = useState(createQueryClient)
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AdminApplication />
-      </AuthProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthProvider>
+          <Suspense
+            fallback={
+              <Box sx={{ p: 4 }}>
+                <CircularProgress aria-label="Loading workspace" />
+              </Box>
+            }
+          >
+            <AdminApplication />
+          </Suspense>
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   )
 }
 

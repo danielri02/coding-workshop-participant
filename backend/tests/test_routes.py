@@ -5,6 +5,7 @@ import secrets
 import unittest
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from argon2 import PasswordHasher
@@ -12,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
 
@@ -135,6 +137,60 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
+
+    async def test_unexpected_read_failure_is_sanitized_json_with_cors(self) -> None:
+        """Database outages remain visible to browsers without exposing SQL data."""
+
+        failure = OperationalError(
+            "private SQL", {"input": "private value"}, Exception()
+        )
+        with (
+            patch(
+                "backend.app.database.crud.list_records",
+                new=AsyncMock(side_effect=failure),
+            ),
+            self.assertLogs("backend.app.errors", level="ERROR") as logs,
+        ):
+            response = await self.client.get(
+                "/buildings", headers={"Origin": "http://localhost:3000"}
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"], "http://localhost:3000"
+        )
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        body = response.json()
+        self.assertEqual(body["request_id"], response.headers["x-request-id"])
+        self.assertIn(body["request_id"], logs.output[0])
+        self.assertIn("OperationalError", logs.output[0])
+        self.assertNotIn("private", response.text + " ".join(logs.output))
+        self.assertEqual((await self.client.get("/buildings")).status_code, 200)
+
+    async def test_unexpected_write_failure_rolls_back_and_can_recover(self) -> None:
+        """A failed flushed write is absent, and the next request can commit."""
+
+        original_commit = AsyncSession.commit
+
+        async def failing_commit(session: AsyncSession) -> None:
+            await session.flush()
+            raise OperationalError("private SQL", {}, Exception())
+
+        with (
+            patch.object(AsyncSession, "commit", failing_commit),
+            self.assertLogs("backend.app.errors", level="ERROR"),
+        ):
+            response = await self.client.post(
+                "/buildings", json={"name": "Failed building"}
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response.json())
+        self.assertIs(AsyncSession.commit, original_commit)
+        rows = (await self.client.get("/buildings")).json()
+        self.assertNotIn("Failed building", [row["name"] for row in rows])
+        response = await self.client.post(
+            "/buildings", json={"name": "Recovered building"}
+        )
+        self.assertEqual(response.status_code, 201, response.text)
 
     async def test_users_crud_hashes_passwords_and_loads_profiles(self) -> None:
         """Account responses omit secrets and async nested profile reads work."""

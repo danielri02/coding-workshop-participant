@@ -1,27 +1,69 @@
-name: Security Check - React
+name: Frontend checks
 
 on: [pull_request, push]
 
+permissions:
+  contents: read
+
 jobs:
-  npm:
+  frontend:
     runs-on: ubuntu-latest
-
-    permissions:
-      actions: read
-      contents: read
-      # security-events: write
-
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: workshop
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: workshop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workshop -d workshop"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://workshop:ci-test-password@localhost:5432/workshop
+      FRONTEND_ORIGIN: http://localhost:3011
+      SEED_PASSWORD: ci-demo-password
+    defaults:
+      run:
+        working-directory: frontend
     steps:
-      - name: Setup GitHub Actions
-        uses: actions/checkout@master
-
-      - name: Setup Node.js
-        uses: actions/setup-node@master
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
-
-      - name: Install npm dependencies
-        run: npm install --prefix ./frontend
-
-      - name: Run npm audit
-        run: npm audit --prefix ./frontend --audit-level=high
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: python -m pip install -r ../backend/requirements-dev.txt
+      - run: npm ci
+      - name: Verify generated contracts match the backend
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/generated
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - name: Run admin browser journeys against disposable PostgreSQL
+        run: |
+          python ../backend/scripts/create_tables.py
+          python ../backend/scripts/seed_database.py
+          cd ..
+          python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8000/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://localhost:8000/health
+          cd frontend
+          npm run test:e2e

@@ -12,7 +12,7 @@ the development seed creates `admin@acme.inc` with password `admin`.
 Use Node.js 24. From `frontend/`:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -30,13 +30,40 @@ npm run typecheck
 npm run lint
 npm run build
 npm run format:check
+npm test
 ```
 
-Production builds include TypeScript checking. `src/App.tsx` defines the admin
-route boundary, `resources/definitions.tsx` configures the seven tables, and
-`components/` contains reusable grids, forms, dialogs and the sidebar layout.
-`services/` centralizes requests, validation errors, session persistence and
-single-flight refresh; `hooks/` handles cancellable queries and relationship data.
+Production builds include TypeScript checking. `src/App.tsx` owns authentication
+and loads `pages/AdminRoutes.tsx` after login. The seven resources share grids,
+forms and dialogs; `hooks/useResourceActions.ts` owns mutations, while
+`resources/incidentActions.ts`, `incidentQuery.ts`, `forms.ts` and `rows.ts` keep
+workflow inputs, query translation, payload construction and presentation adapters
+separate from the page components.
+
+`services/client.ts` centralizes HTTP errors and single-flight token refresh.
+TanStack Query shares and cancels reads, caches successful reads for 30 seconds,
+and invalidates affected collections/details after mutations. Explicit Refresh
+also reloads the page's relationships. Cached data is cleared at login/logout.
+The administrator routes and grid code are loaded separately from the login UI.
+
+### API contracts and dependencies
+
+`src/generated/` contains backend-generated transport types, enums, workflow
+transitions, field limits and incident-grid query metadata. `src/types.ts` adds
+named aliases and a separate presentation row type; engineer API responses retain
+`user_id` until the grid adapter supplies an `id`. Do not edit generated files.
+After changing backend schemas or workflow policy, regenerate from `frontend/`:
+
+```bash
+# Use the Python interpreter where backend dependencies are installed.
+PYTHON=/path/to/backend/venv/bin/python npm run generate:api
+```
+
+No database connection is required. CI regenerates these files and rejects drift.
+Commit `package-lock.json` after dependency changes and use `npm ci` for repeatable
+installs. TypeScript is on the 5.9 release line to match the schema generator's
+supported peer dependency. `npm test` runs focused HTTP-client, payload, adapter
+and cache tests; it does not measure coverage.
 
 Grids provide view/edit/delete actions; the row's extra-actions menu handles admin
 access and incident assignment, priority/escalation, status and notes. Notes use an

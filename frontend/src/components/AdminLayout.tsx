@@ -29,11 +29,13 @@ import MenuOutlined from '@mui/icons-material/MenuOutlined'
 import NotesOutlined from '@mui/icons-material/NotesOutlined'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/context'
+import { useQueryClient } from '@tanstack/react-query'
+import { invalidateResourceQueries } from '../services/queries'
+import type { ResourceKey } from '../types'
 import { resources } from '../resources/definitions'
 
 export interface AdminOutlet {
-  revision: number
-  changed: (message: string) => void
+  changed: (message: string, resource?: ResourceKey) => void
 }
 const width = 248
 const icons = {
@@ -51,11 +53,22 @@ export function AdminLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [revision, setRevision] = useState(0)
+  const queryClient = useQueryClient()
   const [message, setMessage] = useState('')
   const current = resources.find((resource) => location.pathname.endsWith(`/${resource.key}`))
-  const changed = (notice: string) => {
-    setRevision((previous) => previous + 1)
+  const changed = (notice: string, resource?: ResourceKey) => {
+    const target = resource ?? current?.key
+    if (target)
+      void invalidateResourceQueries(
+        queryClient,
+        target,
+        resource
+          ? []
+          : [
+              ...(current?.lookups || []),
+              ...(current?.key === 'notes' ? ['incidents' as const] : []),
+            ],
+      )
     setMessage(notice)
   }
   const navigation = (
@@ -199,7 +212,7 @@ export function AdminLayout() {
           </Tooltip>
         </Toolbar>
         <Box component="main" sx={{ p: { xs: 2, sm: 3, lg: 4 }, maxWidth: 1700, mx: 'auto' }}>
-          <Outlet context={{ revision, changed } satisfies AdminOutlet} />
+          <Outlet context={{ changed } satisfies AdminOutlet} />
         </Box>
       </Box>
       <Snackbar open={Boolean(message)} autoHideDuration={4000} onClose={() => setMessage('')}>

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database.session import engine
+from .errors import ErrorResponseMiddleware
 from .routes import (
     auth,
     buildings,
@@ -32,6 +33,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Coding Workshop", lifespan=lifespan)
+app.add_middleware(ErrorResponseMiddleware)
+# CORS wraps the error boundary, including sanitized unexpected-error responses.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -39,6 +42,7 @@ app.add_middleware(
     ],
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["X-Request-ID"],
 )
 
 app.include_router(health_router)

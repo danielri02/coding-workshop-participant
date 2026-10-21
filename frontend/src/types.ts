@@ -1,26 +1,46 @@
-/** Public account fields returned by the API; credentials are never included. */
-export interface User {
-  id: number
-  name: string
-  email: string
-  is_admin: boolean
-  engineer_profile: { user_id: number; is_available: boolean } | null
-}
+import type { components } from './generated/api'
 
-/** Token pair persisted for the current browser tab. */
-export interface TokenPair {
-  access_token: string
-  refresh_token: string
-  token_type: 'bearer'
-  expires_in: number
-  refresh_expires_in: number
-}
+/** Transport contracts generated from FastAPI; never hand-maintain response fields. */
+export type ApiSchemas = components['schemas']
+export type User = ApiSchemas['UserRead']
+export type EngineerProfile = ApiSchemas['EngineerProfileRead']
+export type Building = ApiSchemas['BuildingRead']
+export type Floor = ApiSchemas['FloorRead']
+export type Seat = ApiSchemas['SeatRead']
+export type Incident = ApiSchemas['IncidentRead']
+export type Note = ApiSchemas['NoteRead']
+export type TokenPair = ApiSchemas['TokenPair']
+export type IncidentPage = ApiSchemas['IncidentPage']
+export type IncidentStatus = ApiSchemas['IncidentStatus']
 
-/** Shared record shape used by configurable grids and forms. */
-export interface AdminRow {
-  id: number
-  [field: string]: unknown
+/** Associate each resource with its actual API response, before grid normalization. */
+export interface ResourceRecords {
+  users: User
+  engineers: EngineerProfile
+  buildings: Building
+  floors: Floor
+  seats: Seat
+  incidents: Incident
+  notes: Note
 }
+export type ResourceKey = keyof ResourceRecords
+export type ApiRecord = ResourceRecords[ResourceKey]
+
+/** Common presentation adapter with explicit known fields and a normalized grid ID. */
+export type AdminRow = { id: number } & Partial<
+  User & EngineerProfile & Incident & Floor & Omit<Seat, 'floor_id'> & Note
+> & {
+    is_engineer?: boolean
+    user_name?: string
+    user_email?: string
+    building_name?: string
+    floor_name?: string
+    escalated?: boolean
+  }
+export type FormFieldName = keyof AdminRow | 'password'
+export type FormRow = Partial<Record<FormFieldName, unknown>>
+export type FormValue = string | number | boolean
+export type FormValues = Partial<Record<FormFieldName, FormValue>>
 
 /** A referenced record used by select inputs and readable grid labels. */
 export interface Option {
@@ -28,24 +48,10 @@ export interface Option {
   label: string
 }
 
-export type FormValue = string | number | boolean
-export type FormValues = Record<string, FormValue>
-export type ResourceKey =
-  'users' | 'engineers' | 'buildings' | 'floors' | 'seats' | 'incidents' | 'notes'
-
-/** Data used to label relationships without putting IDs into user-facing forms. */
+/** Relationships retain their transport types, including engineer user_id keys. */
 export interface Lookups {
-  users: AdminRow[]
-  engineers: AdminRow[]
-  buildings: AdminRow[]
-  floors: AdminRow[]
-  seats: AdminRow[]
-}
-
-/** Server-side incident page with a filtered total. */
-export interface IncidentPage {
-  rows: AdminRow[]
-  row_count: number
-  page: number
-  page_size: number
+  users: User[]
+  buildings: Building[]
+  floors: Floor[]
+  seats: Seat[]
 }

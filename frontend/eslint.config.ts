@@ -21,7 +21,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['*.config.ts'],
+    files: ['*.config.ts', 'tests/**/*.ts', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: globals.node,
     },

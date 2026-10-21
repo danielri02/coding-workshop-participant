@@ -14,7 +14,7 @@ import {
 } from '@mui/x-data-grid'
 import PropTypes from 'prop-types'
 import type { AdminRow, ResourceKey } from '../types'
-import { transitions } from '../resources/definitions'
+import { transitions } from '../generated/domain'
 
 export type RowAction =
   'view' | 'edit' | 'delete' | 'admin' | 'assignment' | 'priority' | 'status' | 'notes'
@@ -35,7 +35,7 @@ function RowActions({ row, resource, disabled, onAction }: ActionsProps) {
         ? [
             { action: 'assignment', label: 'Assign engineer' },
             { action: 'priority', label: 'Priority and escalation' },
-            ...(transitions[String(row.status)]?.length
+            ...(row.status && transitions[row.status].length
               ? [{ action: 'status' as const, label: 'Change status' }]
               : []),
             { action: 'notes', label: 'View notes' },

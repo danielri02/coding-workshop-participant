@@ -202,6 +202,7 @@ app/db
 node_modules/
 npm-debug.log*
 package-lock.json*
+!frontend/package-lock.json
 yarn-debug.log*
 yarn-error.log*
 

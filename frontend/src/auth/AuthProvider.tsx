@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import PropTypes from 'prop-types'
+import { useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, errorMessage } from '../services/client'
 import { getSession, sessionEvent, setSession } from '../services/session'
 import type { TokenPair, User } from '../types'
@@ -7,6 +8,7 @@ import { AuthContext } from './context'
 
 /** Restore a tab session, verify admin capabilities and manage login/logout. */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [user, setUser] = useState<User | null>(null)
   const [booting, setBooting] = useState(Boolean(getSession()))
   const [notice, setNotice] = useState('')
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const handleSession = () => {
       if (!getSession()) {
+        queryClient.clear()
         setUser(null)
         setBooting(false)
       }
@@ -46,10 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false
       window.removeEventListener(sessionEvent, handleSession)
     }
-  }, [])
+  }, [queryClient])
 
   const login = async (email: string, password: string) => {
     setNotice('')
+    queryClient.clear()
     const tokens = await api<TokenPair>(
       '/auth/login',
       {

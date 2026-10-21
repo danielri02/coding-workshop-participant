@@ -9,13 +9,8 @@ from sqlalchemy.orm.interfaces import ORMOption
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..database import crud
-from ..models import Incident, IncidentStatus, User
-
-ACTIVE_STATUSES = {
-    IncidentStatus.OPEN,
-    IncidentStatus.IN_PROGRESS,
-    IncidentStatus.BLOCKED,
-}
+from ..domain.incidents import ACTIVE_STATUSES
+from ..models import Incident, User
 
 
 def incident_visibility(user: User) -> ColumnElement[bool]:

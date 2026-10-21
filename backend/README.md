@@ -71,6 +71,31 @@ the same search and filter parameters. Incident responses now include
 These names are available only within incidents/notes the caller may read;
 employee access to other users' account records remains restricted.
 
+### Unexpected errors and maintenance
+
+Unexpected request failures return a sanitized JSON 500 response with `detail`
+and `request_id`. The same ID appears in the `X-Request-ID` response header and
+the server log, alongside the exception class. The error boundary avoids logging
+SQL parameters, credentials or request input, and allowed frontend origins still
+receive CORS headers on these responses. Validation and conflict responses retain
+their usual 422/409 behavior.
+
+To preview expired refresh credentials, run from `backend/`:
+
+```bash
+python scripts/prune_refresh_tokens.py
+# Explicitly delete only credentials whose absolute expiry has passed:
+python scripts/prune_refresh_tokens.py --apply
+```
+
+Consumed/revoked credentials remain until their expiry so replay detection and
+refresh-chain invalidation continue to work. This is a manual maintenance command;
+API startup performs no cleanup. Existing last-admin access policy is unchanged.
+
+Backend workflow policy lives in `app/domain/incidents.py`. After changing schemas
+or workflow rules, regenerate frontend contracts with its `npm run generate:api`
+command. The exporter imports the application without connecting to PostgreSQL.
+
 ### Swagger login
 
 Open `http://127.0.0.1:8000/docs`, click **Authorize**, and enter:

@@ -14,16 +14,16 @@ import {
   Typography,
 } from '@mui/material'
 import PropTypes from 'prop-types'
-import type { Field } from '../resources/definitions'
-import { formPayload } from '../resources/definitions'
+import type { Field } from '../resources/forms'
+import { formPayload } from '../resources/forms'
 import { ApiError, errorMessage } from '../services/client'
-import type { AdminRow, FormValues, Lookups } from '../types'
+import type { FormRow, FormValues, Lookups } from '../types'
 
 interface FormProps {
   title: string
   fields: Field[]
   lookups: Lookups
-  row?: AdminRow | null
+  row?: FormRow | null
   subtitle?: string
   onSave: (payload: Record<string, unknown>) => Promise<void>
   onClose: () => void

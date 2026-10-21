@@ -1,28 +1,20 @@
 import { useEffect, useState } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api, errorMessage } from '../services/client'
 
-/** Load JSON with cancellation and preserve the previous page while a new one loads. */
-export function useApiQuery<T>(path: string | null, initialData: T, revision = 0) {
-  const key = `${path}:${revision}`
-  const [result, setResult] = useState({ key: '', data: initialData, error: '' })
-  useEffect(() => {
-    if (!path) return undefined
-    const controller = new AbortController()
-    api<T>(path, { signal: controller.signal }).then(
-      (data) => {
-        if (!controller.signal.aborted) setResult({ key, data, error: '' })
-      },
-      (error: unknown) => {
-        if (!controller.signal.aborted)
-          setResult((previous) => ({ ...previous, key, error: errorMessage(error) }))
-      },
-    )
-    return () => controller.abort()
-  }, [key, path])
+/** Deduplicate reads, cancel abandoned requests and preserve the previous grid page. */
+export function useApiQuery<T>(path: string | null, initialData: T) {
+  const [fallback] = useState(() => initialData)
+  const query = useQuery({
+    queryKey: ['api', path],
+    queryFn: ({ signal }) => api<T>(path!, { signal }),
+    enabled: Boolean(path),
+    placeholderData: keepPreviousData,
+  })
   return {
-    data: result.data,
-    error: result.key === key ? result.error : '',
-    loading: Boolean(path && result.key !== key),
+    data: path ? (query.data ?? fallback) : fallback,
+    error: query.error ? errorMessage(query.error) : '',
+    loading: Boolean(path && query.isFetching),
   }
 }
 
