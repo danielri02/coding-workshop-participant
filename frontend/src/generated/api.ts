@@ -53,6 +53,29 @@ export interface components {
       /** Name */
       name: string | null
     }
+    /** CategoryReport */
+    CategoryReport: {
+      /**
+       * Report
+       * @default categories
+       * @constant
+       */
+      report: 'categories'
+      /** Rows */
+      rows: components['schemas']['CategoryRow'][]
+    }
+    /** CategoryRow */
+    CategoryRow: {
+      /** Active Count */
+      active_count: number
+      category: components['schemas']['IncidentCategory']
+      /** Id */
+      id: string
+      /** Incident Count */
+      incident_count: number
+      /** Percentage */
+      percentage: number
+    }
     /**
      * EngineerProfileCreate
      * @description Admin-only promotion of an existing employee to an engineer.
@@ -257,6 +280,43 @@ export interface components {
       blocked_reason?: string | null
       status: components['schemas']['IncidentStatus']
     }
+    /** LocationReport */
+    LocationReport: {
+      /**
+       * Level
+       * @enum {string}
+       */
+      level: 'building' | 'floor' | 'seat'
+      /**
+       * Minimum Incidents
+       * @default 2
+       */
+      minimum_incidents: number
+      /**
+       * Report
+       * @default locations
+       * @constant
+       */
+      report: 'locations'
+      /** Rows */
+      rows: components['schemas']['LocationRow'][]
+    }
+    /** LocationRow */
+    LocationRow: {
+      /** Active Count */
+      active_count: number
+      /** Building Name */
+      building_name: string
+      category: components['schemas']['IncidentCategory']
+      /** Floor Label */
+      floor_label: string | null
+      /** Id */
+      id: string
+      /** Incident Count */
+      incident_count: number
+      /** Seat Label */
+      seat_label: string | null
+    }
     /**
      * LoginRequest
      * @description Normalize the employee identity without reapplying password creation rules.
@@ -272,6 +332,20 @@ export interface components {
        * Format: password
        */
       password: string
+    }
+    /** MilestoneMetric */
+    MilestoneMetric: {
+      /** Average Minutes */
+      average_minutes: number | null
+      /**
+       * Id
+       * @enum {string}
+       */
+      id: 'assigned' | 'acknowledged' | 'resolved'
+      /** Label */
+      label: string
+      /** Sample Count */
+      sample_count: number
     }
     /**
      * NoteCreate
@@ -322,6 +396,11 @@ export interface components {
       refresh_token: string
     }
     /**
+     * ReportScope
+     * @enum {string}
+     */
+    ReportScope: 'visible' | 'personal' | 'assigned'
+    /**
      * SeatCreate
      * @description Create a seat; label uniqueness is scoped to its floor.
      */
@@ -350,6 +429,48 @@ export interface components {
     SeatUpdate: {
       /** Label */
       label: string | null
+    }
+    /** TimingReport */
+    TimingReport: {
+      /** Milestones */
+      milestones: components['schemas']['MilestoneMetric'][]
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /**
+       * Report
+       * @default timings
+       * @constant
+       */
+      report: 'timings'
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['TimingRow'][]
+    }
+    /** TimingRow */
+    TimingRow: {
+      /** Acknowledged Minutes */
+      acknowledged_minutes: number | null
+      /** Assigned Minutes */
+      assigned_minutes: number | null
+      /** Assignee Name */
+      assignee_name: string | null
+      category: components['schemas']['IncidentCategory']
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string
+      /** Id */
+      id: number
+      priority: components['schemas']['IncidentPriority']
+      /** Resolved Minutes */
+      resolved_minutes: number | null
+      status: components['schemas']['IncidentStatus']
+      /** Title */
+      title: string
     }
     /**
      * TokenPair
@@ -437,6 +558,40 @@ export interface components {
       msg: string
       /** Error Type */
       type: string
+    }
+    /** WorkloadReport */
+    WorkloadReport: {
+      /**
+       * Report
+       * @default workload
+       * @constant
+       */
+      report: 'workload'
+      /** Rows */
+      rows: components['schemas']['WorkloadRow'][]
+      /** Unassigned Count */
+      unassigned_count: number
+    }
+    /** WorkloadRow */
+    WorkloadRow: {
+      /** Active Count */
+      active_count: number
+      /** Blocked Count */
+      blocked_count: number
+      /** High Priority Count */
+      high_priority_count: number
+      /** Id */
+      id: number
+      /** In Progress Count */
+      in_progress_count: number
+      /** Is Available */
+      is_available: boolean
+      /** Name */
+      name: string
+      /** Open Count */
+      open_count: number
+      /** Total Count */
+      total_count: number
     }
   }
   responses: never

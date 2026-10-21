@@ -7,10 +7,6 @@ import {
   Divider,
   Drawer,
   IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
   Snackbar,
   Alert,
   Stack,
@@ -21,36 +17,23 @@ import {
   useTheme,
 } from '@mui/material'
 import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined'
-import AssignmentOutlined from '@mui/icons-material/AssignmentOutlined'
-import ChairOutlined from '@mui/icons-material/ChairOutlined'
 import ChevronLeftOutlined from '@mui/icons-material/ChevronLeftOutlined'
-import EngineeringOutlined from '@mui/icons-material/EngineeringOutlined'
-import GroupOutlined from '@mui/icons-material/GroupOutlined'
-import LayersOutlined from '@mui/icons-material/LayersOutlined'
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined'
 import MenuOutlined from '@mui/icons-material/MenuOutlined'
-import NotesOutlined from '@mui/icons-material/NotesOutlined'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { useQueryClient } from '@tanstack/react-query'
 import { invalidateResourceQueries } from '../services/queries'
 import type { ResourceKey } from '../types'
 import { resources } from '../resources/definitions'
+import { reports } from '../reports/definitions'
+import { SidebarNavigation } from './SidebarNavigation'
 
 export interface AdminOutlet {
   changed: (message: string, resource?: ResourceKey) => void
 }
 const expandedWidth = 248
 const collapsedWidth = 72
-const icons = {
-  incidents: <AssignmentOutlined />,
-  users: <GroupOutlined />,
-  engineers: <EngineeringOutlined />,
-  buildings: <ApartmentOutlined />,
-  floors: <LayersOutlined />,
-  seats: <ChairOutlined />,
-  notes: <NotesOutlined />,
-}
 
 /** Provide persistent admin navigation, account controls and mutation notifications. */
 export function AdminLayout() {
@@ -100,6 +83,7 @@ export function AdminLayout() {
         direction="row"
         spacing={showLabels ? 1.5 : 0}
         sx={{
+          flexShrink: 0,
           px: showLabels ? 3 : 0,
           py: 2.5,
           alignItems: 'center',
@@ -122,46 +106,25 @@ export function AdminLayout() {
       {showLabels && (
         <Typography
           variant="overline"
-          sx={{ px: 3, pt: 2, pb: 1, color: '#7e98b2', fontSize: 10, letterSpacing: 1.6 }}
+          sx={{
+            flexShrink: 0,
+            px: 3,
+            pt: 2,
+            pb: 1,
+            color: '#7e98b2',
+            fontSize: 10,
+            letterSpacing: 1.6,
+          }}
         >
           Administration
         </Typography>
       )}
-      <List
-        component="nav"
-        aria-label="Administration"
-        sx={{ px: 1.5, minHeight: 0, overflowY: 'auto', mt: showLabels ? 0 : 1 }}
-      >
-        {resources.map((resource) => (
-          <Tooltip key={resource.key} title={showLabels ? '' : resource.title} placement="right">
-            <ListItemButton
-              component={NavLink}
-              aria-label={resource.title}
-              to={`/admin/${resource.key}`}
-              onClick={() => setMobileOpen(false)}
-              sx={{
-                mb: 0.5,
-                px: 1.5,
-                py: 1,
-                borderRadius: 1.5,
-                justifyContent: showLabels ? 'flex-start' : 'center',
-                '&.active': { bgcolor: '#25446a', color: '#fff' },
-                '&:hover': { bgcolor: '#ffffff0c' },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: showLabels ? 38 : 0, color: 'inherit' }}>
-                {icons[resource.key]}
-              </ListItemIcon>
-              <ListItemText
-                primary={resource.title}
-                sx={{ display: showLabels ? 'block' : 'none' }}
-                slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 600 } } }}
-              />
-            </ListItemButton>
-          </Tooltip>
-        ))}
-      </List>
-      <Box sx={{ mt: 'auto', p: 2.5, display: showLabels ? 'block' : 'none' }}>
+      <SidebarNavigation
+        showLabels={showLabels}
+        onExpand={() => setExpanded(true)}
+        onNavigate={() => setMobileOpen(false)}
+      />
+      <Box sx={{ flexShrink: 0, mt: 'auto', p: 2.5, display: showLabels ? 'block' : 'none' }}>
         <Divider sx={{ borderColor: '#ffffff12', mb: 2 }} />
         <Chip
           label="Admin workspace"
@@ -234,7 +197,8 @@ export function AdminLayout() {
               Administration
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {current?.title}
+              {reports.find((report) => location.pathname === `/admin/reports/${report.key}`)
+                ?.title ?? current?.title}
             </Typography>
           </Breadcrumbs>
           <Avatar

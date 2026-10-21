@@ -90,6 +90,25 @@ column widths and scroll horizontally within the table, with a scrollbar at the
 bottom and support for horizontal wheel/trackpad input. Grid height adapts to the
 window, and search/actions stack vertically on narrow screens.
 
+### Reports
+
+The final sidebar item, **Reports**, expands to Recurring locations, Response
+times, Engineer workload and Category frequency. Navigation scrolls independently
+so all links remain reachable in short windows. Selecting Reports from the icon
+rail expands the sidebar. Report tables reuse the CRUD grid's controls and
+horizontal scrolling.
+
+Report calculations come from dedicated `/reports/*` endpoints (documented in
+`../backend/README.md`). Response times supports backend search, paging and
+sorting, with all matching incidents included in its averages and sample counts.
+Double-click a timing row or use View to inspect the incident. Other reports
+paginate and filter their complete aggregate rows in MUI Data Grid. Report caches
+are invalidated after CRUD changes; Refresh reloads the current report.
+
+Open incidents, blocked/escalated incidents and ticket notes stay in the existing
+CRUD pages. Reports focus on calculations across records. This is the admin UI;
+report endpoints enforce the caller's incident visibility for future persona UIs.
+
 ### API contracts and dependencies
 
 `src/generated/` contains backend-generated transport types, enums, workflow

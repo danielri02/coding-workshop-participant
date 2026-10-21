@@ -172,6 +172,38 @@ the same search and filter parameters. Incident responses now include
 These names are available only within incidents/notes the caller may read;
 employee access to other users' account records remains restricted.
 
+### Report API
+
+Read-only report endpoints calculate across the complete authorized incident set:
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /reports/locations?level=building` | Recurring location/category groups, ranked by count; `level` also accepts `floor` and `seat` |
+| `GET /reports/categories` | Counts, active counts and percentage per category, including categories with zero incidents |
+| `GET /reports/timings` | First assignment, acknowledgment and resolution averages, sample counts and paged incident timing rows |
+| `GET /reports/workload` | Every engineer's availability, active/status/high-priority counts and the active unassigned incident count; admin only |
+
+Locations, categories and timings accept `scope=visible` (default, caller's existing
+incident access), `personal` (own reports), or `assigned` (engineer assignments;
+requires Engineer capability). Employee and engineer access cannot be broadened
+by changing scope. The admin UI labels `visible` as “All incidents”.
+
+Reports are all-time. Recurrence means at least two incidents in the same location
+and category; floor/seat grouping excludes incidents without that location recorded.
+Active means Open, In Progress or Blocked. Workload includes idle and unavailable
+engineers; availability is a profile flag independent of assignment count.
+
+Timing durations start at creation; acknowledgment is the first transition to
+In Progress. Missing milestones are excluded from averages and have null durations,
+not zero. Timing summaries cover all matching incidents, independent of the current
+page. `/reports/timings` accepts `search` (literal title/description substring, max
+200 characters), `page`, `page_size` (1–100), `sort_by` and `sort_direction`. Sorts
+support id, title, status, priority, category, created_at, assignee_name and the
+three `*_minutes` fields; defaults are created_at/desc, with nulls last and ID ties.
+
+Open/blocked/escalated incident lists and notes remain in the CRUD grids rather
+than duplicate report endpoints.
+
 ### Unexpected errors and maintenance
 
 Unexpected request failures return a sanitized JSON 500 response with `detail`

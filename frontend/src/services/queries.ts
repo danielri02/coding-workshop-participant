@@ -25,6 +25,7 @@ export function invalidateResourceQueries(
   related: readonly ResourceKey[] = [],
 ): Promise<void> {
   const affected = [
+    'reports',
     ...dependencies[resource],
     ...related.map((key) => (key === 'engineers' ? 'engineer-profiles' : key)),
   ]

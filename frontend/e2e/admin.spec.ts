@@ -473,3 +473,151 @@ test('incident grid sends backend search, pagination and sorting changes', async
   await page.keyboard.press('Escape')
   await expect(page.getByText('No records to show', { exact: true })).toBeVisible()
 })
+
+test('reports provide aggregate grids and backend timing search, paging and sorting', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(120000)
+  const suffix = `reportcheck${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const floors = await (await request.get(`${apiUrl}/floors`, { headers })).json()
+  const floor = floors.find((row: { building_id: number }) => row.building_id === building.id)
+  const seats = await (await request.get(`${apiUrl}/seats`, { headers })).json()
+  const seat = seats.find((row: { floor_id: number }) => row.floor_id === floor?.id)
+  const ids: number[] = []
+  for (let index = 0; index < 12; index++) {
+    const result = await request.post(`${apiUrl}/incidents`, {
+      headers,
+      data: {
+        title: `${suffix} ${String(index).padStart(2, '0')}`,
+        description: 'Report browser verification.',
+        category: 'Other',
+        building_id: building.id,
+        floor_id: floor?.id,
+        seat_id: seat?.id,
+      },
+    })
+    expect(result.ok(), await result.text()).toBeTruthy()
+    const incident = await result.json()
+    ids.push(incident.id)
+    cleanup.unshift(`/incidents/${incident.id}`)
+  }
+  const engineer = (await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json())[0]
+  expect(
+    (
+      await request.patch(`${apiUrl}/incidents/${ids[0]}/assignment`, {
+        headers,
+        data: { assignee_id: engineer.user_id },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  for (const status of ['In Progress', 'Resolved']) {
+    expect(
+      (
+        await request.patch(`${apiUrl}/incidents/${ids[0]}/status`, { headers, data: { status } })
+      ).ok(),
+    ).toBeTruthy()
+  }
+  await page.setViewportSize({ width: 1024, height: 540 })
+  await page.goto('/admin/incidents')
+  await signIn(page)
+  const navigation = page.getByRole('navigation', { name: 'Administration' })
+  await navigation.getByRole('button', { name: 'Reports', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Collapse navigation', exact: true })).toBeVisible()
+  await expect(navigation.getByRole('button', { name: 'Reports', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  await expect(navigation.getByRole('link')).toHaveCount(11)
+  await navigate(page, 'Recurring locations')
+  await page.getByRole('combobox', { name: 'Group by location' }).click()
+  await page.getByRole('option', { name: 'Seat', exact: true }).click()
+  await expect(page.getByRole('columnheader', { name: 'Seat', exact: true })).toBeVisible()
+  await expect(page.getByRole('gridcell', { name: seat.label, exact: true }).first()).toBeVisible()
+  await navigate(page, 'Category frequency')
+  const categories = await (await request.get(`${apiUrl}/reports/categories`, { headers })).json()
+  const other = categories.rows.find((row: { category: string }) => row.category === 'Other')
+  const categoryRow = page
+    .getByRole('row')
+    .filter({ has: page.getByRole('gridcell', { name: 'Other', exact: true }) })
+  await expect(categoryRow.locator('[data-field="incident_count"]')).toHaveText(
+    String(other.incident_count),
+  )
+  await navigate(page, 'Engineer workload')
+  await expect(page.getByRole('columnheader', { name: 'Active', exact: true })).toBeVisible()
+  await expect(page.getByText('Unassigned active incidents', { exact: true })).toBeVisible()
+  await navigate(page, 'Response times')
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
+  await page.getByRole('option', { name: '10', exact: true }).click()
+  await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  await expect(page.getByText('1 recorded of 12 matching incidents', { exact: true })).toHaveCount(
+    3,
+  )
+  await page.getByRole('button', { name: 'Go to next page' }).click()
+  await expect(page.getByText('11–12 of 12', { exact: true })).toBeVisible()
+  const sorted = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/reports/timings' &&
+      url.searchParams.get('sort_by') === 'title' &&
+      url.searchParams.get('page') === '0'
+    )
+  })
+  await page.getByRole('columnheader', { name: /^Incident/ }).click()
+  expect((await sorted).status()).toBe(200)
+  await page
+    .getByRole('grid')
+    .locator('.MuiDataGrid-virtualScroller')
+    .evaluate((element) => {
+      element.scrollLeft = element.scrollWidth
+    })
+  await page.getByRole('button', { name: `View incident ${ids[0]}`, exact: true }).click()
+  await expect(page.getByRole('dialog').getByText(`${suffix} 00`, { exact: true })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Incident scope' }).click()
+  await page.getByRole('option', { name: 'My reported incidents', exact: true }).click()
+  await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('response-times.png'), fullPage: true })
+})
+
+test('reports menu remains reachable and collapsible in a short mobile sidebar', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 480 })
+  await page.goto('/admin/reports/workload')
+  await signIn(page)
+  await expect(page.getByRole('heading', { name: 'Engineer workload', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  const navigation = page.getByRole('navigation', { name: 'Administration' })
+  await expect
+    .poll(() => navigation.evaluate((element) => element.scrollHeight - element.clientHeight))
+    .toBeGreaterThan(0)
+  const reportsButton = navigation.getByRole('button', { name: 'Reports', exact: true })
+  await reportsButton.click()
+  await expect(reportsButton).toHaveAttribute('aria-expanded', 'false')
+  await reportsButton.click()
+  await expect(reportsButton).toHaveAttribute('aria-expanded', 'true')
+  await navigation
+    .getByRole('link', { name: 'Category frequency', exact: true })
+    .scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: test.info().outputPath('scrollable-reports-menu.png'),
+    fullPage: true,
+  })
+  await navigate(page, 'Category frequency')
+  await expect(page.getByRole('button', { name: 'Open navigation', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+    .toBeLessThanOrEqual(1)
+  const scrollbar = page.getByRole('grid').locator('.MuiDataGrid-scrollbar--horizontal')
+  await expect(scrollbar).toBeVisible()
+  await scrollbar.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+  })
+  await expect.poll(() => scrollbar.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+})

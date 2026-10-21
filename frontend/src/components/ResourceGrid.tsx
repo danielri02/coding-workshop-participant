@@ -5,14 +5,13 @@ import EditOutlined from '@mui/icons-material/EditOutlined'
 import MoreHoriz from '@mui/icons-material/MoreHoriz'
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
 import {
-  DataGrid,
-  GridToolbar,
   type GridColDef,
   type GridFilterModel,
   type GridPaginationModel,
   type GridSortModel,
 } from '@mui/x-data-grid'
 import PropTypes from 'prop-types'
+import { DataTable } from './DataTable'
 import type { AdminRow, ResourceKey } from '../types'
 import { transitions } from '../generated/domain'
 
@@ -149,70 +148,31 @@ export function ResourceGrid({
     },
   ]
   return (
-    <Box sx={{ height: 'clamp(300px, calc(100dvh - 300px), 590px)', width: '100%', minWidth: 0 }}>
-      <DataGrid
-        rows={rows}
-        columns={allColumns}
-        loading={loading}
-        scrollbarSize={14}
-        disableRowSelectionOnClick
-        initialState={{
-          columns: {
-            columnVisibilityModel: server
-              ? { id: false, category: false, building_id: false, created_at: false }
-              : {},
-          },
-        }}
-        rowCount={server ? rowCount : undefined}
-        paginationMode={server ? 'server' : 'client'}
-        sortingMode={server ? 'server' : 'client'}
-        filterMode={server ? 'server' : 'client'}
-        paginationModel={pagination}
-        onPaginationModelChange={onPagination}
-        pageSizeOptions={[10, 25, 50, 100]}
-        sortModel={sorting}
-        onSortModelChange={onSorting}
-        filterModel={filters}
-        onFilterModelChange={onFilters}
-        onRowDoubleClick={({ row }) => {
-          if (!disabled) onAction('view', row)
-        }}
-        showToolbar
-        slots={{ toolbar: GridToolbar }}
-        slotProps={{
-          toolbar: {
-            showQuickFilter: false,
-            csvOptions: { disableToolbarButton: true },
-            printOptions: { disableToolbarButton: true },
-          },
-        }}
-        localeText={{
-          noRowsLabel: 'No records to show',
-          noResultsOverlayLabel: 'No records match these filters',
-        }}
-        sx={{
-          border: 0,
-          minWidth: 0,
-          maxWidth: '100%',
-          '& .MuiDataGrid-columnHeaders': { fontSize: 12, color: 'text.secondary' },
-          '& .MuiDataGrid-cell': { borderColor: 'divider' },
-          '& .MuiDataGrid-toolbarContainer': {
-            px: 2,
-            py: 1,
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            flexWrap: 'wrap',
-          },
-          '& .MuiDataGrid-scrollbar--horizontal': {
-            overflowX: 'scroll',
-            '&::-webkit-scrollbar': { height: 14 },
-            '&::-webkit-scrollbar-thumb': { bgcolor: '#a9b6c8', borderRadius: 7 },
-            '&::-webkit-scrollbar-track': { bgcolor: '#edf1f7' },
-          },
-          '& .MuiTablePagination-selectLabel': { display: { xs: 'none', sm: 'block' } },
-        }}
-      />
-    </Box>
+    <DataTable
+      rows={rows}
+      columns={allColumns}
+      loading={loading}
+      initialState={{
+        columns: {
+          columnVisibilityModel: server
+            ? { id: false, category: false, building_id: false, created_at: false }
+            : {},
+        },
+      }}
+      rowCount={server ? rowCount : undefined}
+      paginationMode={server ? 'server' : 'client'}
+      sortingMode={server ? 'server' : 'client'}
+      filterMode={server ? 'server' : 'client'}
+      paginationModel={pagination}
+      onPaginationModelChange={onPagination}
+      sortModel={sorting}
+      onSortModelChange={onSorting}
+      filterModel={filters}
+      onFilterModelChange={onFilters}
+      onRowDoubleClick={({ row }) => {
+        if (!disabled) onAction('view', row)
+      }}
+    />
   )
 }
 

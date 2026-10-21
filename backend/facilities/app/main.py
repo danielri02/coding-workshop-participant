@@ -16,6 +16,7 @@ from .routes import (
     floors,
     incidents,
     notes,
+    reports,
     seats,
     users,
 )
@@ -56,5 +57,6 @@ for api_router in (
     seats.router,
     incidents.router,
     notes.router,
+    reports.router,
 ):
     app.include_router(api_router)
