@@ -80,6 +80,27 @@ filtering. Other tables use client-side grid pagination/filtering on the complet
 authorized list. The endpoint returns flat `assignee_name` fields and
 incident notes include `author_name` for display without a people-directory lookup.
 
+## Login troubleshooting
+
+For direct FastAPI development, browser login requests should go to port 8000.
+Port 3001 is the workshop LocalStack proxy; it can return unrelated success JSON
+that is not an authentication response. If requests use that proxy, stop Vite and
+restart it from `frontend/` with an explicit API address:
+
+```bash
+VITE_API_URL=http://localhost:8000 npm run dev
+```
+
+For a persistent setting, put `VITE_API_URL=http://localhost:8000` in
+`frontend/.env.local`, check for an exported variable overriding it, and restart
+Vite. The workshop `bin/start-dev.sh`/`bin/generate-env.sh` commands regenerate
+this file for the separate LocalStack path. Use the direct commands above for the
+incident application. Swagger and the frontend must address the same backend.
+
+Unexpected token/account response shapes now report an API configuration error.
+A valid account response with `is_admin: false` produces the admin-access message;
+Swagger Authorize itself accepts both employee and admin credentials.
+
 ## Browser verification
 
 With a seeded development backend running, install Chromium and run:

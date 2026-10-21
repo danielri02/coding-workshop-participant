@@ -5,6 +5,7 @@ import { api, ApiError, errorMessage } from '../services/client'
 import { getSession, sessionEvent, setSession } from '../services/session'
 import type { TokenPair, User } from '../types'
 import { AuthContext } from './context'
+import { isTokenPair, isUser } from '../services/authContracts'
 
 /** Restore a tab session, verify admin capabilities and manage login/logout. */
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -16,7 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
     if (getSession()) {
-      api<User>('/auth/me')
+      api<User>('/auth/me', {}, true, isUser)
         .then(
           (account) => {
             if (active) setUser(account)
@@ -61,10 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
       },
       false,
+      isTokenPair,
     )
     setSession(tokens)
     try {
-      const account = await api<User>('/auth/me')
+      const account = await api<User>('/auth/me', {}, true, isUser)
       if (!account.is_admin) {
         await api(
           '/auth/logout',
@@ -103,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshUser = async () => {
-    setUser(await api<User>('/auth/me'))
+    setUser(await api<User>('/auth/me', {}, true, isUser))
   }
 
   return (

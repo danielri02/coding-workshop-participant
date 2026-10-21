@@ -6,6 +6,7 @@ import type { RowAction } from '../components/ResourceGrid'
 import type { ResourceDefinition } from '../resources/definitions'
 import { editorForm, type Editor } from '../resources/incidentActions'
 import { api, errorMessage } from '../services/client'
+import { isUser } from '../services/authContracts'
 import type { AdminRow, ApiRecord, User } from '../types'
 
 /** Own mutations and dialog state without coupling them to grid presentation. */
@@ -53,7 +54,7 @@ export function useResourceActions(
       body: JSON.stringify(payload),
     }
     if (resource.key === 'users') {
-      const saved = await api<User>(endpoint, options)
+      const saved = await api<User>(endpoint, options, true, isUser)
       if (saved.id === user?.id) setAccount(saved)
     } else await api<ApiRecord>(endpoint, options)
     setEditor(null)
@@ -69,10 +70,15 @@ export function useResourceActions(
       if (command === 'delete')
         await api<void>(`${resource.endpoint}/${row.id}`, { method: 'DELETE' })
       else {
-        const saved = await api<User>(`/users/${row.id}/admin`, {
-          method: 'PATCH',
-          body: JSON.stringify({ is_admin: !row.is_admin }),
-        })
+        const saved = await api<User>(
+          `/users/${row.id}/admin`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ is_admin: !row.is_admin }),
+          },
+          true,
+          isUser,
+        )
         if (row.id === user?.id) setAccount(saved)
       }
       setConfirmation(null)

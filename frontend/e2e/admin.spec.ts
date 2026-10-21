@@ -242,6 +242,26 @@ test('non-admin credentials are rejected by the admin workspace', async ({ reque
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
 })
 
+for (const endpoint of ['/auth/login', '/auth/me']) {
+  test(`unexpected JSON from ${endpoint} reports API configuration rather than admin denial`, async ({
+    page,
+  }) => {
+    await page.route(`${apiUrl}${endpoint}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Development CORS Proxy Server' }),
+      }),
+    )
+    await page.goto('/admin/incidents')
+    await signIn(page)
+    await expect(page.getByRole('alert')).toContainText(`unexpected response for ${endpoint}`)
+    await expect(page.getByRole('alert')).toContainText('VITE_API_URL')
+    await expect(page.getByRole('alert')).not.toContainText('requires Facility Admin access')
+    expect(await page.evaluate(() => sessionStorage.getItem('acme.admin.session'))).toBeNull()
+  })
+}
+
 test('incident actions validate blocked reasons and preserve note editing after closure', async ({
   request,
   page,

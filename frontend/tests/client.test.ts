@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, mock, test } from 'node:test'
 import { api, ApiError } from '../src/services/client'
 import { getSession, setSession } from '../src/services/session'
+import { isTokenPair, isUser } from '../src/services/authContracts'
 import type { TokenPair } from '../src/types'
 
 const initial: TokenPair = {
@@ -68,4 +69,63 @@ test('rejected refresh credentials clear the login', async () => {
     (error: unknown) => error instanceof ApiError && error.status === 401,
   )
   assert.equal(getSession(), null)
+})
+
+test('unrelated proxy JSON cannot be accepted as a login token pair', async () => {
+  setSession(null)
+  mock.method(globalThis, 'fetch', async () => json({ message: 'Development CORS Proxy Server' }))
+  await assert.rejects(
+    api('/auth/login', { method: 'POST', body: '{}' }, false, isTokenPair),
+    (error: unknown) =>
+      error instanceof ApiError && error.status === 502 && error.message.includes('VITE_API_URL'),
+  )
+  assert.equal(getSession(), null)
+})
+
+test('a successful HTML fallback explains the API configuration problem', async () => {
+  mock.method(
+    globalThis,
+    'fetch',
+    async () =>
+      new Response('<html>Frontend</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      }),
+  )
+  await assert.rejects(
+    api('/auth/me'),
+    (error: unknown) =>
+      error instanceof ApiError && error.message.includes('unexpected response for /auth/me'),
+  )
+})
+
+test('missing or malformed account roles are rejected, while an explicit non-admin role is valid', async () => {
+  const account = {
+    id: 1,
+    name: 'Employee',
+    email: 'employee@acme.inc',
+    is_admin: false,
+    engineer_profile: null,
+  }
+  assert.equal(isUser(account), true)
+  assert.equal(isUser({ ...account, is_admin: true }), true)
+  assert.equal(isUser({ ...account, is_admin: 'false' }), false)
+  mock.method(globalThis, 'fetch', async () => json({ message: 'Proxy status' }))
+  await assert.rejects(
+    api('/auth/me', {}, true, isUser),
+    (error: unknown) => error instanceof ApiError && error.status === 502,
+  )
+})
+
+test('an invalid refresh response cannot replace the existing credentials', async () => {
+  mock.method(globalThis, 'fetch', async (input: string | URL | Request) =>
+    String(input).endsWith('/auth/refresh')
+      ? json({ message: 'Proxy status' })
+      : json({ detail: 'Expired' }, 401),
+  )
+  await assert.rejects(
+    api('/buildings'),
+    (error: unknown) => error instanceof ApiError && error.status === 502,
+  )
+  assert.equal(getSession()?.refresh_token, 'first')
 })

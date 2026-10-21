@@ -1,5 +1,6 @@
 import type { TokenPair } from '../types'
 import { getSession, setSession } from './session'
+import { isTokenPair } from './authContracts'
 
 const apiUrl = (import.meta.env?.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 let refreshInFlight: Promise<TokenPair> | null = null
@@ -22,10 +23,23 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 }
 
-async function readResponse<T>(response: Response): Promise<T> {
-  if (response.status === 204) return undefined as T
+type ResponseValidator<T> = (value: unknown) => value is T
+
+async function readResponse<T>(
+  response: Response,
+  path: string,
+  validate?: ResponseValidator<T>,
+): Promise<T> {
+  if (response.status === 204 && !validate) return undefined as T
   const body: unknown = await response.json().catch(() => null)
-  if (response.ok) return body as T
+  if (response.ok) {
+    if (body === null || typeof body !== 'object' || (validate && !validate(body)))
+      throw new ApiError(
+        `The configured API returned an unexpected response for ${path}. Check that VITE_API_URL points to your FastAPI backend, then restart the frontend.`,
+        502,
+      )
+    return body as T
+  }
   let message =
     response.status >= 500
       ? 'The server could not complete this request. Please try again.'
@@ -69,6 +83,8 @@ async function refreshSession(): Promise<TokenPair> {
           method: 'POST',
           body: JSON.stringify({ refresh_token: refreshToken }),
         }),
+        '/auth/refresh',
+        isTokenPair,
       )
       if (getSession()?.refresh_token !== refreshToken)
         throw new ApiError('The login session has changed.', 401)
@@ -95,6 +111,7 @@ export async function api<T>(
   path: string,
   options: RequestInit = {},
   authenticated = true,
+  validate?: ResponseValidator<T>,
 ): Promise<T> {
   let usedToken = authenticated ? getSession()?.access_token : undefined
   let response = await send(path, options, usedToken)
@@ -106,5 +123,5 @@ export async function api<T>(
   }
   if (authenticated && response.status === 401 && getSession()?.access_token === usedToken)
     setSession(null)
-  return readResponse<T>(response)
+  return readResponse<T>(response, path, validate)
 }
