@@ -4,15 +4,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from backend.app.schemas.auth import LoginRequest, RefreshRequest, TokenPair
-from backend.app.security.authentication import authenticate_user
-from backend.app.security.config import (
+from ..schemas.auth import LoginRequest, RefreshRequest, TokenPair
+from ..security.authentication import authenticate_user
+from ..security.config import (
     SecurityConfigurationError,
     SecuritySettings,
     get_security_settings,
 )
-from backend.app.security.refresh_tokens import rotate_refresh_token
-
+from ..security.refresh_tokens import rotate_refresh_token
 from .dependencies import DatabaseSession
 
 router = APIRouter(prefix="/auth", tags=["Auth"])

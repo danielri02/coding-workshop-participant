@@ -2,10 +2,9 @@
 
 from fastapi import APIRouter, HTTPException, Response, status
 
-from backend.app.database import crud
-from backend.app.models import Incident, IncidentStatus, Note, User
-from backend.app.schemas import NoteCreate, NoteRead, NoteUpdate
-
+from ..database import crud
+from ..models import Incident, IncidentStatus, Note, User
+from ..schemas import NoteCreate, NoteRead, NoteUpdate
 from .dependencies import DatabaseSession, QueryID, RecordID
 
 router = APIRouter(tags=[Note.__name__])

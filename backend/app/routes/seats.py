@@ -2,10 +2,9 @@
 
 from fastapi import APIRouter, Response, status
 
-from backend.app.database import crud
-from backend.app.models import Floor, Seat
-from backend.app.schemas import SeatCreate, SeatRead, SeatUpdate
-
+from ..database import crud
+from ..models import Floor, Seat
+from ..schemas import SeatCreate, SeatRead, SeatUpdate
 from .dependencies import DatabaseSession, OptionalQueryID, RecordID
 
 router = APIRouter(prefix="/seats", tags=[Seat.__name__])

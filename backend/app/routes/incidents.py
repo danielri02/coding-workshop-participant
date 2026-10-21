@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Response, status
 
-from backend.app.database import crud
-from backend.app.models import (
+from ..database import crud
+from ..models import (
     EngineerProfile,
     Incident,
     IncidentCategory,
@@ -13,7 +13,7 @@ from backend.app.models import (
     IncidentStatus,
     User,
 )
-from backend.app.schemas import (
+from ..schemas import (
     IncidentAdminUpdate,
     IncidentAssignment,
     IncidentCreate,
@@ -21,7 +21,6 @@ from backend.app.schemas import (
     IncidentRead,
     IncidentStatusUpdate,
 )
-
 from .dependencies import DatabaseSession, OptionalQueryID, QueryID, RecordID
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])

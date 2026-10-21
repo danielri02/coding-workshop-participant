@@ -2,14 +2,13 @@
 
 from fastapi import APIRouter, Response, status
 
-from backend.app.database import crud
-from backend.app.models import EngineerProfile, User
-from backend.app.schemas import (
+from ..database import crud
+from ..models import EngineerProfile, User
+from ..schemas import (
     EngineerProfileCreate,
     EngineerProfileRead,
     EngineerProfileUpdate,
 )
-
 from .dependencies import DatabaseSession, RecordID
 
 router = APIRouter(prefix="/engineer-profiles", tags=[EngineerProfile.__name__])

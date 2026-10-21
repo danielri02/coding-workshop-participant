@@ -2,10 +2,9 @@
 
 from fastapi import APIRouter, Response, status
 
-from backend.app.database import crud
-from backend.app.models import Building
-from backend.app.schemas import BuildingCreate, BuildingRead, BuildingUpdate
-
+from ..database import crud
+from ..models import Building
+from ..schemas import BuildingCreate, BuildingRead, BuildingUpdate
 from .dependencies import DatabaseSession, RecordID
 
 router = APIRouter(prefix="/buildings", tags=[Building.__name__])

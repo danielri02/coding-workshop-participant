@@ -4,8 +4,7 @@ from typing import Annotated
 
 from pydantic import Field, SecretStr, StrictBool, field_validator
 
-from backend.app.security.passwords import validate_password
-
+from ..security.passwords import validate_password
 from .base import CompanyEmail, Name, PatchSchema, PositiveID, Schema
 
 

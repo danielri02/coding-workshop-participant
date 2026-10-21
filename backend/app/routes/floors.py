@@ -2,10 +2,9 @@
 
 from fastapi import APIRouter, Response, status
 
-from backend.app.database import crud
-from backend.app.models import Building, Floor
-from backend.app.schemas import FloorCreate, FloorRead, FloorUpdate
-
+from ..database import crud
+from ..models import Building, Floor
+from ..schemas import FloorCreate, FloorRead, FloorUpdate
 from .dependencies import DatabaseSession, OptionalQueryID, RecordID
 
 router = APIRouter(prefix="/floors", tags=[Floor.__name__])

@@ -5,11 +5,10 @@ import asyncio
 from fastapi import APIRouter, Response, status
 from sqlalchemy.orm import selectinload
 
-from backend.app.database import crud
-from backend.app.models import User
-from backend.app.schemas import UserAdminUpdate, UserCreate, UserRead, UserUpdate
-from backend.app.security.passwords import hash_password
-
+from ..database import crud
+from ..models import User
+from ..schemas import UserAdminUpdate, UserCreate, UserRead, UserUpdate
+from ..security.passwords import hash_password
 from .dependencies import DatabaseSession, RecordID
 
 router = APIRouter(prefix="/users", tags=[User.__name__])

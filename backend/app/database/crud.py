@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ORMOption
 from sqlalchemy.sql import SQLColumnExpression
 
-from backend.app.models import Base, Building, Floor, Seat
+from ..models import Base, Building, Floor, Seat
 
 Model = TypeVar("Model", bound=Base)
 

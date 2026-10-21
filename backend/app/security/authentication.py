@@ -6,10 +6,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.database.crud import commit
-from backend.app.models import User
-from backend.app.schemas.auth import LoginRequest, TokenPair
-
+from ..database.crud import commit
+from ..models import User
+from ..schemas.auth import LoginRequest, TokenPair
 from .config import SecuritySettings
 from .passwords import (
     dummy_password_hash,

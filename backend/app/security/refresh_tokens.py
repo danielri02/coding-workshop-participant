@@ -10,10 +10,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.database.crud import commit
-from backend.app.models import RefreshToken, User
-from backend.app.schemas.auth import TokenPair
-
+from ..database.crud import commit
+from ..models import RefreshToken, User
+from ..schemas.auth import TokenPair
 from .config import SecuritySettings
 from .jwt import create_access_token
 

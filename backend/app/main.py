@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from backend.app.database.session import engine
-from backend.app.routes import (
+from .database.session import engine
+from .routes import (
     auth,
     buildings,
     engineer_profiles,
@@ -16,7 +16,7 @@ from backend.app.routes import (
     seats,
     users,
 )
-from backend.app.routes.health import router as health_router
+from .routes.health import router as health_router
 
 
 @asynccontextmanager
