@@ -188,6 +188,25 @@ class AuthTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(stored, old_hash)
             self.assertFalse(password_needs_rehash(stored))
 
+    async def test_current_account_is_authenticated_and_reflects_current_capabilities(
+        self,
+    ) -> None:
+        """The UI identity endpoint exposes current roles without password fields."""
+
+        self.assertEqual((await self.client.get("/auth/me")).status_code, 401)
+        tokens = await self.login()
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+        response = await self.client.get("/auth/me", headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id"], self.user_id)
+        self.assertFalse(response.json()["is_admin"])
+        self.assertNotIn("password", response.json())
+        self.assertNotIn("password_hash", response.json())
+        async with self.factory.begin() as session:
+            (await session.get(User, self.user_id)).is_admin = True
+        response = await self.client.get("/auth/me", headers=headers)
+        self.assertTrue(response.json()["is_admin"])
+
     async def test_refresh_rotates_and_preserves_absolute_expiry(self) -> None:
         """Each refresh consumes its old credential and keeps the login's expiry."""
 

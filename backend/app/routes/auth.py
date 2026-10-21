@@ -6,13 +6,22 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 
+from ..models import User
 from ..schemas.auth import LoginRequest, RefreshRequest, TokenPair
+from ..schemas.user import UserRead
 from ..security.authentication import authenticate_user
-from ..security.dependencies import AuthSettings
+from ..security.dependencies import AuthSettings, CurrentUser
 from ..security.refresh_tokens import invalidate_refresh_chain, rotate_refresh_token
 from .dependencies import DatabaseSession
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+@router.get("/me", response_model=UserRead)
+async def me(user: CurrentUser) -> User:
+    """Return the signed-in account and current capabilities for the UI."""
+
+    return user
 
 
 def prevent_token_caching(response: Response) -> None:

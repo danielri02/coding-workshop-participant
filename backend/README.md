@@ -82,7 +82,9 @@ Open `http://127.0.0.1:8000/docs`, click **Authorize**, and enter:
 Swagger uses the form-based `POST /auth/token` endpoint and sends the returned
 bearer access token with protected requests. `POST /auth/login` remains available
 for JSON `{ "email": "...", "password": "..." }` clients. Registration is public
-through `POST /users`; it grants employee access only.
+through `POST /users`; it grants employee access only. `GET /auth/me` returns the
+authenticated account and its current capabilities, without credential fields;
+the frontend uses it when restoring a login.
 
 The simple admin credential is a development seed default. Rerun the seed command
 to create this account in an existing development database; existing accounts and
