@@ -720,8 +720,34 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   await page.getByRole('option', { name: 'Seat', exact: true }).click()
   await expect(page.getByRole('columnheader', { name: 'Seat', exact: true })).toBeVisible()
   await expect(page.getByRole('gridcell', { name: seat.label, exact: true }).first()).toBeVisible()
+  await page.getByRole('combobox', { name: 'Category', exact: true }).click()
+  await page.getByRole('option', { name: 'Other', exact: true }).click()
+  await expect(page).toHaveURL(/category=Other/)
+  await page.getByRole('combobox', { name: 'Period', exact: true }).click()
+  await page.getByRole('option', { name: 'Last 7 days', exact: true }).click()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Period', exact: true })).toHaveText(
+    'Last 7 days',
+  )
+  await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveText('Other')
+  await expect(page.getByRole('columnheader', { name: 'Category', exact: true })).toBeHidden()
+  await page
+    .getByRole('navigation', { name: 'Administration' })
+    .getByRole('button', { name: 'Reports', exact: true })
+    .click()
   await navigate(page, 'Category frequency')
-  const categories = await (await request.get(`${apiUrl}/reports/categories`, { headers })).json()
+  await page.getByRole('combobox', { name: 'Building', exact: true }).click()
+  await page.getByRole('option', { name: building.name, exact: true }).click()
+  await page.getByRole('combobox', { name: 'Floor', exact: true }).click()
+  await page.getByRole('option', { name: floor.label, exact: true }).click()
+  await page.getByRole('combobox', { name: 'Seat', exact: true }).click()
+  await page.getByRole('option', { name: seat.label, exact: true }).click()
+  const categories = await (
+    await request.get(
+      `${apiUrl}/reports/categories?building_id=${building.id}&floor_id=${floor.id}&seat_id=${seat.id}`,
+      { headers },
+    )
+  ).json()
   const other = categories.rows.find((row: { category: string }) => row.category === 'Other')
   const categoryRow = page
     .getByRole('row')
@@ -729,6 +755,10 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   await expect(categoryRow.locator('[data-field="incident_count"]')).toHaveText(
     String(other.incident_count),
   )
+  await page.getByRole('combobox', { name: 'Building', exact: true }).click()
+  await page.getByRole('option', { name: 'All locations', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Floor', exact: true })).toBeHidden()
+  expect(new URL(page.url()).searchParams.has('seat_id')).toBe(false)
   await navigate(page, 'Engineer workload')
   await expect(page.getByRole('columnheader', { name: 'Active', exact: true })).toBeVisible()
   await expect(page.getByText('Unassigned active incidents', { exact: true })).toBeVisible()
@@ -764,6 +794,26 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   await page.getByRole('combobox', { name: 'Incident scope' }).click()
   await page.getByRole('option', { name: 'My reported incidents', exact: true }).click()
   await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Category', exact: true }).click()
+  await page.getByRole('option', { name: 'Other', exact: true }).click()
+  const engineerUser = await (
+    await request.get(`${apiUrl}/users/${engineer.user_id}`, { headers })
+  ).json()
+  await page.getByRole('combobox', { name: 'Current engineer', exact: true }).click()
+  await page.getByRole('option', { name: engineerUser.name, exact: true }).click()
+  await expect(page.getByText('1–1 of 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('1 recorded of 1 matching incidents', { exact: true })).toHaveCount(3)
+  await page.getByRole('combobox', { name: 'Period', exact: true }).click()
+  await page.getByRole('option', { name: 'All time', exact: true }).click()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Current engineer', exact: true })).toHaveText(
+    engineerUser.name,
+  )
+  await expect(page.getByRole('combobox', { name: 'Period', exact: true })).toHaveText('All time')
+  await page.setViewportSize({ width: 320, height: 640 })
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+    .toBeLessThanOrEqual(1)
   await page.screenshot({ path: test.info().outputPath('response-times.png'), fullPage: true })
 })
 
@@ -845,7 +895,7 @@ test('incident details expose admin controls and links to notes and engineer pro
     .click()
   await select(page, 'Assigned engineer', engineerUser.name)
   const assignment = await save(page, `/incidents/${incident.id}/assignment`, 'PATCH')
-  expect(assignment.status).toBe('In Progress')
+  expect(assignment.status).toBe('Assigned')
   await openIncident()
   await page
     .getByRole('dialog')
@@ -936,7 +986,7 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
     })
   ).json()
   const activeBefore = owned.filter((row: { status: string }) =>
-    ['Open', 'In Progress', 'Blocked'].includes(row.status),
+    ['Open', 'Assigned', 'In Progress', 'Blocked'].includes(row.status),
   ).length
   const summary = page.getByRole('region', { name: 'My incident summary', exact: true })
   await expect(
@@ -1196,7 +1246,12 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   await expect(page.getByRole('heading', { name: 'Assigned incidents', exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'New incident', exact: true })).toBeHidden()
-  await expectSummary(page, 'assigned', { 'In progress': 12, Blocked: 0, Resolved: 0 })
+  await expectSummary(page, 'assigned', {
+    'Awaiting acceptance': 12,
+    'In progress': 0,
+    Blocked: 0,
+    Resolved: 0,
+  })
   await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
   await page.getByRole('option', { name: '10', exact: true }).click()
   await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
@@ -1213,12 +1268,26 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   })
   await page.getByRole('textbox', { name: 'Search assigned incidents' }).fill(incident.title)
   expect((await searched).status()).toBe(200)
-  await expectSummary(page, 'assigned', { 'In progress': 12, Blocked: 0, Resolved: 0 })
+  await expectSummary(page, 'assigned', {
+    'Awaiting acceptance': 12,
+    'In progress': 0,
+    Blocked: 0,
+    Resolved: 0,
+  })
   await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
   await expect(page.getByRole('heading', { name: incident.title, exact: true })).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'Priority and escalation', exact: true }),
   ).toBeHidden()
+  const accepted = page.waitForResponse(
+    (response) =>
+      browserPath(new URL(response.url())) === `/incidents/${incident.id}/status` &&
+      response.request().method() === 'PATCH',
+  )
+  await page.getByRole('button', { name: 'Accept and start work', exact: true }).click()
+  const acceptance = await accepted
+  expect(acceptance.status()).toBe(200)
+  expect((await acceptance.json()).acknowledged_at).toBeTruthy()
   for (const status of ['Blocked', 'In Progress', 'Resolved', 'In Progress', 'Resolved']) {
     await page.getByRole('button', { name: 'Change status', exact: true }).click()
     await page
@@ -1277,7 +1346,12 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   }
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
-  await expectSummary(page, 'assigned', { 'In progress': 11, Blocked: 0, Resolved: 1 })
+  await expectSummary(page, 'assigned', {
+    'Awaiting acceptance': 11,
+    'In progress': 0,
+    Blocked: 0,
+    Resolved: 1,
+  })
   await page.screenshot({
     path: test.info().outputPath('engineer-summary-mobile.png'),
     fullPage: true,
@@ -1288,7 +1362,12 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   })
   expect(closed.status()).toBe(200)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expectSummary(page, 'assigned', { 'In progress': 11, Blocked: 0, Resolved: 0 })
+  await expectSummary(page, 'assigned', {
+    'Awaiting acceptance': 11,
+    'In progress': 0,
+    Blocked: 0,
+    Resolved: 0,
+  })
   await page.getByRole('textbox', { name: 'Search assigned incidents' }).fill(incident.title)
   await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
@@ -1361,7 +1440,9 @@ test('engineer scope and permissions follow current assignment including reassig
   expect(reads).not.toContain(`/incidents/${fixture.own.id}/notes`)
   await page.goto(`/engineer/incidents/${incident.id}`)
   await expect(page.getByRole('heading', { name: incident.title, exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Accept and start work', exact: true }),
+  ).toBeVisible()
   const replacement = (
     await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json()
   ).find((row: { user_id: number }) => row.user_id !== fixture.user.id)
@@ -1375,7 +1456,9 @@ test('engineer scope and permissions follow current assignment including reassig
   ).toBeTruthy()
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Incident access denied')
-  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
+  await expect(
+    page.getByRole('button', { name: 'Accept and start work', exact: true }),
+  ).toBeHidden()
   await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
   expect(
     (

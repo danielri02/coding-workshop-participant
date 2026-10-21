@@ -73,7 +73,7 @@ class IncidentPriorityUpdate(PatchSchema):
 
 
 class IncidentAssignment(Schema):
-    """Admin-only assignment; a new assignee starts In Progress automatically."""
+    """Admin assignment sets Assigned; the engineer accepts to start In Progress."""
 
     assignee_id: PositiveID | None
 

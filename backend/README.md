@@ -187,7 +187,7 @@ Read-only report endpoints calculate across the complete authorized incident set
 | Endpoint | Result |
 | --- | --- |
 | `GET /reports/summary?scope=personal` | Total, active and per-status counts across all the caller's own reports; `assigned` requires Engineer capability, `visible` follows existing read grants |
-| `GET /reports/locations?level=building` | Recurring location/category groups, ranked by count; `level` also accepts `floor` and `seat` |
+| `GET /reports/locations?level=building` | Location counts, ranked by frequency; `level` also accepts `floor` and `seat`; optional `category` and `repeated_only` filters |
 | `GET /reports/categories` | Counts, active counts and percentage per category, including categories with zero incidents |
 | `GET /reports/timings` | First assignment, acknowledgment and resolution averages, sample counts and paged incident timing rows |
 | `GET /reports/workload` | Every engineer's availability, active/status/high-priority counts and the active unassigned incident count; admin only |
@@ -199,18 +199,32 @@ by changing scope. The admin UI labels `visible` as “All incidents”.
 
 The summary defaults to `personal` and always covers the entire requested scope,
 independent of grid search, filters and pagination. Employee cards show active,
-resolved and closed reports; engineer cards show in-progress, blocked and resolved
+resolved and closed reports; engineer cards show awaiting acceptance, in-progress, blocked and resolved
 current assignments. Ordinary users cannot choose another employee/engineer ID.
 
-Reports are all-time. Recurrence means at least two incidents in the same location
-and category; floor/seat grouping excludes incidents without that location recorded.
-Active means Open, In Progress or Blocked. Workload includes idle and unavailable
-engineers; availability is a profile flag independent of assignment count.
+Locations, categories and timings accept `period=week|month|year|all`, defaulting
+to `month`: rolling 7 days, 30 days, 12 calendar months, or all time. Windows use
+**incident reported/created date**, not assignment or resolution date. Responses
+include the exact UTC `start_at` (null for all time) and `end_at`. Future-dated
+incidents are excluded. Summary cards over employee/engineer grids remain all-time;
+engineer workload remains a current snapshot.
 
-Timing durations start at creation; acknowledgment records the first In Progress
-entry, now automatic on assignment. If an admin resolves a ticket before that
-stage was recorded, resolution also records acknowledgment at that instant.
-First milestones are retained when work resumes or is reassigned.
+Location counts combine all categories by default; `category` selects one category.
+`repeated_only=true` keeps locations with at least two incidents in the selected
+period/category. Floor/seat grouping excludes incidents without those locations.
+Category frequency accepts `building_id`, `floor_id`, and `seat_id`; absent filters
+include all locations, and category shares use the complete matching incident set.
+Active means Open, Assigned, In Progress or Blocked. Workload includes idle and
+unavailable engineers; availability is independent of assignment count.
+
+Timing durations start at reporting. Assignment enters Assigned; the assigned
+engineer accepts into In Progress to record acknowledgment. An admin can skip
+stages; resolving without acknowledgment records both at that instant. First
+milestones are retained when work resumes or is reassigned. Timings accept
+`category` and `assignee_id` (the **current/latest assigned engineer**). Attribution
+uses current assignment, not assignment history: first milestones may include work
+by previous engineers. Existing pre-upgrade acknowledgment timestamps retain their
+original meaning and are not rewritten.
 Missing milestones are excluded from averages and have null durations,
 not zero. Timing summaries cover all matching incidents, independent of the current
 page. `/reports/timings` accepts `search` (literal title/description substring, max
@@ -295,7 +309,7 @@ logout authenticate the supplied refresh credential rather than an access JWT.
 | Read incidents and their complete shared notes | Own reports; engineers also get current assignments; admins get all |
 | Create incidents | Any signed-in employee; reporter comes from the access token, priority defaults to Low; only admins may supply priority/escalation |
 | Correct submitted incident details, assign/unassign, delete incidents | Admin |
-| Change incident status | Assigned engineer: In Progress → Blocked/Resolved, Blocked/Resolved → In Progress; admin: any status, including Open and Closed |
+| Change incident status | Assigned engineer: Assigned → In Progress, In Progress → Blocked/Resolved, Blocked/Resolved → In Progress; admin: any status, including Open and Closed |
 | Change priority/escalation | Admin |
 | Post notes | Reporter, assigned engineer or admin until closure, including Resolved; author comes from the access token |
 | Edit/delete existing notes | Admin, including after resolution/closure |
@@ -310,13 +324,18 @@ access token. Incident list filters cannot expand the caller's read scope.
 Missing/invalid credentials return 401; denied actions return 403. Updates use
 PATCH, validation errors use 422, and conflicting operations use 409.
 
-A new engineer assignment or reassignment automatically sets In Progress, clears
-an obsolete blocked reason and records the first work-start milestone. Saving
-the same assignee preserves the status; unassignment clears only the assignee.
-Only admins close tickets, reopen Closed tickets, or set a ticket back to Open.
-Blocked always requires a reason. Existing records are not automatically rewritten;
-an admin can correct older assigned/Open tickets through the status endpoint. Fresh seed data follows
-the new assignment workflow without requiring database schema changes.
+A new engineer assignment or reassignment sets Assigned and clears an obsolete
+blocked reason. The assigned engineer clicks **Accept and start work** to enter
+In Progress; Assigned cannot transition directly to Blocked or Resolved for an
+engineer. Saving the same assignee preserves status; unassigning active work returns
+it to Open. First assignment, acknowledgment and resolution milestones are retained.
+Only admins close tickets, reopen Closed tickets, or choose arbitrary statuses.
+Blocked requires a reason; resolution does not. Notes remain writable until closure.
+
+Existing databases need the non-destructive status constraint upgrade before using
+Assigned. Run `python backend/scripts/initialize_database.py` for a reachable local
+database, or use the cloud procedure in [CLOUD.md](CLOUD.md). Existing In Progress
+records remain in progress. New databases and explicit resets already include it.
 
 ### Refresh and logout
 

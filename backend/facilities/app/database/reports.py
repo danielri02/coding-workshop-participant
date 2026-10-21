@@ -1,5 +1,7 @@
 """SQL aggregations and paged report rows, scoped before counting or averaging."""
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +18,14 @@ from ..models import (
     Seat,
     User,
 )
-from ..schemas.report import ReportQuery, ReportScope
+from ..schemas.report import (
+    CategoryQuery,
+    LocationQuery,
+    ReportFilters,
+    ReportPeriod,
+    ReportQuery,
+    ReportScope,
+)
 from ..security.permissions import incident_visibility
 
 ACTIVE = Incident.status.in_(ACTIVE_STATUSES)
@@ -62,8 +71,37 @@ def visibility(user: User, scope: ReportScope):
     return incident_visibility(user)
 
 
-def criteria(user: User, query: ReportQuery) -> list:
-    conditions = [visibility(user, query.scope)]
+def report_window(period: ReportPeriod) -> dict:
+    """Resolve a rolling window once so summary and grid share exact UTC bounds."""
+
+    end = datetime.now(UTC)
+    if period == ReportPeriod.YEAR:
+        # A calendar year, including the February 29 boundary.
+        start = end.replace(
+            year=end.year - 1, day=28 if end.month == 2 and end.day == 29 else end.day
+        )
+    else:
+        days = {ReportPeriod.WEEK: 7, ReportPeriod.MONTH: 30}.get(period)
+        start = end - timedelta(days=days) if days else None
+    return {"period": period, "start_at": start, "end_at": end}
+
+
+def period_criteria(user: User, query: ReportFilters, window: dict) -> list:
+    conditions = [
+        visibility(user, query.scope),
+        Incident.created_at <= window["end_at"],
+    ]
+    if window["start_at"] is not None:
+        conditions.append(Incident.created_at >= window["start_at"])
+    return conditions
+
+
+def criteria(user: User, query: ReportQuery, window: dict) -> list:
+    conditions = period_criteria(user, query, window)
+    if query.category is not None:
+        conditions.append(Incident.category == query.category)
+    if query.assignee_id is not None:
+        conditions.append(Incident.assignee_id == query.assignee_id)
     if term := query.search.strip():
         conditions.append(
             or_(
@@ -131,15 +169,17 @@ async def page(
     }
 
 
-async def locations(
-    session: AsyncSession, user: User, scope: ReportScope, level: str
-) -> dict:
-    """Recurrence means at least two incidents in the same location/category group."""
+async def locations(session: AsyncSession, user: User, query: LocationQuery) -> dict:
+    """Group locations across selected categories, optionally retaining repeated groups."""
 
+    level = query.level
+    window = report_window(query.period)
+    conditions = period_criteria(user, query, window)
+    if query.category is not None:
+        conditions.append(Incident.category == query.category)
     columns = [
         Building.id.label("building_id"),
         Building.name.label("building_name"),
-        Incident.category,
     ]
     statement = (
         select()
@@ -156,33 +196,38 @@ async def locations(
         *columns,
         func.count().label("incident_count"),
         func.count().filter(ACTIVE).label("active_count"),
-    ).where(visibility(user, scope))
+    ).where(*conditions)
+    minimum = 2 if query.repeated_only else 1
     records = await session.execute(
         statement.group_by(*columns)
-        .having(func.count() >= 2)
+        .having(func.count() >= minimum)
         .order_by(func.count().desc(), *columns)
     )
     rows = []
     for row in records.mappings():
         rows.append(
             {
-                "id": f"{level}:{row[f'{level}_id']}:{row['category'].value}",
+                "id": f"{level}:{row[f'{level}_id']}",
                 "building_name": row["building_name"],
                 "floor_label": row.get("floor_label"),
                 "seat_label": row.get("seat_label"),
-                "category": row["category"],
                 "incident_count": row["incident_count"],
                 "active_count": row["active_count"],
             }
         )
-    return {"level": level, "rows": rows}
+    return {**window, "level": level, "minimum_incidents": minimum, "rows": rows}
 
 
-async def categories(session: AsyncSession, user: User, scope: ReportScope) -> dict:
+async def categories(session: AsyncSession, user: User, query: CategoryQuery) -> dict:
+    window = report_window(query.period)
+    conditions = period_criteria(user, query, window)
+    for field in ("building_id", "floor_id", "seat_id"):
+        if (value := getattr(query, field)) is not None:
+            conditions.append(getattr(Incident, field) == value)
     records = (
         await session.execute(
             select(Incident.category, func.count(), func.count().filter(ACTIVE))
-            .where(visibility(user, scope))
+            .where(*conditions)
             .group_by(Incident.category)
         )
     ).all()
@@ -200,11 +245,15 @@ async def categories(session: AsyncSession, user: User, scope: ReportScope) -> d
         }
         for category in IncidentCategory
     ]
-    return {"rows": sorted(rows, key=lambda row: (-row["incident_count"], row["id"]))}
+    return {
+        **window,
+        "rows": sorted(rows, key=lambda row: (-row["incident_count"], row["id"])),
+    }
 
 
 async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict:
-    conditions = criteria(user, query)
+    window = report_window(query.period)
+    conditions = criteria(user, query, window)
     aggregate = (
         (
             await session.execute(
@@ -232,6 +281,7 @@ async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict
         DURATIONS,
     )
     return {
+        **window,
         **rows,
         "milestones": [
             {
@@ -261,6 +311,9 @@ async def workload(session: AsyncSession) -> dict:
             func.count(Incident.id)
             .filter(Incident.status == IncidentStatus.OPEN)
             .label("open_count"),
+            func.count(Incident.id)
+            .filter(Incident.status == IncidentStatus.ASSIGNED)
+            .label("assigned_count"),
             func.count(Incident.id)
             .filter(Incident.status == IncidentStatus.IN_PROGRESS)
             .label("in_progress_count"),

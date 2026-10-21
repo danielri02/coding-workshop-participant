@@ -1,29 +1,73 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, Box, Button, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/material'
 import Refresh from '@mui/icons-material/Refresh'
 import type { GridPaginationModel, GridSortModel } from '@mui/x-data-grid'
-import { useAuth } from '../auth/context'
+import { useSearchParams } from 'react-router-dom'
+import { ReportFilters } from '../reports/ReportFilters'
 import { useApiQuery, useDebouncedValue } from '../hooks/useApiQuery'
 import type { ReportDefinition } from '../reports/definitions'
 import { ReportSummary } from '../reports/ReportSummary'
 import { ReportTable } from '../reports/ReportTable'
-import { reportQuery, type LocationLevel, type Report, type Scope } from '../reports/query'
+import {
+  reportQuery,
+  periods,
+  type LocationLevel,
+  type Report,
+  type Scope,
+  type ReportFilters as FilterValues,
+} from '../reports/query'
 
 /** Compose scoped summaries and grids without duplicating the CRUD incident views. */
 export function ReportPage({ definition }: { definition: ReportDefinition }) {
-  const { user } = useAuth()
+  const [params, setParams] = useSearchParams()
   const client = useQueryClient()
-  const [scope, setScope] = useState<Scope>('visible')
-  const [level, setLevel] = useState<LocationLevel>('building')
-  const [search, setSearch] = useState('')
+  const scope: Scope =
+    params.get('scope') === 'personal'
+      ? 'personal'
+      : params.get('scope') === 'assigned'
+        ? 'assigned'
+        : 'visible'
+  const level: LocationLevel =
+    params.get('level') === 'floor' ? 'floor' : params.get('level') === 'seat' ? 'seat' : 'building'
+  const filters: FilterValues = {
+    period: periods.find((item) => item.value === params.get('period'))?.value || 'month',
+    ...Object.fromEntries(
+      ['category', 'assignee_id', 'building_id', 'floor_id', 'seat_id', 'repeated_only'].map(
+        (name) => [name, params.get(name) || ''],
+      ),
+    ),
+  }
+  const search = params.get('search') || ''
   const debouncedSearch = useDebouncedValue(search)
   const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 25 })
   const [sorting, setSorting] = useState<GridSortModel>([{ field: 'created_at', sort: 'desc' }])
-  const path = reportQuery(definition.key, scope, level, pagination, sorting, debouncedSearch)
+  const path = reportQuery(
+    definition.key,
+    scope,
+    level,
+    pagination,
+    sorting,
+    debouncedSearch,
+    filters,
+  )
   const query = useApiQuery<Report | null>(path, null)
   const loading = query.loading || search !== debouncedSearch
   const resetPage = () => setPagination((previous) => ({ ...previous, page: 0 }))
+  const changeFilters = (values: Record<string, string>, replace = false) => {
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        for (const [name, value] of Object.entries(values)) {
+          if (value) next.set(name, value)
+          else next.delete(name)
+        }
+        return next
+      },
+      { replace },
+    )
+    resetPage()
+  }
   const refresh = () => void client.invalidateQueries({ queryKey: ['api', path] })
   return (
     <Stack spacing={3} sx={{ minWidth: 0, width: '100%' }}>
@@ -35,38 +79,14 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
           {definition.description}
         </Typography>
       </Box>
+      <ReportFilters
+        report={definition.key}
+        scope={scope}
+        level={level}
+        filters={filters}
+        onChange={changeFilters}
+      />
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
-        {definition.key !== 'workload' && (
-          <TextField
-            select
-            size="small"
-            label="Incident scope"
-            value={scope}
-            sx={{ minWidth: 210 }}
-            onChange={(event) => {
-              setScope(event.target.value as Scope)
-              resetPage()
-            }}
-          >
-            <MenuItem value="visible">All incidents</MenuItem>
-            <MenuItem value="personal">My reported incidents</MenuItem>
-            {user?.engineer_profile && <MenuItem value="assigned">My assigned incidents</MenuItem>}
-          </TextField>
-        )}
-        {definition.key === 'locations' && (
-          <TextField
-            select
-            size="small"
-            label="Group by location"
-            value={level}
-            sx={{ minWidth: 190 }}
-            onChange={(event) => setLevel(event.target.value as LocationLevel)}
-          >
-            <MenuItem value="building">Building</MenuItem>
-            <MenuItem value="floor">Floor</MenuItem>
-            <MenuItem value="seat">Seat</MenuItem>
-          </TextField>
-        )}
         {definition.key === 'timings' && (
           <TextField
             size="small"
@@ -76,8 +96,7 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
             slotProps={{ htmlInput: { maxLength: 200 } }}
             sx={{ minWidth: 230, flex: 1 }}
             onChange={(event) => {
-              setSearch(event.target.value)
-              resetPage()
+              changeFilters({ search: event.target.value }, true)
             }}
           />
         )}
@@ -97,17 +116,25 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
       )}
       {query.data && !query.error && (
         <>
+          {query.data.report !== 'workload' && (
+            <Typography variant="body2" color="text.secondary">
+              Reported{' '}
+              {query.data.start_at
+                ? `${new Date(query.data.start_at).toLocaleString()} – ${new Date(query.data.end_at).toLocaleString()}`
+                : `at any time through ${new Date(query.data.end_at).toLocaleString()}`}
+            </Typography>
+          )}
           <ReportSummary report={query.data} />
           <Paper variant="outlined" sx={{ minWidth: 0, width: '100%', overflow: 'hidden' }}>
             <Box sx={{ px: 2.5, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
               <Typography variant="body2" color="text.secondary">
                 {definition.key === 'locations'
-                  ? 'All time. Groups require at least two incidents in the same category. Floor and seat views include only incidents with those locations recorded.'
+                  ? 'Counts combine all categories unless filtered. Repeated locations have at least two incidents in this period. Floor and seat views include only incidents with those locations recorded.'
                   : definition.key === 'timings'
-                    ? 'Elapsed time from creation. Acknowledgment is the first move to In Progress. Averages cover every matching incident, across all pages; missing milestones are excluded.'
+                    ? 'Elapsed time from reporting to each first milestone. Acknowledgment records acceptance into In Progress. Averages cover all matching incidents across pages; missing milestones are excluded. Current engineer identifies the latest assignee, including after reassignment.'
                     : definition.key === 'workload'
-                      ? 'Active means Open, In Progress or Blocked. Availability is independent of assignment count.'
-                      : 'All time. Share is calculated from every incident in the selected scope. Categories with no incidents remain visible.'}
+                      ? 'Active means Open, Assigned, In Progress or Blocked. Availability is independent of assignment count.'
+                      : 'Share is calculated from all incidents reported in the selected period, location and scope. Categories with no incidents remain visible.'}
               </Typography>
             </Box>
             <ReportTable

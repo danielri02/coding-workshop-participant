@@ -48,7 +48,7 @@ STATUSES = (
     Status.CLOSED,
     Status.RESOLVED,
     Status.IN_PROGRESS,
-    Status.OPEN,
+    Status.ASSIGNED,
     Status.BLOCKED,
     Status.CLOSED,
     Status.RESOLVED,
@@ -112,8 +112,8 @@ def incidents(now: datetime) -> Iterator[SampleIncident]:
         status = Status.OPEN if index >= 108 else STATUSES[index % len(STATUSES)]
         assigned = index < 108 and (status != Status.OPEN or index % 3 != 0)
         if assigned and status == Status.OPEN:
-            status = Status.IN_PROGRESS
-        acknowledged = status != Status.OPEN
+            status = Status.ASSIGNED
+        acknowledged = status not in {Status.OPEN, Status.ASSIGNED}
         resolved = status in {Status.RESOLVED, Status.CLOSED}
         priority = (
             Priority.LOW
@@ -132,7 +132,9 @@ def incidents(now: datetime) -> Iterator[SampleIncident]:
             if assigned
             else None
         )
-        acknowledged_at = assigned_at if acknowledged else None
+        acknowledged_at = (
+            assigned_at + timedelta(minutes=10 + index % 90) if acknowledged else None
+        )
         resolved_at = (
             acknowledged_at + timedelta(hours=2 + (index * 7) % 72)
             if resolved

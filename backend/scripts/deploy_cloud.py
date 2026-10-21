@@ -1,8 +1,8 @@
 """Prepare an isolated AWS context and delegate to the unchanged workshop scripts.
 
-Commands: plan (default), backend, frontend, database [--seed], smoke [--login].
+Commands: plan (default), backend, frontend, database [--seed | --upgrade], smoke [--login].
 Configuration: repository-root .env.cloud; --env-file or APP_ENV_FILE overrides it.
-The database command explicitly resets application data to the seed dataset.
+The database command resets data unless --upgrade requests a data-preserving upgrade.
 Requires a committed, clean checkout.
 """
 
@@ -327,8 +327,10 @@ def prepare(
     return environment
 
 
-def maintain_database(root: Path, environment: dict[str, str]) -> None:
-    """Run reset/seed through the backend API instead of a VDI PostgreSQL connection."""
+def maintain_database(
+    root: Path, environment: dict[str, str], *, upgrade: bool = False
+) -> None:
+    """Run explicit reset or schema upgrade through the private database's backend API."""
 
     key = environment.get("DATABASE_RESET_KEY", "")
     if len(key.encode("utf-8")) < 32 or not key.strip():
@@ -356,15 +358,27 @@ def maintain_database(root: Path, environment: dict[str, str]) -> None:
         raise CloudError("Terraform did not return an HTTPS facilities Function URL.")
     # The Function URL serves the same API without CloudFront's shorter timeout.
     print(
-        "Reinitializing application data to seed data through the backend API…",
+        "Upgrading database schema; existing data will be preserved…"
+        if upgrade
+        else "Reinitializing application data to seed data through the backend API…",
         flush=True,
     )
     result = request_json(
-        url.rstrip("/") + "/api/facilities/dev/database/init",
+        url.rstrip("/")
+        + (
+            "/api/facilities/dev/database/upgrade"
+            if upgrade
+            else "/api/facilities/dev/database/init"
+        ),
         payload={},
         extra_headers={"X-Database-Reset-Key": key},
         timeout=330,
     )
+    if upgrade:
+        if not isinstance(result, dict) or result.get("upgraded") is not True:
+            raise CloudError("The backend did not confirm the schema upgrade.")
+        print("Application schema upgraded; existing data preserved.")
+        return
     if not isinstance(result, dict) or result.get("initialized") is not True:
         raise CloudError("The backend did not confirm database initialization.")
     counts = result.get("inserted")
@@ -397,7 +411,7 @@ def request_json(
         ):
             hints = {
                 403: "Check DATABASE_RESET_KEY matches the deployed backend.",
-                404: "Deploy the updated backend to add /dev/database/init.",
+                404: "Deploy the updated backend to add the database maintenance endpoint.",
                 422: "Check the deployed SEED_*_PASSWORD configuration.",
                 503: "Check DATABASE_RESET_KEY is enabled and the backend is available.",
             }
@@ -406,7 +420,7 @@ def request_json(
                     response.status,
                     "Check backend logs and Lambda-to-Aurora connectivity.",
                 )
-                if url.endswith("/dev/database/init")
+                if "/dev/database/" in url
                 else "Check backend availability and the API configuration."
             )
             raise CloudError(
@@ -489,6 +503,11 @@ def main() -> None:
     )
     parser.add_argument("--env-file")
     parser.add_argument(
+        "--upgrade",
+        action="store_true",
+        help="Apply supported schema upgrades without resetting data (database only)",
+    )
+    parser.add_argument(
         "--seed",
         action="store_true",
         help="Compatibility option: database always reinitializes application data to the seed dataset",
@@ -497,6 +516,8 @@ def main() -> None:
         "--login", action="store_true", help="Also check demo logins (smoke only)"
     )
     args = parser.parse_args()
+    if args.upgrade and (args.action != "database" or args.seed):
+        parser.error("--upgrade requires database and cannot be combined with --seed")
     try:
         if sys.version_info[:2] != (3, 13):
             raise CloudError("Use Python 3.13 to match the Lambda runtime.")
@@ -549,7 +570,7 @@ def main() -> None:
                 command(["npm", "ci"], root / "frontend", environment)
                 command(["bash", "bin/deploy-frontend.sh", "aws"], root, environment)
             elif args.action == "database":
-                maintain_database(root, environment)
+                maintain_database(root, environment, upgrade=args.upgrade)
             else:
                 smoke(root, environment, args.login)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as exc:

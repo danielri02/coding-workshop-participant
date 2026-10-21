@@ -6,6 +6,7 @@ export function ValueChip({ value }: { value: string | boolean }) {
   const label = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value
   const colors: Record<string, 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info'> = {
     Open: 'info',
+    Assigned: 'info',
     'In Progress': 'primary',
     Blocked: 'warning',
     Resolved: 'success',

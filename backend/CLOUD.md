@@ -149,6 +149,21 @@ Lambda and Aurora retain the preprovisioned workshop security group. The reset A
 still requires Lambda-to-Aurora connectivity; reaching Swagger alone does not prove
 that connection works.
 
+## Upgrade an existing application database without resetting it
+
+After deploying the updated backend, expand the incident status constraint to
+support Assigned, preserving all users, incidents, notes and milestone timestamps:
+
+```bash
+./backend/scripts/deploy-cloud.sh database --upgrade
+```
+
+This calls `POST /dev/database/upgrade` through the deployed backend, using the
+same `DATABASE_RESET_KEY` header as initialization. It runs inside Lambda's network
+and is safe to repeat. It does **not** seed or reset data. Then deploy the frontend.
+An explicit reset already creates/upgrades the current schema, so no separate
+upgrade is needed if you intentionally reset. Workshop scripts remain unchanged.
+
 ## Publish the frontend and verify
 
 ```bash

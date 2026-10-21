@@ -341,6 +341,17 @@ class CloudTests(unittest.TestCase):
             str(command_args) + output.getvalue(),
         )
 
+    def test_database_upgrade_calls_upgrade_endpoint_without_seed_or_reset(self):
+        with (
+            patch.object(cloud, "command", side_effect=self.maintenance_fixture()),
+            patch.object(
+                cloud, "request_json", return_value={"upgraded": True}
+            ) as request,
+        ):
+            cloud.maintain_database(Path.cwd(), self.environment(), upgrade=True)
+        self.assertTrue(request.call_args.args[0].endswith("/dev/database/upgrade"))
+        self.assertEqual(request.call_args.kwargs["payload"], {})
+
     def test_reset_key_is_sent_only_in_an_http_header(self):
         key = secrets.token_urlsafe(48)
         response = io.BytesIO(b'{"initialized":true,"inserted":{}}')
@@ -461,7 +472,9 @@ class CloudTests(unittest.TestCase):
                     )
                 )
                 if action == "database":
-                    maintenance.assert_called_once_with(root, environment)
+                    maintenance.assert_called_once_with(
+                        root, environment, upgrade=False
+                    )
                     self.assertEqual(commands, [])
                 else:
                     self.assertIn(["bash", f"bin/deploy-{action}.sh", "aws"], commands)

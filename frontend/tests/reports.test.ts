@@ -34,6 +34,31 @@ test('duration labels distinguish missing, immediate and sub-minute responses', 
   assert.equal(duration(2880), '2.0 days')
 })
 
+test('reports send only relevant dimensions and apply periods to both summaries and rows', () => {
+  const filters = {
+    period: 'year' as const,
+    category: 'HVAC',
+    assignee_id: '12',
+    building_id: '5',
+    floor_id: '6',
+    seat_id: '7',
+    repeated_only: 'true',
+  }
+  const params = (key: 'locations' | 'categories' | 'timings') =>
+    new URL(
+      reportQuery(key, 'visible', 'floor', { page: 0, pageSize: 25 }, [], '', filters),
+      'http://localhost',
+    ).searchParams
+  assert.equal(params('timings').get('assignee_id'), '12')
+  assert.equal(params('timings').get('category'), 'HVAC')
+  assert.equal(params('timings').get('period'), 'year')
+  assert.equal(params('timings').has('building_id'), false)
+  assert.equal(params('locations').get('repeated_only'), 'true')
+  assert.equal(params('locations').has('assignee_id'), false)
+  assert.equal(params('categories').get('seat_id'), '7')
+  assert.equal(params('categories').has('category'), false)
+})
+
 test('CRUD changes invalidate cached report aggregates and engineer availability', async () => {
   const client = createQueryClient()
   try {

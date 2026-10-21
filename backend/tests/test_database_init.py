@@ -25,6 +25,30 @@ PATH = "/dev/database/init"
 
 
 class DatabaseInitAccessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_upgrade_uses_the_same_key_and_never_calls_reset(self):
+        key = secrets.token_urlsafe(48)
+        with (
+            patch.dict(os.environ, {"DATABASE_RESET_KEY": key}),
+            patch.object(dev, "upgrade_database", new_callable=AsyncMock) as upgrade,
+            patch.object(
+                dev, "reset_database", new_callable=AsyncMock
+            ) as reset_operation,
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app), base_url="http://test"
+            ) as client:
+                self.assertEqual(
+                    (await client.post("/dev/database/upgrade")).status_code, 403
+                )
+                upgrade.assert_not_awaited()
+                response = await client.post(
+                    "/dev/database/upgrade", headers={"X-Database-Reset-Key": key}
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json(), {"upgraded": True})
+                upgrade.assert_awaited_once_with(dev.engine)
+                reset_operation.assert_not_awaited()
+
     async def test_no_database_access_without_an_explicit_valid_key(self):
         key = secrets.token_urlsafe(48)
         async with AsyncClient(
@@ -148,6 +172,56 @@ class DatabaseInitTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["inserted"]["users"], 8)
         self.assertEqual(response.json()["inserted"]["incidents"], 120)
         return response
+
+    async def test_upgrade_expands_legacy_constraint_idempotently_without_changing_data(
+        self,
+    ):
+        async with self.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+            await connection.execute(
+                text(
+                    "ALTER TABLE incidents DROP CONSTRAINT ck_incidents_incident_status"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE incidents ADD CONSTRAINT ck_incidents_incident_status CHECK (status IN ('Open', 'In Progress', 'Blocked', 'Resolved', 'Closed'))"
+                )
+            )
+        async with self.factory.begin() as session:
+            user = User(
+                name="Existing user",
+                email="existing@acme.inc",
+                password_hash="test" * 8,
+            )
+            building = Building(name="Existing location")
+            session.add_all([user, building])
+            await session.flush()
+            incident = Incident(
+                title="Existing work",
+                description="Keep this incident",
+                category="Other",
+                building_id=building.id,
+                reporter_id=user.id,
+                status="In Progress",
+            )
+            session.add(incident)
+            await session.flush()
+            incident_id, created = incident.id, incident.created_at
+        for _ in range(2):
+            response = await self.client.post(
+                "/dev/database/upgrade", headers=self.headers
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+        async with self.factory.begin() as session:
+            record = await session.get(Incident, incident_id)
+            self.assertEqual(record.status, "In Progress")
+            self.assertEqual(record.created_at, created)
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(User)), 1
+            )
+            self.assertIsNone(record.acknowledged_at)
+            record.status = "Assigned"
 
     async def test_reset_replaces_data_preserves_unrelated_tables_and_rejects_old_logins(
         self,

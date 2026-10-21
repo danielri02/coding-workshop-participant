@@ -1,13 +1,15 @@
 """Authorized read-only dashboards; ticket rows are paged on the server."""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Query
 
 from ..database import reports
 from ..schemas.report import (
+    CategoryQuery,
     CategoryReport,
     IncidentSummary,
+    LocationQuery,
     LocationReport,
     ReportQuery,
     ReportScope,
@@ -34,19 +36,18 @@ async def summary(
 async def locations(
     session: DatabaseSession,
     user: CurrentUser,
-    scope: ReportScope = ReportScope.VISIBLE,
-    level: Literal["building", "floor", "seat"] = "building",
+    query: Annotated[LocationQuery, Query()],
 ):
-    return await reports.locations(session, user, scope, level)
+    return await reports.locations(session, user, query)
 
 
 @router.get("/categories", response_model=CategoryReport)
 async def categories(
     session: DatabaseSession,
     user: CurrentUser,
-    scope: ReportScope = ReportScope.VISIBLE,
+    query: Annotated[CategoryQuery, Query()],
 ):
-    return await reports.categories(session, user, scope)
+    return await reports.categories(session, user, query)
 
 
 @router.get("/timings", response_model=TimingReport)

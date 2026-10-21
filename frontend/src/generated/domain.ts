@@ -18,7 +18,14 @@ export const incidentGrid = {
   searchMaxLength: 200,
 } as const
 
-export const statuses = ['Open', 'In Progress', 'Blocked', 'Resolved', 'Closed'] as const
+export const statuses = [
+  'Open',
+  'Assigned',
+  'In Progress',
+  'Blocked',
+  'Resolved',
+  'Closed',
+] as const
 
 export const priorities = ['Low', 'Medium', 'High'] as const
 
@@ -32,6 +39,7 @@ export const categories = [
 ] as const
 
 export const transitions = {
+  Assigned: ['In Progress'],
   Blocked: ['In Progress'],
   Closed: [],
   'In Progress': ['Blocked', 'Resolved'],
@@ -40,16 +48,17 @@ export const transitions = {
 } as const
 
 export const adminTransitions = {
-  Blocked: ['Open', 'In Progress', 'Resolved', 'Closed'],
-  Closed: ['Open', 'In Progress', 'Blocked', 'Resolved'],
-  'In Progress': ['Open', 'Blocked', 'Resolved', 'Closed'],
-  Open: ['In Progress', 'Blocked', 'Resolved', 'Closed'],
-  Resolved: ['Open', 'In Progress', 'Blocked', 'Closed'],
+  Assigned: ['Open', 'In Progress', 'Blocked', 'Resolved', 'Closed'],
+  Blocked: ['Open', 'Assigned', 'In Progress', 'Resolved', 'Closed'],
+  Closed: ['Open', 'Assigned', 'In Progress', 'Blocked', 'Resolved'],
+  'In Progress': ['Open', 'Assigned', 'Blocked', 'Resolved', 'Closed'],
+  Open: ['Assigned', 'In Progress', 'Blocked', 'Resolved', 'Closed'],
+  Resolved: ['Open', 'Assigned', 'In Progress', 'Blocked', 'Closed'],
 } as const
 
-export const activeStatuses = ['Open', 'In Progress', 'Blocked'] as const
+export const activeStatuses = ['Open', 'Assigned', 'In Progress', 'Blocked'] as const
 
-export const noteStatuses = ['Open', 'In Progress', 'Blocked', 'Resolved'] as const
+export const noteStatuses = ['Open', 'Assigned', 'In Progress', 'Blocked', 'Resolved'] as const
 
 export const constraints = {
   BuildingCreate: { name: { minLength: 1, maxLength: 100 } },

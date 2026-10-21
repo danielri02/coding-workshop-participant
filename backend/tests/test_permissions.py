@@ -197,7 +197,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                     or (path == "/users" and method == "post")
                 ):
                     continue
-                if path == "/dev/database/init":
+                if path.startswith("/dev/database/"):
                     self.assertEqual(operation["security"], [{"DatabaseResetKey": []}])
                     continue  # Bootstrap uses its own key, tested independently.
                 self.assertTrue(operation.get("security"), f"{method} {path}")
@@ -696,6 +696,42 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                 200,
                 {"priority": "Low", "escalation_reason": None},
             )
+
+    async def test_new_assignee_must_accept_before_work_and_unassignment_reopens(self):
+        path = f"/incidents/{self.reports['assigned']}"
+        assigned = await self.request(
+            "admin",
+            "PATCH",
+            path + "/assignment",
+            200,
+            {"assignee_id": self.ids["replacement"]},
+        )
+        self.assertEqual(assigned.json()["status"], "Assigned")
+        self.assertIsNone(assigned.json()["acknowledged_at"])
+        await self.request(
+            "engineer", "PATCH", path + "/status", 403, {"status": "In Progress"}
+        )
+        await self.request(
+            "replacement", "PATCH", path + "/status", 409, {"status": "Resolved"}
+        )
+        await self.request(
+            "replacement",
+            "PATCH",
+            path + "/status",
+            409,
+            {"status": "Blocked", "blocked_reason": "Not yet accepted"},
+        )
+        accepted = await self.request(
+            "replacement", "PATCH", path + "/status", 200, {"status": "In Progress"}
+        )
+        self.assertIsNotNone(accepted.json()["acknowledged_at"])
+        opened = await self.request(
+            "admin", "PATCH", path + "/assignment", 200, {"assignee_id": None}
+        )
+        self.assertEqual(opened.json()["status"], "Open")
+        self.assertEqual(
+            opened.json()["acknowledged_at"], accepted.json()["acknowledged_at"]
+        )
 
     async def test_reassignment_and_role_changes_take_effect_without_new_tokens(
         self,

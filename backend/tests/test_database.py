@@ -363,7 +363,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 "floors": 9,
                 "seats": 54,
                 "incidents": 120,
-                "notes": 307,
+                "notes": 311,
                 "refresh_tokens": 0,
             },
         )
@@ -445,7 +445,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 (await session.get(EngineerProfile, profile_id)).is_available
             )
             self.assertEqual(
-                await session.scalar(select(func.count()).select_from(Note)), 306
+                await session.scalar(select(func.count()).select_from(Note)), 310
             )
 
     async def test_seed_needs_no_password_environment_and_has_idle_engineer_and_unassigned_queue(

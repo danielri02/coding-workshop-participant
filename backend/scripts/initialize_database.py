@@ -2,7 +2,7 @@
 
 Run from the repository root: python backend/scripts/initialize_database.py
 Uses the same DATABASE_URL / POSTGRES_* settings as the application.
-This initializes a database; it does not migrate existing table definitions.
+This also applies the non-destructive Assigned status constraint upgrade.
 """
 
 import argparse

@@ -53,7 +53,6 @@ export function ReportTable({
         ? [{ field: 'floor_label', headerName: 'Floor', width: 130 }]
         : []),
       ...(report.level === 'seat' ? [{ field: 'seat_label', headerName: 'Seat', width: 130 }] : []),
-      { field: 'category', headerName: 'Category', width: 170 },
       { field: 'incident_count', headerName: 'Incidents', type: 'number', width: 130 },
       { field: 'active_count', headerName: 'Active', type: 'number', width: 130 },
     ]
@@ -80,6 +79,7 @@ export function ReportTable({
       { field: 'is_available', headerName: 'Available', type: 'boolean', width: 120 },
       { field: 'active_count', headerName: 'Active', type: 'number', width: 100 },
       { field: 'open_count', headerName: 'Open', type: 'number', width: 100 },
+      { field: 'assigned_count', headerName: 'Awaiting acceptance', type: 'number', width: 180 },
       { field: 'in_progress_count', headerName: 'In Progress', type: 'number', width: 130 },
       { field: 'blocked_count', headerName: 'Blocked', type: 'number', width: 110 },
       {

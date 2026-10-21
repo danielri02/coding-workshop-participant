@@ -14,3 +14,7 @@ class DatabaseInitRequest(Schema):
 class DatabaseInitResult(Schema):
     initialized: bool = True
     inserted: dict[str, Annotated[int, Field(ge=0)]]
+
+
+class DatabaseUpgradeResult(Schema):
+    upgraded: bool = True

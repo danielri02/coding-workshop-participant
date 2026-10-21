@@ -69,8 +69,7 @@ export function editorForm(resource: ResourceDefinition, editor: Editor | null) 
         label: 'Assigned engineer',
         type: 'select',
         numeric: true,
-        helper:
-          'A new engineer assignment starts In Progress. None clears the assignee and keeps the current status.',
+        helper: 'A new assignment awaits engineer acceptance. None returns active work to Open.',
         options: (data) =>
           data.users
             .filter((row) => row.engineer_profile)

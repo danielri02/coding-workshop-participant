@@ -5,11 +5,12 @@ import secrets
 import unittest
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
@@ -148,6 +149,8 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         }
 
     async def report(self, endpoint: str, actor: str = "admin", **params):
+        if endpoint in {"locations", "categories", "timings"}:
+            params.setdefault("period", "all")
         response = await self.client.get(
             f"/reports/{endpoint}", headers=self.headers[actor], params=params
         )
@@ -191,6 +194,7 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
                 "total_count": 2,
                 "active_count": 2,
                 "open_count": 1,
+                "assigned_count": 0,
                 "in_progress_count": 1,
                 "blocked_count": 0,
                 "resolved_count": 0,
@@ -205,6 +209,7 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
                 "total_count": 3,
                 "active_count": 2,
                 "open_count": 0,
+                "assigned_count": 0,
                 "in_progress_count": 1,
                 "blocked_count": 1,
                 "resolved_count": 1,
@@ -245,11 +250,20 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             json={"assignee_id": self.users["engineer"]},
         )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["status"], "In Progress")
+        self.assertEqual(response.json()["status"], "Assigned")
         assigned = await self.report("summary", "engineer", scope="assigned")
-        self.assertEqual(
-            (assigned["total_count"], assigned["in_progress_count"]), (4, 2)
+        self.assertEqual((assigned["total_count"], assigned["assigned_count"]), (4, 1))
+        workload = await self.report("workload")
+        engineer = next(
+            row for row in workload["rows"] if row["id"] == self.users["engineer"]
         )
+        self.assertEqual((engineer["assigned_count"], engineer["active_count"]), (1, 3))
+        accepted = await self.client.patch(
+            path + "/status",
+            headers=self.headers["engineer"],
+            json={"status": "In Progress"},
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
         response = await self.client.patch(
             path + "/status",
             headers=self.headers["engineer"],
@@ -269,19 +283,17 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             3,
         )
         self.assertEqual(
-            (await self.report("summary", "idle", scope="assigned"))[
-                "in_progress_count"
-            ],
+            (await self.report("summary", "idle", scope="assigned"))["assigned_count"],
             1,
         )
 
-    async def test_recurrence_ranks_location_category_groups_at_each_level(
+    async def test_location_counts_combine_categories_at_each_level(
         self,
     ) -> None:
         for level in ("building", "floor", "seat"):
             data = await self.report("locations", level=level)
-            self.assertEqual([row["incident_count"] for row in data["rows"]], [3, 2])
-            self.assertEqual(len({row["id"] for row in data["rows"]}), 2)
+            self.assertEqual([row["incident_count"] for row in data["rows"]], [5])
+            self.assertEqual(len({row["id"] for row in data["rows"]}), 1)
             self.assertEqual(data["rows"][0]["active_count"], 3)
         own = await self.report("locations", "employee", level="seat")
         self.assertEqual([row["incident_count"] for row in own["rows"]], [2])
@@ -327,6 +339,133 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(idle["is_available"])
         self.assertEqual(data["unassigned_count"], 1)
 
+    async def test_period_boundaries_use_reported_date_for_rows_and_aggregates(self):
+        now = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+        dates = [
+            now - timedelta(days=7),
+            now - timedelta(days=7, microseconds=1),
+            now - timedelta(days=30),
+            now.replace(year=2025),
+            now.replace(year=2024),
+        ]
+        async with self.factory.begin() as session:
+            for incident_id, created in zip(self.incidents, dates, strict=True):
+                await session.execute(
+                    update(Incident)
+                    .where(Incident.id == incident_id)
+                    .values(
+                        created_at=created,
+                        assigned_at=None,
+                        acknowledged_at=None,
+                        resolved_at=now,
+                    )
+                )
+        with patch("backend.app.database.reports.datetime") as clock:
+            clock.now.return_value = now
+            for period, expected in (
+                ("week", 1),
+                ("month", 3),
+                ("year", 4),
+                ("all", 5),
+            ):
+                timing = await self.report("timings", period=period, page_size=1)
+                self.assertEqual(timing["row_count"], expected)
+                self.assertEqual(timing["milestones"][2]["sample_count"], expected)
+                self.assertEqual(
+                    sum(
+                        row["incident_count"]
+                        for row in (await self.report("categories", period=period))[
+                            "rows"
+                        ]
+                    ),
+                    expected,
+                )
+                self.assertEqual(
+                    (await self.report("locations", period=period))["rows"][0][
+                        "incident_count"
+                    ],
+                    expected,
+                )
+                self.assertEqual(timing["end_at"], "2026-10-21T12:00:00Z")
+
+    async def test_report_dimension_filters_combine_and_preserve_access_scope(self):
+        async with self.factory.begin() as session:
+            original = await session.get(Incident, self.incidents[0])
+            original_floor, original_seat = original.floor_id, original.seat_id
+            building = Building(name="Separate location")
+            session.add(building)
+            await session.flush()
+            session.add(
+                Incident(
+                    title="Separate HVAC issue",
+                    description="Location filter fixture",
+                    category="HVAC",
+                    building_id=building.id,
+                    reporter_id=self.users["other"],
+                )
+            )
+            separate_id = building.id
+        locations = await self.report("locations", category="HVAC")
+        self.assertEqual([row["incident_count"] for row in locations["rows"]], [3, 1])
+        repeated = await self.report("locations", category="HVAC", repeated_only=True)
+        self.assertEqual([row["incident_count"] for row in repeated["rows"]], [3])
+        categories = await self.report("categories", building_id=separate_id)
+        self.assertEqual(sum(row["incident_count"] for row in categories["rows"]), 1)
+        for field, location_id in (
+            ("floor_id", original_floor),
+            ("seat_id", original_seat),
+        ):
+            self.assertEqual(
+                sum(
+                    row["incident_count"]
+                    for row in (
+                        await self.report("categories", **{field: location_id})
+                    )["rows"]
+                ),
+                5,
+            )
+        self.assertEqual(
+            sum(
+                row["incident_count"]
+                for row in (
+                    await self.report(
+                        "categories", building_id=separate_id, floor_id=original_floor
+                    )
+                )["rows"]
+            ),
+            0,
+        )
+        self.assertEqual(
+            sum(
+                row["incident_count"]
+                for row in (
+                    await self.report("categories", "employee", building_id=separate_id)
+                )["rows"]
+            ),
+            0,
+        )
+        timing = await self.report(
+            "timings", category="HVAC", assignee_id=self.users["engineer"], page_size=1
+        )
+        self.assertEqual(timing["row_count"], 2)
+        self.assertEqual(timing["milestones"][0]["sample_count"], 2)
+        self.assertEqual(timing["milestones"][0]["average_minutes"], 10)
+        self.assertEqual(
+            (
+                await self.report(
+                    "timings",
+                    "employee",
+                    category="HVAC",
+                    assignee_id=self.users["engineer"],
+                )
+            )["row_count"],
+            1,
+        )
+        self.assertEqual(
+            (await self.report("timings", assignee_id=self.users["idle"]))["row_count"],
+            0,
+        )
+
     async def test_authentication_privilege_and_query_validation(self) -> None:
         for endpoint in ("locations", "categories", "timings", "workload", "summary"):
             self.assertEqual(
@@ -352,6 +491,10 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             "locations?level=unknown",
             "categories?scope=all",
             "summary?scope=all",
+            "timings?period=invalid",
+            "timings?assignee_id=-1",
+            "timings?category=invalid",
+            "categories?building_id=0",
         ):
             self.assertEqual(
                 (

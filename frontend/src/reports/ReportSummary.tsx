@@ -25,7 +25,7 @@ export function ReportSummary({ report }: { report: Report }) {
             {
               label: 'Active assignments',
               value: report.rows.reduce((sum, row) => sum + row.active_count, 0),
-              detail: 'Open, In Progress and Blocked',
+              detail: 'Open, Assigned, In Progress and Blocked',
             },
             {
               label: 'Unassigned active incidents',
@@ -43,14 +43,22 @@ export function ReportSummary({ report }: { report: Report }) {
               {
                 label: 'Active incidents',
                 value: report.rows.reduce((sum, row) => sum + row.active_count, 0),
-                detail: 'Open, In Progress and Blocked',
+                detail: 'Open, Assigned, In Progress and Blocked',
               },
             ]
           : [
               {
-                label: 'Recurring location/category groups',
+                label: 'Incidents in displayed locations',
+                value: report.rows.reduce((sum, row) => sum + row.incident_count, 0),
+                detail: 'Selected period, category and scope',
+              },
+              {
+                label: report.minimum_incidents === 2 ? 'Repeated locations' : 'Locations',
                 value: report.rows.length,
-                detail: 'At least two incidents per group, across all statuses',
+                detail:
+                  report.minimum_incidents === 2
+                    ? 'At least two incidents per location in this period'
+                    : 'Locations with reported incidents in this period',
               },
             ]
   return <SummaryStats metrics={metrics} />

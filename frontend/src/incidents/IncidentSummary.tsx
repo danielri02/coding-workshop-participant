@@ -20,6 +20,11 @@ export function IncidentSummary({
   const metrics = assigned
     ? ([
         {
+          field: 'assigned_count',
+          label: 'Awaiting acceptance',
+          detail: 'Accept these assignments to start work',
+        },
+        {
           field: 'in_progress_count',
           label: 'In progress',
           detail: 'Assignments currently underway',
@@ -35,7 +40,7 @@ export function IncidentSummary({
         {
           field: 'active_count',
           label: 'Active',
-          detail: 'Your Open, In Progress and Blocked reports',
+          detail: 'Your Open, Assigned, In Progress and Blocked reports',
         },
         {
           field: 'resolved_count',

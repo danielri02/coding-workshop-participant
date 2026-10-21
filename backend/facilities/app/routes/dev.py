@@ -6,10 +6,27 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response
 
 from ..database.session import engine
 from ..maintenance.reset import reset_database
-from ..schemas.maintenance import DatabaseInitRequest, DatabaseInitResult
+from ..maintenance.tables import initialize_database as upgrade_database
+from ..schemas.maintenance import (
+    DatabaseInitRequest,
+    DatabaseInitResult,
+    DatabaseUpgradeResult,
+)
 from ..security.reset_key import require_reset_key
 
 router = APIRouter(prefix="/dev/database", tags=["Development"])
+
+
+@router.post("/upgrade", response_model=DatabaseUpgradeResult)
+async def upgrade_schema(
+    response: Response,
+    _access: Annotated[None, Depends(require_reset_key)],
+) -> DatabaseUpgradeResult:
+    """Apply supported schema upgrades while preserving all application data."""
+
+    response.headers["Cache-Control"] = "no-store"
+    await upgrade_database(engine)
+    return DatabaseUpgradeResult()
 
 
 @router.post("/init", response_model=DatabaseInitResult)

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..database import crud
 from ..database.incident_queries import incident_criteria, incident_order
-from ..domain.incidents import ENGINEER_TRANSITIONS
+from ..domain.incidents import ACTIVE_STATUSES, ENGINEER_TRANSITIONS
 from ..models import (
     EngineerProfile,
     Incident,
@@ -180,7 +180,7 @@ async def assign_incident(
     session: DatabaseSession,
     _admin: AdminUser,
 ) -> Incident:
-    """A new assignee starts In Progress; unassignment retains the current status."""
+    """A new assignee awaits acceptance; unassigning active work returns it to Open."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
     values = payload.model_dump()
@@ -192,9 +192,17 @@ async def assign_incident(
         if payload.assignee_id != record.assignee_id:
             values.update(
                 _status_values(
-                    record, IncidentStatusUpdate(status=IncidentStatus.IN_PROGRESS), now
+                    record, IncidentStatusUpdate(status=IncidentStatus.ASSIGNED), now
                 )
             )
+    elif record.status in ACTIVE_STATUSES:
+        values.update(
+            _status_values(
+                record,
+                IncidentStatusUpdate(status=IncidentStatus.OPEN),
+                datetime.now(timezone.utc),
+            )
+        )
     return await crud.update_record(
         session, record, values, options=INCIDENT_READ_OPTIONS
     )

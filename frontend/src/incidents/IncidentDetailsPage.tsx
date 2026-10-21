@@ -12,7 +12,7 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import { useLookups } from '../hooks/useLookups'
 import { statusFields } from '../resources/incidentActions'
 import { floorLabel, recordLabel } from '../resources/rows'
-import { api } from '../services/client'
+import { api, errorMessage } from '../services/client'
 import { invalidateResourceQueries } from '../services/queries'
 import type { Incident } from '../types'
 import { IncidentNotes } from './IncidentNotes'
@@ -28,6 +28,8 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
   const { user } = useAuth()
   const client = useQueryClient()
   const [editing, setEditing] = useState(false)
+  const [accepting, setAccepting] = useState(false)
+  const [actionError, setActionError] = useState('')
   const query = useApiQuery<Incident | null>(validId ? `/incidents/${id}` : null, null)
   const lookups = useLookups({ lookups: ['buildings', 'floors', 'seats'] })
   const incident =
@@ -106,6 +108,11 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
             </Stack>
           </Box>
           <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
+            {actionError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {actionError}
+              </Alert>
+            )}
             <IncidentProgress status={incident.status} />
           </Paper>
           {incident.blocked_reason && (
@@ -128,10 +135,24 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
                 {canChangeStatus && (
                   <Button
                     variant="contained"
-                    onClick={() => setEditing(true)}
-                    disabled={query.loading}
+                    onClick={async () => {
+                      if (incident.status !== 'Assigned') {
+                        setEditing(true)
+                        return
+                      }
+                      setAccepting(true)
+                      setActionError('')
+                      try {
+                        await save({ status: 'In Progress' })
+                      } catch (failure) {
+                        setActionError(errorMessage(failure))
+                      } finally {
+                        setAccepting(false)
+                      }
+                    }}
+                    disabled={query.loading || accepting}
                   >
-                    Change status
+                    {incident.status === 'Assigned' ? 'Accept and start work' : 'Change status'}
                   </Button>
                 )}
               </Stack>

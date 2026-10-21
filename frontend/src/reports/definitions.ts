@@ -3,7 +3,8 @@ export const reports = [
   {
     key: 'locations',
     title: 'Recurring locations',
-    description: 'Find repeated categories of incidents in the same building, floor or seat.',
+    description:
+      'Compare incident frequency by building, floor or seat, across all or selected categories.',
   },
   {
     key: 'timings',

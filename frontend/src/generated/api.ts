@@ -56,6 +56,12 @@ export interface components {
     /** CategoryReport */
     CategoryReport: {
       /**
+       * End At
+       * Format: date-time
+       */
+      end_at: string
+      period: components['schemas']['ReportPeriod']
+      /**
        * Report
        * @default categories
        * @constant
@@ -63,6 +69,8 @@ export interface components {
       report: 'categories'
       /** Rows */
       rows: components['schemas']['CategoryRow'][]
+      /** Start At */
+      start_at: string | null
     }
     /** CategoryRow */
     CategoryRow: {
@@ -92,6 +100,14 @@ export interface components {
       inserted: {
         [key: string]: number
       }
+    }
+    /** DatabaseUpgradeResult */
+    DatabaseUpgradeResult: {
+      /**
+       * Upgraded
+       * @default true
+       */
+      upgraded: boolean
     }
     /**
      * EngineerProfileCreate
@@ -178,7 +194,7 @@ export interface components {
     }
     /**
      * IncidentAssignment
-     * @description Admin-only assignment; a new assignee starts In Progress automatically.
+     * @description Admin assignment sets Assigned; the engineer accepts to start In Progress.
      */
     IncidentAssignment: {
       /** Assignee Id */
@@ -289,7 +305,7 @@ export interface components {
      * @description Current workflow state; transition authorization belongs to services.
      * @enum {string}
      */
-    IncidentStatus: 'Open' | 'In Progress' | 'Blocked' | 'Resolved' | 'Closed'
+    IncidentStatus: 'Open' | 'Assigned' | 'In Progress' | 'Blocked' | 'Resolved' | 'Closed'
     /**
      * IncidentStatusUpdate
      * @description Transition request; services must check the current state and actor.
@@ -306,6 +322,8 @@ export interface components {
     IncidentSummary: {
       /** Active Count */
       active_count: number
+      /** Assigned Count */
+      assigned_count: number
       /** Blocked Count */
       blocked_count: number
       /** Closed Count */
@@ -323,15 +341,21 @@ export interface components {
     /** LocationReport */
     LocationReport: {
       /**
+       * End At
+       * Format: date-time
+       */
+      end_at: string
+      /**
        * Level
        * @enum {string}
        */
       level: 'building' | 'floor' | 'seat'
       /**
        * Minimum Incidents
-       * @default 2
+       * @default 1
        */
       minimum_incidents: number
+      period: components['schemas']['ReportPeriod']
       /**
        * Report
        * @default locations
@@ -340,6 +364,8 @@ export interface components {
       report: 'locations'
       /** Rows */
       rows: components['schemas']['LocationRow'][]
+      /** Start At */
+      start_at: string | null
     }
     /** LocationRow */
     LocationRow: {
@@ -347,7 +373,6 @@ export interface components {
       active_count: number
       /** Building Name */
       building_name: string
-      category: components['schemas']['IncidentCategory']
       /** Floor Label */
       floor_label: string | null
       /** Id */
@@ -436,6 +461,11 @@ export interface components {
       refresh_token: string
     }
     /**
+     * ReportPeriod
+     * @enum {string}
+     */
+    ReportPeriod: 'week' | 'month' | 'year' | 'all'
+    /**
      * ReportScope
      * @enum {string}
      */
@@ -472,12 +502,18 @@ export interface components {
     }
     /** TimingReport */
     TimingReport: {
+      /**
+       * End At
+       * Format: date-time
+       */
+      end_at: string
       /** Milestones */
       milestones: components['schemas']['MilestoneMetric'][]
       /** Page */
       page: number
       /** Page Size */
       page_size: number
+      period: components['schemas']['ReportPeriod']
       /**
        * Report
        * @default timings
@@ -488,6 +524,8 @@ export interface components {
       row_count: number
       /** Rows */
       rows: components['schemas']['TimingRow'][]
+      /** Start At */
+      start_at: string | null
     }
     /** TimingRow */
     TimingRow: {
@@ -616,6 +654,8 @@ export interface components {
     WorkloadRow: {
       /** Active Count */
       active_count: number
+      /** Assigned Count */
+      assigned_count: number
       /** Blocked Count */
       blocked_count: number
       /** High Priority Count */

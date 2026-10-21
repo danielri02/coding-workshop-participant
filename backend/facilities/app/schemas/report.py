@@ -7,6 +7,7 @@ from pydantic import Field
 
 from ..models import IncidentCategory, IncidentPriority, IncidentStatus
 from .base import Schema, UTCDateTime
+from .incident import FilterID
 
 Count = Annotated[int, Field(ge=0)]
 Minutes = Annotated[float, Field(ge=0)]
@@ -19,8 +20,33 @@ class ReportScope(StrEnum):
     ASSIGNED = "assigned"
 
 
-class ReportQuery(Schema):
+class ReportPeriod(StrEnum):
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"
+    ALL = "all"
+
+
+class ReportFilters(Schema):
     scope: ReportScope = ReportScope.VISIBLE
+    period: ReportPeriod = ReportPeriod.MONTH
+
+
+class LocationQuery(ReportFilters):
+    level: Literal["building", "floor", "seat"] = "building"
+    category: IncidentCategory | None = None
+    repeated_only: bool = False
+
+
+class CategoryQuery(ReportFilters):
+    building_id: FilterID | None = None
+    floor_id: FilterID | None = None
+    seat_id: FilterID | None = None
+
+
+class ReportQuery(ReportFilters):
+    category: IncidentCategory | None = None
+    assignee_id: FilterID | None = None
     search: Annotated[str, Field(max_length=200)] = ""
     page: Count = 0
     page_size: Annotated[int, Field(ge=1, le=100)] = 25
@@ -46,6 +72,7 @@ class IncidentSummary(Schema):
     total_count: Count
     active_count: Count
     open_count: Count
+    assigned_count: Count
     in_progress_count: Count
     blocked_count: Count
     resolved_count: Count
@@ -59,20 +86,25 @@ class ReportPage(Schema, Generic[Row]):
     page_size: Annotated[int, Field(ge=1, le=100)]
 
 
+class ReportWindow(Schema):
+    period: ReportPeriod
+    start_at: UTCDateTime | None
+    end_at: UTCDateTime
+
+
 class LocationRow(Schema):
     id: str
     building_name: str
     floor_label: str | None
     seat_label: str | None
-    category: IncidentCategory
     incident_count: Count
     active_count: Count
 
 
-class LocationReport(Schema):
+class LocationReport(ReportWindow):
     report: Literal["locations"] = "locations"
     level: Literal["building", "floor", "seat"]
-    minimum_incidents: int = 2
+    minimum_incidents: int = 1
     rows: list[LocationRow]
 
 
@@ -84,7 +116,7 @@ class CategoryRow(Schema):
     percentage: Annotated[float, Field(ge=0, le=100)]
 
 
-class CategoryReport(Schema):
+class CategoryReport(ReportWindow):
     report: Literal["categories"] = "categories"
     rows: list[CategoryRow]
 
@@ -109,7 +141,7 @@ class TimingRow(Schema):
     resolved_minutes: Minutes | None
 
 
-class TimingReport(ReportPage[TimingRow]):
+class TimingReport(ReportPage[TimingRow], ReportWindow):
     report: Literal["timings"] = "timings"
     milestones: list[MilestoneMetric]
 
@@ -121,6 +153,7 @@ class WorkloadRow(Schema):
     total_count: Count
     active_count: Count
     open_count: Count
+    assigned_count: Count
     in_progress_count: Count
     blocked_count: Count
     high_priority_count: Count

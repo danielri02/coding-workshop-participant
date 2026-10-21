@@ -26,6 +26,7 @@ class IncidentStatus(StrEnum):
     """Current workflow state; transition authorization belongs to services."""
 
     OPEN = "Open"
+    ASSIGNED = "Assigned"
     IN_PROGRESS = "In Progress"
     BLOCKED = "Blocked"
     RESOLVED = "Resolved"

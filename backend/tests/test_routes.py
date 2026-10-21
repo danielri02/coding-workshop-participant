@@ -567,8 +567,8 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         first_assigned = response.json()["assigned_at"]
         self.assertIsNotNone(first_assigned)
-        self.assertEqual(response.json()["status"], "In Progress")
-        self.assertEqual(response.json()["acknowledged_at"], first_assigned)
+        self.assertEqual(response.json()["status"], "Assigned")
+        self.assertIsNone(response.json()["acknowledged_at"])
         self.assertEqual(
             (
                 await self.client.delete(f"/engineer-profiles/{self.engineer_id}")
@@ -578,7 +578,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/engineer-profiles", json={"user_id": self.reporter_id})
         response = await self.client.patch(path, json={"assignee_id": self.reporter_id})
         self.assertEqual(response.json()["assigned_at"], first_assigned)
-        self.assertEqual(response.json()["status"], "In Progress")
+        self.assertEqual(response.json()["status"], "Assigned")
         response = await self.client.patch(path, json={"assignee_id": None})
         self.assertIsNone(response.json()["assignee_id"])
         self.assertEqual(response.json()["assigned_at"], first_assigned)
@@ -630,7 +630,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             (await self.client.patch(path, json={"status": "Open"})).status_code, 200
         )
 
-    async def test_assignment_starts_work_without_rewriting_same_assignment_or_history(
+    async def test_assignment_awaits_acceptance_without_rewriting_same_assignment_or_history(
         self,
     ) -> None:
         report = await self.create_report()
@@ -639,7 +639,13 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             path + "/assignment", json={"assignee_id": self.engineer_id}
         )
         first = response.json()
-        self.assertEqual(first["status"], "In Progress")
+        self.assertEqual(first["status"], "Assigned")
+        self.assertIsNone(first["acknowledged_at"])
+        accepted = await self.client.patch(
+            path + "/status", json={"status": "In Progress"}
+        )
+        self.assertIsNotNone(accepted.json()["acknowledged_at"])
+        first = accepted.json()
         await self.client.patch(
             path + "/status", json={"status": "Blocked", "blocked_reason": "Waiting"}
         )
@@ -652,7 +658,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.patch(
             path + "/assignment", json={"assignee_id": self.reporter_id}
         )
-        self.assertEqual(response.json()["status"], "In Progress")
+        self.assertEqual(response.json()["status"], "Assigned")
         self.assertIsNone(response.json()["blocked_reason"])
         for milestone in ("assigned_at", "acknowledged_at"):
             self.assertEqual(response.json()[milestone], first[milestone])
@@ -664,7 +670,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.patch(
             path + "/assignment", json={"assignee_id": self.engineer_id}
         )
-        self.assertEqual(response.json()["status"], "In Progress")
+        self.assertEqual(response.json()["status"], "Assigned")
 
     async def test_note_crud_and_incident_cascade(self) -> None:
         """Notes support all CRUD operations and disappear with their incident."""
