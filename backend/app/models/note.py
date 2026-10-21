@@ -47,3 +47,9 @@ class Note(Base):
 
     incident: Mapped["Incident"] = relationship(back_populates="notes")
     author: Mapped["User"] = relationship(back_populates="notes")
+
+    @property
+    def author_name(self) -> str:
+        """Expose the author's name as part of the incident's shared conversation."""
+
+        return self.author.name

@@ -151,6 +151,13 @@ class Incident(Base):
     assignee: Mapped["EngineerProfile | None"] = relationship(
         back_populates="assignments"
     )
+
+    @property
+    def assignee_name(self) -> str | None:
+        """Expose the assigned engineer's name within an authorized incident."""
+
+        return self.assignee.user.name if self.assignee is not None else None
+
     building: Mapped[Building] = relationship(back_populates="incidents")
     # Read-only convenience relationships avoid competing writes to the shared
     # building_id/floor_id columns. Set location IDs explicitly as one operation.

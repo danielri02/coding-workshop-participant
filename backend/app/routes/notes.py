@@ -7,7 +7,7 @@ from ..models import Note
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import ACTIVE_STATUSES, accessible_incident
-from .dependencies import DatabaseSession, RecordID
+from .dependencies import NOTE_READ_OPTIONS, DatabaseSession, RecordID
 
 router = APIRouter(tags=[Note.__name__])
 
@@ -24,6 +24,7 @@ async def list_notes(
         Note,
         filters={"incident_id": incident_id},
         order_by=(Note.created_at, Note.id),
+        options=NOTE_READ_OPTIONS,
     )
 
 
@@ -49,6 +50,7 @@ async def create_note(
         session,
         Note,
         {**payload.model_dump(), "incident_id": incident_id, "author_id": user.id},
+        options=NOTE_READ_OPTIONS,
     )
 
 
@@ -58,7 +60,7 @@ async def get_note(
 ) -> Note:
     """Read one shared incident note."""
 
-    note = await crud.get_record(session, Note, note_id)
+    note = await crud.get_record(session, Note, note_id, options=NOTE_READ_OPTIONS)
     await accessible_incident(session, note.incident_id, user)
     return note
 
@@ -71,7 +73,10 @@ async def update_note(
 
     record = await crud.get_record(session, Note, note_id, for_update=True)
     return await crud.update_record(
-        session, record, payload.model_dump(exclude_unset=True)
+        session,
+        record,
+        payload.model_dump(exclude_unset=True),
+        options=NOTE_READ_OPTIONS,
     )
 
 

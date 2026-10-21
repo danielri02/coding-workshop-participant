@@ -1,11 +1,20 @@
 """Incident payloads separated by operation and intended capability."""
 
-from typing import ClassVar, Self
+from typing import Annotated, ClassVar, Literal, Self
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from ..models.enums import IncidentCategory, IncidentPriority, IncidentStatus
-from .base import Body, PatchSchema, PositiveID, Reason, Schema, Title, UTCDateTime
+from .base import (
+    Body,
+    Name,
+    PatchSchema,
+    PositiveID,
+    Reason,
+    Schema,
+    Title,
+    UTCDateTime,
+)
 
 
 class IncidentCreate(Schema):
@@ -97,6 +106,7 @@ class IncidentRead(Schema):
     category: IncidentCategory
     reporter_id: PositiveID
     assignee_id: PositiveID | None = None
+    assignee_name: Name | None = None
     building_id: PositiveID
     floor_id: PositiveID | None = None
     seat_id: PositiveID | None = None
@@ -108,3 +118,55 @@ class IncidentRead(Schema):
     acknowledged_at: UTCDateTime | None = None
     assigned_at: UTCDateTime | None = None
     resolved_at: UTCDateTime | None = None
+
+
+FilterID = Annotated[int, Field(gt=0, le=2_147_483_647)]
+
+
+class IncidentFilters(Schema):
+    """Validated query parameters shared by full-list and Data Grid requests."""
+
+    reporter_id: FilterID | None = None
+    assignee_id: FilterID | None = None
+    building_id: FilterID | None = None
+    floor_id: FilterID | None = None
+    seat_id: FilterID | None = None
+    status: IncidentStatus | None = None
+    priority: IncidentPriority | None = None
+    category: IncidentCategory | None = None
+    search: Annotated[str, Field(max_length=200)] | None = None
+    escalated: bool | None = None
+
+
+class IncidentGridQuery(IncidentFilters):
+    """Zero-based paging and a single validated sort, matching MUI Data Grid."""
+
+    page: Annotated[int, Field(ge=0)] = 0
+    page_size: Annotated[int, Field(ge=1, le=100)] = 25
+    sort_by: Literal[
+        "id",
+        "title",
+        "category",
+        "status",
+        "priority",
+        "assignee_name",
+        "building_id",
+        "floor_id",
+        "seat_id",
+        "reporter_id",
+        "assignee_id",
+        "created_at",
+        "assigned_at",
+        "acknowledged_at",
+        "resolved_at",
+    ] = "id"
+    sort_direction: Literal["asc", "desc"] = "asc"
+
+
+class IncidentPage(Schema):
+    """Filtered rows and their total count for server-side grid pagination."""
+
+    rows: list[IncidentRead]
+    row_count: Annotated[int, Field(ge=0)]
+    page: Annotated[int, Field(ge=0)]
+    page_size: Annotated[int, Field(ge=1, le=100)]

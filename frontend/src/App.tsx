@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import reactLogo from '/react.svg'
+import { useState, type ReactElement } from 'react'
+import Button from '@mui/material/Button'
+import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 
-function App() {
+/** Render the starter counter before the incident application screens are built. */
+function App(): ReactElement {
   const [count, setCount] = useState(0)
 
   return (
@@ -16,13 +18,16 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
-      <h1>Vite + React</h1>
+      <h1>Vite + React + TypeScript</h1>
       <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
+        <Button
+          variant="contained"
+          onClick={() => setCount((currentCount) => currentCount + 1)}
+        >
           count is {count}
-        </button>
+        </Button>
         <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
+          Edit <code>src/App.tsx</code> and save to test HMR
         </p>
       </div>
       <p className="read-the-docs">

@@ -35,6 +35,44 @@ or correct them in the shell that launches FastAPI, then restart the server. A
 exported variable or an explicit environment-file loading option. An overridden
 key must contain at least 32 bytes.
 
+### Frontend origin
+
+FastAPI CORS permits `http://localhost:3000` by default, matching the Vite starter.
+Override it by setting `FRONTEND_ORIGIN` before starting the backend, for example
+`FRONTEND_ORIGIN=http://127.0.0.1:3000 fastapi dev app/main.py`. Supply the complete
+browser origin (scheme, host and port). Authorization and Content-Type headers
+are allowed for GET/POST/PATCH/DELETE requests. Browser access uses bearer tokens;
+cross-origin cookies are not required.
+
+### Incident grid API
+
+`GET /incidents/grid` provides paginated rows for MUI Data Grid. It accepts:
+
+| Parameter | Behavior |
+| --- | --- |
+| `page` | Zero-based page number, default 0 |
+| `page_size` | Rows per page, 1–100, default 25 |
+| `sort_by` | Default `id`; also title, category, status, priority, assignee_name, building_id, floor_id, seat_id, reporter_id, assignee_id and milestone timestamps |
+| `sort_direction` | `asc` (default) or `desc`; nulls sort last and IDs break ties |
+| `search` | Case-insensitive literal substring in incident title or description; whitespace-only searches clear this filter; maximum 200 characters |
+| `escalated` | `true` for incidents with an escalation reason, `false` for those without; omit for both |
+| Structured filters | Exact reporter_id, assignee_id, building_id, floor_id, seat_id, status, priority and category |
+
+For example, `/incidents/grid?page=0&page_size=25&search=printer&sort_by=created_at&sort_direction=desc`
+returns `{ "rows": [...], "row_count": 42, "page": 0, "page_size": 25 }`, where the
+count reflects the same filters and caller permissions as the rows. Search/filter
+conditions combine with AND. Sorting status, priority and category uses their
+stored text labels. Page requests beyond the last page return empty rows and the
+matching count. Unsupported sort fields and invalid inputs return 422.
+
+The existing `GET /incidents` still returns the full matching array and supports
+the same search and filter parameters. Incident responses now include
+`assignee_name` (null when unassigned), and note responses include `author_name`.
+These names are available only within incidents/notes the caller may read;
+employee access to other users' account records remains restricted.
+
+### Swagger login
+
 Open `http://127.0.0.1:8000/docs`, click **Authorize**, and enter:
 
 - **username:** `admin@acme.inc`

@@ -368,6 +368,96 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             (await self.client.get(f"/incidents/{incident}")).status_code, 404
         )
 
+    async def test_grid_paging_and_sorting_are_stable(self) -> None:
+        """Return total count and stable page boundaries, including sorted ties."""
+
+        first = await self.create_report(title="Repeated")
+        second = await self.create_report(title="Repeated")
+        third = await self.create_report(title="Earlier")
+        query = {"page_size": 2, "sort_by": "title", "sort_direction": "desc"}
+        response = await self.client.get("/incidents/grid", params=query)
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(
+            (data["row_count"], data["page"], data["page_size"]), (3, 0, 2)
+        )
+        self.assertEqual(
+            [row["id"] for row in data["rows"]], [first["id"], second["id"]]
+        )
+        response = await self.client.get("/incidents/grid", params={**query, "page": 1})
+        self.assertEqual([row["id"] for row in response.json()["rows"]], [third["id"]])
+        response = await self.client.get("/incidents/grid", params={**query, "page": 9})
+        self.assertEqual(response.json()["row_count"], 3)
+        self.assertEqual(response.json()["rows"], [])
+        response = await self.client.patch(
+            f"/incidents/{second['id']}/assignment",
+            json={"assignee_id": self.engineer_id},
+        )
+        self.assertEqual(response.json()["assignee_name"], "Engineer")
+        response = await self.client.get(
+            "/incidents/grid", params={"sort_by": "assignee_name"}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["rows"][0]["id"], second["id"])
+
+    async def test_search_and_escalation_filters_apply_before_paging(self) -> None:
+        """Search titles/descriptions literally, combine filters and count matches."""
+
+        match = await self.create_report(
+            title="Printer 100%_ready", escalation_reason="Urgent"
+        )
+        await self.create_report(title="Printer 100xxready")
+        description_match = await self.create_report(
+            title="Equipment issue", description="A PRINTER is broken."
+        )
+        for endpoint in ("/incidents", "/incidents/grid"):
+            response = await self.client.get(endpoint, params={"search": " printer "})
+            self.assertEqual(response.status_code, 200, response.text)
+            rows = (
+                response.json()["rows"]
+                if endpoint.endswith("grid")
+                else response.json()
+            )
+            self.assertEqual(len(rows), 3)
+            response = await self.client.get(endpoint, params={"search": "%_"})
+            rows = (
+                response.json()["rows"]
+                if endpoint.endswith("grid")
+                else response.json()
+            )
+            self.assertEqual([row["id"] for row in rows], [match["id"]])
+        response = await self.client.get(
+            "/incidents/grid",
+            params={"search": "printer", "escalated": "true", "page_size": 1},
+        )
+        self.assertEqual(response.json()["row_count"], 1)
+        self.assertEqual(response.json()["rows"][0]["id"], match["id"])
+        response = await self.client.get(
+            "/incidents/grid", params={"search": "broken", "escalated": "false"}
+        )
+        self.assertEqual(response.json()["row_count"], 1)
+        self.assertEqual(response.json()["rows"][0]["id"], description_match["id"])
+        response = await self.client.get("/incidents/grid", params={"search": "   "})
+        self.assertEqual(response.json()["row_count"], 3)
+
+    async def test_grid_parameters_reject_invalid_or_unapproved_values(self) -> None:
+        """Bound page sizes and sorting fields and preserve validation HTTP 422."""
+
+        for params in (
+            {"page": -1},
+            {"page_size": 0},
+            {"page_size": 101},
+            {"sort_by": "password_hash"},
+            {"sort_by": "id; DROP TABLE users"},
+            {"sort_direction": "sideways"},
+            {"escalated": "perhaps"},
+            {"search": "x" * 201},
+            {"reporter_id": -1},
+        ):
+            with self.subTest(params=params):
+                response = await self.client.get("/incidents/grid", params=params)
+                self.assertEqual(response.status_code, 422, response.text)
+
     async def test_location_checks_include_persisted_partial_values(self) -> None:
         """Creation and merged patches reject inconsistent hierarchy references."""
 

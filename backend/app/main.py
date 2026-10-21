@@ -1,9 +1,11 @@
 """FastAPI application and database-pool lifecycle."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .database.session import engine
 from .routes import (
@@ -30,6 +32,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Coding Workshop", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000").rstrip("/")
+    ],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 app.include_router(health_router)
 

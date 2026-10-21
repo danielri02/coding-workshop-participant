@@ -1,8 +1,11 @@
 """Shared incident visibility and operation-specific authorization rules."""
 
+from collections.abc import Sequence
+
 from fastapi import HTTPException, status
 from sqlalchemy import or_, true
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.interfaces import ORMOption
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..database import crud
@@ -38,12 +41,17 @@ def require_incident_view(user: User, incident: Incident) -> None:
 
 
 async def accessible_incident(
-    session: AsyncSession, incident_id: int, user: User, *, for_update: bool = False
+    session: AsyncSession,
+    incident_id: int,
+    user: User,
+    *,
+    for_update: bool = False,
+    options: Sequence[ORMOption] = (),
 ) -> Incident:
     """Load and authorize an incident, locking before write-time access checks."""
 
     incident = await crud.get_record(
-        session, Incident, incident_id, for_update=for_update
+        session, Incident, incident_id, for_update=for_update, options=options
     )
     require_incident_view(user, incident)
     return incident

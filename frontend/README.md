@@ -2,7 +2,44 @@
 
 ## Overview
 
-This folder contains React frontend application with hello world example.
+The starter uses React, TypeScript, Vite and MUI. MUI Data Grid Community is
+installed for the upcoming incident grid. The application screens and API client
+are not implemented yet.
+
+## Direct local development
+
+Use Node.js 24. From `frontend/`:
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. Vite uses a strict port so its origin matches the
+backend's default CORS origin. Start the FastAPI app separately from `backend/`
+with `fastapi dev app/main.py`; it normally listens on port 8000. Set the backend
+`FRONTEND_ORIGIN` variable before startup if the browser uses a different origin.
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Production builds include TypeScript checking. `src/App.tsx` is the starter
+component, `src/main.tsx` provides the MUI theme/CssBaseline, and Vite/ESLint
+configuration also uses TypeScript. The `.env.sample` file uses Vite's `VITE_*`
+variable names for the future API client.
+
+The incident grid API is `GET /incidents/grid`; its pagination, filtering and sort
+parameters are documented in `../backend/README.md`. MUI's zero-based `page` and
+`pageSize` map to `page` and `page_size`, and the response's `row_count` maps to
+`rowCount`. Use server modes for pagination, sorting and filtering, sending grid
+model changes as requests. The endpoint returns flat `assignee_name` fields and
+incident notes include `author_name` for display without a people-directory lookup.
+
+The workshop LocalStack/cloud commands below describe a separate deployment path
+that has not yet been wired to the incident application.
 
 ## Prerequisites
 
@@ -20,13 +57,13 @@ coding-workshop-participant/
 │   │   ├── pages/             # Page components
 │   │   ├── components/        # Reusable components
 │   │   ├── services/          # API client
-│   │   └── App.js             # Main app
+│   │   └── App.tsx            # Main app
 │   ├── .env.sample          # React environment variables
-│   ├── eslint.config.js     # ESLint JS tool configuration
+│   ├── eslint.config.ts     # TypeScript-aware ESLint configuration
 │   ├── index.html           # Landing page
 │   ├── package.json         # App metadata with dependencies
 │   ├── README.md            # Frontend guide (YOU ARE HERE)
-│   └── vite.config.js       # Vite build tool configuration
+│   └── vite.config.ts       # Vite build tool configuration
 ├── ...
 ```
 

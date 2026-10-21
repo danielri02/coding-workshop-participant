@@ -1,6 +1,6 @@
 """Shared conversation payloads with server-controlled ownership."""
 
-from .base import Body, PatchSchema, PositiveID, Schema, UTCDateTime
+from .base import Body, Name, PatchSchema, PositiveID, Schema, UTCDateTime
 
 
 class NoteCreate(Schema):
@@ -21,5 +21,6 @@ class NoteRead(Schema):
     id: PositiveID
     incident_id: PositiveID
     author_id: PositiveID
+    author_name: Name
     body: Body
     created_at: UTCDateTime

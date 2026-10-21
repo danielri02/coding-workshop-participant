@@ -268,6 +268,71 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
             [row["id"] for row in response.json()], [self.reports["engineer_owned"]]
         )
 
+    async def test_grid_rows_counts_and_search_share_incident_read_scope(self) -> None:
+        """Counts and pages cannot reveal incidents outside a persona's grants."""
+
+        counts = {
+            "employee": 1,
+            "other": 1,
+            "engineer": 2,
+            "replacement": 1,
+            "admin": 3,
+            "combined": 3,
+        }
+        for actor, count in counts.items():
+            response = await self.request(
+                actor, "GET", "/incidents/grid?page_size=1&search=light", 200
+            )
+            self.assertEqual(response.json()["row_count"], count)
+            self.assertEqual(len(response.json()["rows"]), 1)
+        async with self.factory.begin() as session:
+            (
+                await session.get(Incident, self.reports["other"])
+            ).title = "Hidden printer"
+        response = await self.request(
+            "employee", "GET", "/incidents/grid?search=printer", 200
+        )
+        self.assertEqual(response.json()["row_count"], 0)
+        self.assertEqual(response.json()["rows"], [])
+        response = await self.request(
+            "admin", "GET", "/incidents/grid?search=printer", 200
+        )
+        self.assertEqual(response.json()["row_count"], 1)
+
+    async def test_visible_incidents_and_notes_include_names_without_people_lookup(
+        self,
+    ) -> None:
+        """Employees see permitted workers/authors while the user directory stays private."""
+
+        incident_path = f"/incidents/{self.reports['assigned']}"
+        response = await self.request("employee", "GET", incident_path, 200)
+        self.assertEqual(response.json()["assignee_name"], "engineer")
+        await self.request("employee", "GET", f"/users/{self.ids['engineer']}", 403)
+        response = await self.request(
+            "engineer", "POST", incident_path + "/notes", 201, {"body": "Working on it"}
+        )
+        self.assertEqual(response.json()["author_name"], "engineer")
+        response = await self.request("employee", "GET", incident_path + "/notes", 200)
+        self.assertEqual(
+            [note["author_name"] for note in response.json()], ["employee", "engineer"]
+        )
+        for note in response.json():
+            self.assertNotIn("email", note)
+            self.assertNotIn("password_hash", note)
+        response = await self.request("employee", "GET", f"/notes/{self.note_id}", 200)
+        self.assertEqual(response.json()["author_name"], "employee")
+        await self.request(
+            "employee",
+            "PATCH",
+            f"/users/{self.ids['employee']}",
+            200,
+            {"name": "Updated employee"},
+        )
+        response = await self.request("employee", "GET", f"/notes/{self.note_id}", 200)
+        self.assertEqual(response.json()["author_name"], "Updated employee")
+        await self.request("other", "GET", incident_path, 403)
+        await self.request("other", "GET", f"/notes/{self.note_id}", 403)
+
     async def test_authenticated_identity_controls_reporter_and_note_author(
         self,
     ) -> None:

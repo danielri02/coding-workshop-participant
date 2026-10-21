@@ -1,15 +1,15 @@
 """Incident CRUD, assignment, priority, and workflow endpoints."""
 
 from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..database import crud
+from ..database.incident_queries import incident_criteria, incident_order
 from ..models import (
     EngineerProfile,
     Incident,
-    IncidentCategory,
-    IncidentPriority,
     IncidentStatus,
 )
 from ..schemas import (
@@ -20,14 +20,14 @@ from ..schemas import (
     IncidentRead,
     IncidentStatusUpdate,
 )
+from ..schemas.incident import IncidentFilters, IncidentGridQuery, IncidentPage
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import (
     accessible_incident,
-    incident_visibility,
     require_incident_worker,
     require_priority_access,
 )
-from .dependencies import DatabaseSession, OptionalQueryID, RecordID
+from .dependencies import INCIDENT_READ_OPTIONS, DatabaseSession, RecordID
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])
 TRANSITIONS = {
@@ -43,32 +43,46 @@ TRANSITIONS = {
 async def list_incidents(
     session: DatabaseSession,
     user: CurrentUser,
-    reporter_id: OptionalQueryID = None,
-    assignee_id: OptionalQueryID = None,
-    building_id: OptionalQueryID = None,
-    floor_id: OptionalQueryID = None,
-    seat_id: OptionalQueryID = None,
-    status: IncidentStatus | None = None,
-    priority: IncidentPriority | None = None,
-    category: IncidentCategory | None = None,
+    query: Annotated[IncidentFilters, Query()],
 ) -> list[Incident]:
     """List every matching incident without pagination."""
 
-    filters = {
-        "reporter_id": reporter_id,
-        "assignee_id": assignee_id,
-        "building_id": building_id,
-        "floor_id": floor_id,
-        "seat_id": seat_id,
-        "status": status,
-        "priority": priority,
-        "category": category,
-    }
+    filters, conditions = incident_criteria(query, user)
     return await crud.list_records(
         session,
         Incident,
-        filters={key: value for key, value in filters.items() if value is not None},
-        conditions=(incident_visibility(user),),
+        filters=filters,
+        conditions=conditions,
+        options=INCIDENT_READ_OPTIONS,
+    )
+
+
+@router.get("/grid", response_model=IncidentPage)
+async def grid_incidents(
+    session: DatabaseSession,
+    user: CurrentUser,
+    query: Annotated[IncidentGridQuery, Query()],
+) -> IncidentPage:
+    """Page/sort filtered incidents and return a total within the same read scope."""
+
+    filters, conditions = incident_criteria(query, user)
+    rows, count = await crud.page_records(
+        session,
+        Incident,
+        page=query.page,
+        page_size=query.page_size,
+        filters=filters,
+        conditions=conditions,
+        order_by=incident_order(query),
+        options=INCIDENT_READ_OPTIONS,
+    )
+    return IncidentPage.model_validate(
+        {
+            "rows": rows,
+            "row_count": count,
+            "page": query.page,
+            "page_size": query.page_size,
+        }
     )
 
 
@@ -82,7 +96,10 @@ async def create_incident(
         session, payload.building_id, payload.floor_id, payload.seat_id
     )
     return await crud.create_record(
-        session, Incident, {**payload.model_dump(), "reporter_id": user.id}
+        session,
+        Incident,
+        {**payload.model_dump(), "reporter_id": user.id},
+        options=INCIDENT_READ_OPTIONS,
     )
 
 
@@ -92,7 +109,9 @@ async def get_incident(
 ) -> Incident:
     """Read one incident."""
 
-    return await accessible_incident(session, incident_id, user)
+    return await accessible_incident(
+        session, incident_id, user, options=INCIDENT_READ_OPTIONS
+    )
 
 
 @router.patch("/{incident_id}", response_model=IncidentRead)
@@ -112,7 +131,9 @@ async def update_incident(
         values.get("floor_id", record.floor_id),
         values.get("seat_id", record.seat_id),
     )
-    return await crud.update_record(session, record, values)
+    return await crud.update_record(
+        session, record, values, options=INCIDENT_READ_OPTIONS
+    )
 
 
 @router.patch("/{incident_id}/priority", response_model=IncidentRead)
@@ -127,7 +148,10 @@ async def update_incident_priority(
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
     require_priority_access(user, record)
     return await crud.update_record(
-        session, record, payload.model_dump(exclude_unset=True)
+        session,
+        record,
+        payload.model_dump(exclude_unset=True),
+        options=INCIDENT_READ_OPTIONS,
     )
 
 
@@ -146,7 +170,9 @@ async def assign_incident(
         await crud.get_record(session, EngineerProfile, payload.assignee_id)
         if record.assigned_at is None:
             values["assigned_at"] = datetime.now(timezone.utc)
-    return await crud.update_record(session, record, values)
+    return await crud.update_record(
+        session, record, values, options=INCIDENT_READ_OPTIONS
+    )
 
 
 @router.patch("/{incident_id}/status", response_model=IncidentRead)
@@ -171,7 +197,9 @@ async def update_incident_status(
         values["acknowledged_at"] = now
     if payload.status == IncidentStatus.RESOLVED and record.resolved_at is None:
         values["resolved_at"] = now
-    return await crud.update_record(session, record, values)
+    return await crud.update_record(
+        session, record, values, options=INCIDENT_READ_OPTIONS
+    )
 
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)

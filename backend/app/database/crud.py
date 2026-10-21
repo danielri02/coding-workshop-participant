@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar
 
 from fastapi import HTTPException, status
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ORMOption
@@ -55,6 +55,30 @@ async def list_records(
         .order_by(*(order_by or inspect(model).primary_key))
     )
     return list(await session.scalars(statement))
+
+
+async def page_records(
+    session: AsyncSession,
+    model: type[Model],
+    *,
+    page: int,
+    page_size: int,
+    filters: Mapping[str, Any] | None = None,
+    conditions: Sequence[SQLColumnExpression[bool]] = (),
+    options: Sequence[ORMOption] = (),
+    order_by: Sequence[SQLColumnExpression[Any]] = (),
+) -> tuple[list[Model], int]:
+    """Page a filtered query and count only records matching that same scope."""
+
+    statement = select(model).filter_by(**(filters or {})).where(*conditions)
+    count = await session.scalar(select(func.count()).select_from(statement.subquery()))
+    statement = (
+        statement.options(*options)
+        .order_by(*(order_by or inspect(model).primary_key))
+        .offset(page * page_size)
+        .limit(page_size)
+    )
+    return list(await session.scalars(statement)), count or 0
 
 
 async def commit(session: AsyncSession) -> None:

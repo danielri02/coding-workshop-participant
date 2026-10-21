@@ -1,6 +1,7 @@
 """Regression checks for application imports from supported working directories."""
 
 import asyncio
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -18,41 +19,52 @@ import asyncio
 import importlib
 import json
 import sys
+from httpx import ASGITransport, AsyncClient
 
 app = importlib.import_module(sys.argv[1]).app
 assert '/auth/login' in app.openapi()['paths']
 assert '/incidents' in app.openapi()['paths']
 
 async def check():
-    messages = []
-    async def receive():
-        return {'type': 'http.request', 'body': b'', 'more_body': False}
-    async def send(message):
-        messages.append(message)
+    origin = sys.argv[2]
     async with app.router.lifespan_context(app):
-        await app({
-            'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
-            'method': 'GET', 'scheme': 'http', 'path': '/health',
-            'raw_path': b'/health', 'query_string': b'', 'root_path': '',
-            'headers': [], 'server': ('testserver', 80), 'client': ('127.0.0.1', 1234),
-        }, receive, send)
-    start = next(message for message in messages if message['type'] == 'http.response.start')
-    body = b''.join(message.get('body', b'') for message in messages if message['type'] == 'http.response.body')
-    assert start['status'] == 200 and json.loads(body) == {'status': 'ok'}
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://testserver') as client:
+            response = await client.get('/health')
+            assert response.status_code == 200 and response.json() == {'status': 'ok'}
+            headers = {'Origin': origin, 'Access-Control-Request-Method': 'GET',
+                       'Access-Control-Request-Headers': 'authorization,content-type'}
+            response = await client.options('/incidents', headers=headers)
+            assert response.status_code == 200, response.text
+            assert response.headers['access-control-allow-origin'] == origin
+            assert 'authorization' in response.headers['access-control-allow-headers'].lower()
+            response = await client.get('/incidents', headers={'Origin': origin})
+            assert response.status_code == 401
+            assert response.headers['access-control-allow-origin'] == origin
+            headers['Origin'] = 'https://unapproved.example'
+            response = await client.options('/incidents', headers=headers)
+            assert response.status_code == 400
+            assert 'access-control-allow-origin' not in response.headers
 
 asyncio.run(check())
 """
-        for directory, module in (
-            (repository, "backend.app.main"),
-            (repository / "backend", "app.main"),
+        for directory, module, origin in (
+            (repository, "backend.app.main", "http://localhost:3000"),
+            (repository / "backend", "app.main", "http://localhost:3000"),
+            (repository / "backend", "app.main", "http://localhost:5173"),
         ):
-            with self.subTest(module=module):
+            with self.subTest(module=module, origin=origin):
+                environment = {**os.environ}
+                environment.pop("FRONTEND_ORIGIN", None)
+                if origin != "http://localhost:3000":
+                    environment["FRONTEND_ORIGIN"] = origin
                 process = await asyncio.create_subprocess_exec(
                     sys.executable,
                     "-c",
                     script,
                     module,
+                    origin,
                     cwd=directory,
+                    env=environment,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
