@@ -39,6 +39,19 @@ class ReportQuery(Schema):
     sort_direction: Literal["asc", "desc"] = "desc"
 
 
+class IncidentSummary(Schema):
+    """Counts across a complete authorized scope, independent of grid filters."""
+
+    scope: ReportScope
+    total_count: Count
+    active_count: Count
+    open_count: Count
+    in_progress_count: Count
+    blocked_count: Count
+    resolved_count: Count
+    closed_count: Count
+
+
 class ReportPage(Schema, Generic[Row]):
     rows: list[Row]
     row_count: Count

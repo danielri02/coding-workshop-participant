@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 from ..database import reports
 from ..schemas.report import (
     CategoryReport,
+    IncidentSummary,
     LocationReport,
     ReportQuery,
     ReportScope,
@@ -18,6 +19,15 @@ from .dependencies import DatabaseSession
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 PagedQuery = Annotated[ReportQuery, Query()]
+
+
+@router.get("/summary", response_model=IncidentSummary)
+async def summary(
+    session: DatabaseSession,
+    user: CurrentUser,
+    scope: ReportScope = ReportScope.PERSONAL,
+):
+    return await reports.summary(session, user, scope)
 
 
 @router.get("/locations", response_model=LocationReport)

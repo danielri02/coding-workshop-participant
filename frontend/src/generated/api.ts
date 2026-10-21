@@ -161,7 +161,7 @@ export interface components {
     }
     /**
      * IncidentAssignment
-     * @description Admin-only assignment or unassignment; preserve the first assigned_at.
+     * @description Admin-only assignment; a new assignee starts In Progress automatically.
      */
     IncidentAssignment: {
       /** Assignee Id */
@@ -281,6 +281,27 @@ export interface components {
       /** Blocked Reason */
       blocked_reason?: string | null
       status: components['schemas']['IncidentStatus']
+    }
+    /**
+     * IncidentSummary
+     * @description Counts across a complete authorized scope, independent of grid filters.
+     */
+    IncidentSummary: {
+      /** Active Count */
+      active_count: number
+      /** Blocked Count */
+      blocked_count: number
+      /** Closed Count */
+      closed_count: number
+      /** In Progress Count */
+      in_progress_count: number
+      /** Open Count */
+      open_count: number
+      /** Resolved Count */
+      resolved_count: number
+      scope: components['schemas']['ReportScope']
+      /** Total Count */
+      total_count: number
     }
     /** LocationReport */
     LocationReport: {

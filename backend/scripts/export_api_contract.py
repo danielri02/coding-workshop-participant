@@ -12,7 +12,11 @@ if __package__ in {None, "", "scripts"}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backend.app.deployment import API_PREFIX, SERVICE_NAME
-from backend.app.domain.incidents import ACTIVE_STATUSES, TRANSITIONS
+from backend.app.domain.incidents import (
+    ACTIVE_STATUSES,
+    ADMIN_TRANSITIONS,
+    ENGINEER_TRANSITIONS,
+)
 from backend.app.main import app
 
 
@@ -24,10 +28,14 @@ def main() -> None:
     document["x-incident-workflow"] = {
         "transitions": {
             current.value: [following.value for following in permitted]
-            for current, permitted in TRANSITIONS.items()
+            for current, permitted in ENGINEER_TRANSITIONS.items()
+        },
+        "adminTransitions": {
+            current.value: [following.value for following in permitted]
+            for current, permitted in ADMIN_TRANSITIONS.items()
         },
         "activeStatuses": [
-            state.value for state in TRANSITIONS if state in ACTIVE_STATUSES
+            state.value for state in ENGINEER_TRANSITIONS if state in ACTIVE_STATUSES
         ],
     }
     print(json.dumps(document, sort_keys=True))

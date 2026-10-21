@@ -37,6 +37,7 @@ const domain = {
   priorities: schemas.IncidentPriority.enum,
   categories: schemas.IncidentCategory.enum,
   transitions: document['x-incident-workflow'].transitions,
+  adminTransitions: document['x-incident-workflow'].adminTransitions,
   activeStatuses: document['x-incident-workflow'].activeStatuses,
 }
 const constraints = {}

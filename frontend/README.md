@@ -119,6 +119,11 @@ backend authorization also protects direct API calls and other employees' record
 Engineers retain this submission/tracking view under the My incidents tab. It
 filters by reporter independently of the Assigned to me tab.
 
+Below the page header, summary cards show all the employee's active, resolved and
+closed reports. They cover the full personal scope and stay unchanged when grid
+search, filters or pagination change. Creating a report or refreshing reloads the
+summary along with affected incident data.
+
 ### Engineer workspace
 
 Engineers enter `/engineer/incidents` by default. Assigned to me uses the same
@@ -128,12 +133,18 @@ page verifies the matching scope; an incident owned by the engineer but assigned
 to someone else does not appear as assigned work.
 
 Assigned incident details show the reporter, location, workflow and shared notes.
-Change status uses the same valid transitions and blocked-reason validation as the
-admin form. Engineers can post notes on active assignments; resolved/closed notes
+Assignment starts work automatically. Engineers may move In Progress to Blocked
+or Resolved, and return Blocked or Resolved to In Progress. Only admins can close
+or choose arbitrary statuses. Blocked requires a reason. Engineers can post notes on active assignments; resolved/closed notes
 remain readable. Current assignment is checked by the backend on every operation,
 so reassignment removes workflow access. Refresh reloads the incident and its
-notes. Priority changes remain a reporter/admin capability, and engineer pages
+notes. Priority changes remain admin-only, and engineer pages
 provide no assignment, deletion or people-management controls.
+
+Engineer summary cards below the header show in-progress, blocked and resolved
+current assignments across the full assigned scope. The My incidents tab uses
+the personal summary instead. Mutations and Refresh update summaries, and counts
+never include another engineer's assignments merely because the grid is filtered.
 
 `src/incidents/` shares list/detail/notes/progress components across employee and
 engineer scopes. `components/MemberLayout.tsx` owns their responsive account
@@ -187,8 +198,9 @@ required/length validation, pending states and visible API errors. Parent facili
 associations stay fixed during label edits, matching the API.
 
 Incident details expose Assign engineer, Priority and escalation, and Change
-status; the three-dot row menu provides the same controls. Status options follow
-the workflow and require a reason when moving to Blocked. Click an incident title
+status; the three-dot row menu provides the same controls. Admins can choose any
+other status, including reopening Closed tickets, with a reason required for
+Blocked. Assigning a new engineer starts In Progress automatically. Click an incident title
 to open its details. Assigned engineer names link to the engineer profile, and View
 notes opens the incident's notes grid from either the grid or details dialog.
 Record links use `?record=<id>` and reopen the details dialog after a reload.

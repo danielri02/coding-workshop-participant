@@ -73,7 +73,7 @@ class IncidentPriorityUpdate(PatchSchema):
 
 
 class IncidentAssignment(Schema):
-    """Admin-only assignment or unassignment; preserve the first assigned_at."""
+    """Admin-only assignment; a new assignee starts In Progress automatically."""
 
     assignee_id: PositiveID | None
 
@@ -86,10 +86,8 @@ class IncidentStatusUpdate(Schema):
 
     @model_validator(mode="after")
     def validate_status_reason(self) -> Self:
-        """Require blocked context, clear it otherwise, and disallow reopening."""
+        """Require blocked context; services authorize the requested transition."""
 
-        if self.status == IncidentStatus.OPEN:
-            raise ValueError("Incidents cannot transition back to Open")
         if self.status == IncidentStatus.BLOCKED and self.blocked_reason is None:
             raise ValueError("Blocked incidents require a blocked reason")
         if self.status != IncidentStatus.BLOCKED and self.blocked_reason is not None:

@@ -1,4 +1,4 @@
-import { constraints, priorities, transitions } from '../generated/domain'
+import { adminTransitions, constraints, priorities, transitions } from '../generated/domain'
 import type { AdminRow, FormRow, IncidentStatus } from '../types'
 import type { ResourceDefinition } from './definitions'
 import type { Field } from './forms'
@@ -25,9 +25,9 @@ export const priorityFields: Field[] = [
   },
 ]
 
-/** Share valid transitions and blocked-reason validation across admin and engineer forms. */
-export function statusFields(status: IncidentStatus): Field[] {
-  const next = transitions[status]
+/** Share blocked-reason inputs while using the actor's permitted status choices. */
+export function statusFields(status: IncidentStatus, admin = false): Field[] {
+  const next = admin ? adminTransitions[status] : transitions[status]
   return [
     {
       name: 'status',
@@ -50,13 +50,11 @@ export function statusFields(status: IncidentStatus): Field[] {
 export type IncidentCommand = 'assignment' | 'priority' | 'status'
 
 /** Use the same workflow controls in row menus and incident details. */
-export function incidentCommands(row: AdminRow): { action: IncidentCommand; label: string }[] {
+export function incidentCommands(): { action: IncidentCommand; label: string }[] {
   return [
     { action: 'assignment', label: 'Assign engineer' },
     { action: 'priority', label: 'Priority and escalation' },
-    ...(row.status && transitions[row.status].length
-      ? [{ action: 'status' as const, label: 'Change status' }]
-      : []),
+    { action: 'status', label: 'Change status' },
   ]
 }
 
@@ -71,7 +69,8 @@ export function editorForm(resource: ResourceDefinition, editor: Editor | null) 
         label: 'Assigned engineer',
         type: 'select',
         numeric: true,
-        helper: 'Choose None to leave this incident unassigned.',
+        helper:
+          'A new engineer assignment starts In Progress. None clears the assignee and keeps the current status.',
         options: (data) =>
           data.users
             .filter((row) => row.engineer_profile)
@@ -80,7 +79,7 @@ export function editorForm(resource: ResourceDefinition, editor: Editor | null) 
     ]
   if (editor?.action === 'priority') fields = priorityFields
   if (editor?.action === 'status') {
-    fields = editor.row?.status ? statusFields(editor.row.status) : []
+    fields = editor.row?.status ? statusFields(editor.row.status, true) : []
     formRow = editor.row ? { ...editor.row, status: '', blocked_reason: '' } : null
   }
   const formTitle =

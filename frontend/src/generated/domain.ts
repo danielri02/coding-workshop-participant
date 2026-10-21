@@ -35,8 +35,16 @@ export const transitions = {
   Blocked: ['In Progress'],
   Closed: [],
   'In Progress': ['Blocked', 'Resolved'],
-  Open: ['In Progress'],
-  Resolved: ['Closed'],
+  Open: [],
+  Resolved: ['In Progress'],
+} as const
+
+export const adminTransitions = {
+  Blocked: ['Open', 'In Progress', 'Resolved', 'Closed'],
+  Closed: ['Open', 'In Progress', 'Blocked', 'Resolved'],
+  'In Progress': ['Open', 'Blocked', 'Resolved', 'Closed'],
+  Open: ['In Progress', 'Blocked', 'Resolved', 'Closed'],
+  Resolved: ['Open', 'In Progress', 'Blocked', 'Closed'],
 } as const
 
 export const activeStatuses = ['Open', 'In Progress', 'Blocked'] as const

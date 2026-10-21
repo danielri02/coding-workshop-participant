@@ -74,6 +74,32 @@ def criteria(user: User, query: ReportQuery) -> list:
     return conditions
 
 
+async def summary(session: AsyncSession, user: User, scope: ReportScope) -> dict:
+    """Count statuses in SQL without loading rows or including another user's work."""
+
+    counts = (
+        (
+            await session.execute(
+                select(
+                    func.count().label("total_count"),
+                    func.count().filter(ACTIVE).label("active_count"),
+                    *[
+                        func.count()
+                        .filter(Incident.status == state)
+                        .label(f"{state.name.lower()}_count")
+                        for state in IncidentStatus
+                    ],
+                )
+                .select_from(Incident)
+                .where(visibility(user, scope))
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return {"scope": scope, **counts}
+
+
 def tickets(*extra):
     return (
         select(*TICKET_COLUMNS, *extra)

@@ -18,6 +18,7 @@ import { invalidateResourceQueries } from '../services/queries'
 import type { Incident, IncidentPage } from '../types'
 import { incidentColumns } from './columns'
 import { incidentViews, type IncidentScope } from './scope'
+import { IncidentSummary } from './IncidentSummary'
 
 /** Share search/paging and creation while enforcing the selected incident scope. */
 export function IncidentListPage({ scope }: { scope: IncidentScope }) {
@@ -80,6 +81,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
           </Button>
         )}
       </Stack>
+      <IncidentSummary key={scope} scope={scope} onRefresh={refresh} />
       {failure && (
         <Alert severity="error" action={<Button onClick={refresh}>Retry</Button>}>
           {failure}

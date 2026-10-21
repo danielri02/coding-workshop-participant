@@ -131,6 +131,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                     **self.report_data(),
                     reporter_id=self.ids[reporter],
                     assignee_id=self.ids[assignee] if assignee else None,
+                    status="In Progress" if assignee else "Open",
                 )
                 session.add(report)
                 await session.flush()
@@ -573,10 +574,12 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                         actor, "PATCH", f"/notes/{note_id}", 403, {"body": "Correction"}
                     )
                     await self.request(actor, "DELETE", f"/notes/{note_id}", 403)
-        for state in ("In Progress", "Resolved", "Closed"):
-            await self.request(
-                "engineer", "PATCH", incident_path + "/status", 200, {"status": state}
-            )
+        await self.request(
+            "engineer", "PATCH", incident_path + "/status", 200, {"status": "Resolved"}
+        )
+        await self.request(
+            "admin", "PATCH", incident_path + "/status", 200, {"status": "Closed"}
+        )
         for actor in ("employee", "engineer", "admin", "combined"):
             await self.request(actor, "GET", incident_path + "/notes", 200)
             await self.request(
@@ -631,13 +634,39 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
             {"priority": "High"},
         )
         for payload in (
-            {"status": "In Progress"},
             {"status": "Blocked", "blocked_reason": "Waiting"},
             {"status": "In Progress"},
             {"status": "Resolved"},
-            {"status": "Closed"},
+            {"status": "In Progress"},
+            {"status": "Resolved"},
         ):
             await self.request("engineer", "PATCH", path + "/status", 200, payload)
+        for state in ("Open", "Closed"):
+            await self.request(
+                "engineer", "PATCH", path + "/status", 403, {"status": state}
+            )
+        await self.request(
+            "engineer",
+            "PATCH",
+            path + "/status",
+            409,
+            {"status": "Blocked", "blocked_reason": "Not a permitted transition"},
+        )
+        await self.request(
+            "admin", "PATCH", path + "/status", 200, {"status": "Closed"}
+        )
+        await self.request(
+            "engineer", "PATCH", path + "/status", 409, {"status": "In Progress"}
+        )
+        await self.request(
+            "combined", "PATCH", path + "/status", 200, {"status": "Open"}
+        )
+        await self.request(
+            "engineer", "PATCH", path + "/status", 409, {"status": "Resolved"}
+        )
+        await self.request(
+            "admin", "PATCH", path + "/status", 200, {"status": "Closed"}
+        )
         await self.request(
             "employee", "PATCH", path + "/priority", 403, {"priority": "Low"}
         )

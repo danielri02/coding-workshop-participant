@@ -567,6 +567,8 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         first_assigned = response.json()["assigned_at"]
         self.assertIsNotNone(first_assigned)
+        self.assertEqual(response.json()["status"], "In Progress")
+        self.assertEqual(response.json()["acknowledged_at"], first_assigned)
         self.assertEqual(
             (
                 await self.client.delete(f"/engineer-profiles/{self.engineer_id}")
@@ -576,19 +578,19 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/engineer-profiles", json={"user_id": self.reporter_id})
         response = await self.client.patch(path, json={"assignee_id": self.reporter_id})
         self.assertEqual(response.json()["assigned_at"], first_assigned)
+        self.assertEqual(response.json()["status"], "In Progress")
         response = await self.client.patch(path, json={"assignee_id": None})
         self.assertIsNone(response.json()["assignee_id"])
         self.assertEqual(response.json()["assigned_at"], first_assigned)
 
     async def test_workflow_milestones_and_blocked_reason(self) -> None:
-        """Allow the documented state graph and preserve first-entry timestamps."""
+        """Admins can skip/reopen stages without losing first-entry timestamps."""
 
         report = await self.create_report()
         path = f"/incidents/{report['id']}/status"
-        self.assertEqual(
-            (await self.client.patch(path, json={"status": "Resolved"})).status_code,
-            409,
-        )
+        direct = await self.client.patch(path, json={"status": "Resolved"})
+        self.assertEqual(direct.status_code, 200, direct.text)
+        first_resolved = direct.json()["resolved_at"]
         response = await self.client.patch(path, json={"status": "In Progress"})
         self.assertEqual(response.status_code, 200, response.text)
         first_acknowledged = response.json()["acknowledged_at"]
@@ -606,6 +608,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.patch(path, json={"status": "Resolved"})
         resolved_at = response.json()["resolved_at"]
         self.assertIsNotNone(resolved_at)
+        self.assertEqual(resolved_at, first_resolved)
         self.assertEqual(
             (
                 await self.client.post(
@@ -621,11 +624,47 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["resolved_at"], resolved_at)
         self.assertEqual(
             (await self.client.patch(path, json={"status": "In Progress"})).status_code,
-            409,
+            200,
         )
         self.assertEqual(
-            (await self.client.patch(path, json={"status": "Open"})).status_code, 422
+            (await self.client.patch(path, json={"status": "Open"})).status_code, 200
         )
+
+    async def test_assignment_starts_work_without_rewriting_same_assignment_or_history(
+        self,
+    ) -> None:
+        report = await self.create_report()
+        path = f"/incidents/{report['id']}"
+        response = await self.client.patch(
+            path + "/assignment", json={"assignee_id": self.engineer_id}
+        )
+        first = response.json()
+        self.assertEqual(first["status"], "In Progress")
+        await self.client.patch(
+            path + "/status", json={"status": "Blocked", "blocked_reason": "Waiting"}
+        )
+        response = await self.client.patch(
+            path + "/assignment", json={"assignee_id": self.engineer_id}
+        )
+        self.assertEqual(response.json()["status"], "Blocked")
+        self.assertEqual(response.json()["blocked_reason"], "Waiting")
+        await self.client.post("/engineer-profiles", json={"user_id": self.reporter_id})
+        response = await self.client.patch(
+            path + "/assignment", json={"assignee_id": self.reporter_id}
+        )
+        self.assertEqual(response.json()["status"], "In Progress")
+        self.assertIsNone(response.json()["blocked_reason"])
+        for milestone in ("assigned_at", "acknowledged_at"):
+            self.assertEqual(response.json()[milestone], first[milestone])
+        await self.client.patch(path + "/status", json={"status": "Closed"})
+        response = await self.client.patch(
+            path + "/assignment", json={"assignee_id": None}
+        )
+        self.assertEqual(response.json()["status"], "Closed")
+        response = await self.client.patch(
+            path + "/assignment", json={"assignee_id": self.engineer_id}
+        )
+        self.assertEqual(response.json()["status"], "In Progress")
 
     async def test_note_crud_and_incident_cascade(self) -> None:
         """Notes support all CRUD operations and disappear with their incident."""

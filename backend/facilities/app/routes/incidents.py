@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..database import crud
 from ..database.incident_queries import incident_criteria, incident_order
-from ..domain.incidents import TRANSITIONS
+from ..domain.incidents import ENGINEER_TRANSITIONS
 from ..models import (
     EngineerProfile,
     Incident,
@@ -30,6 +30,24 @@ from ..security.permissions import (
 from .dependencies import INCIDENT_READ_OPTIONS, DatabaseSession, RecordID
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])
+
+
+def _status_values(
+    record: Incident, payload: IncidentStatusUpdate, now: datetime
+) -> dict:
+    """Clear obsolete blocking context and preserve first-entry milestones."""
+
+    values = payload.model_dump()
+    if (
+        payload.status in {IncidentStatus.IN_PROGRESS, IncidentStatus.RESOLVED}
+        and record.acknowledged_at is None
+    ):
+        # Resolution implies work started, including when admins skip a stage.
+        # Older directly-resolved records must also retain ordered milestones.
+        values["acknowledged_at"] = record.resolved_at or now
+    if payload.status == IncidentStatus.RESOLVED and record.resolved_at is None:
+        values["resolved_at"] = now
+    return values
 
 
 @router.get("", response_model=list[IncidentRead])
@@ -162,14 +180,21 @@ async def assign_incident(
     session: DatabaseSession,
     _admin: AdminUser,
 ) -> Incident:
-    """Assign/reassign/unassign while preserving the first-assignment milestone."""
+    """A new assignee starts In Progress; unassignment retains the current status."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
     values = payload.model_dump()
     if payload.assignee_id is not None:
         await crud.get_record(session, EngineerProfile, payload.assignee_id)
+        now = datetime.now(timezone.utc)
         if record.assigned_at is None:
-            values["assigned_at"] = datetime.now(timezone.utc)
+            values["assigned_at"] = now
+        if payload.assignee_id != record.assignee_id:
+            values.update(
+                _status_values(
+                    record, IncidentStatusUpdate(status=IncidentStatus.IN_PROGRESS), now
+                )
+            )
     return await crud.update_record(
         session, record, values, options=INCIDENT_READ_OPTIONS
     )
@@ -182,21 +207,19 @@ async def update_incident_status(
     session: DatabaseSession,
     user: CurrentUser,
 ) -> Incident:
-    """Apply a valid transition and maintain first-entry milestone timestamps."""
+    """Admins choose any state; engineers follow the assigned-work transitions."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
     require_incident_worker(user, record)
-    if payload.status not in TRANSITIONS[record.status]:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"Cannot transition from {record.status.value} to {payload.status.value}",
-        )
-    values = payload.model_dump()
-    now = datetime.now(timezone.utc)
-    if payload.status == IncidentStatus.IN_PROGRESS and record.acknowledged_at is None:
-        values["acknowledged_at"] = now
-    if payload.status == IncidentStatus.RESOLVED and record.resolved_at is None:
-        values["resolved_at"] = now
+    if not user.is_admin:
+        if payload.status in {IncidentStatus.OPEN, IncidentStatus.CLOSED}:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin capability required")
+        if payload.status not in ENGINEER_TRANSITIONS[record.status]:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Cannot transition from {record.status.value} to {payload.status.value}",
+            )
+    values = _status_values(record, payload, datetime.now(timezone.utc))
     return await crud.update_record(
         session, record, values, options=INCIDENT_READ_OPTIONS
     )

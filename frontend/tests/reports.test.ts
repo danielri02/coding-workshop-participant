@@ -37,13 +37,19 @@ test('duration labels distinguish missing, immediate and sub-minute responses', 
 test('CRUD changes invalidate cached report aggregates and engineer availability', async () => {
   const client = createQueryClient()
   try {
-    const key = ['api', '/reports/workload']
-    client.setQueryData(key, { rows: [] })
+    const keys = [
+      '/reports/workload',
+      '/reports/summary?scope=personal',
+      '/reports/summary?scope=assigned',
+    ].map((path) => ['api', path])
+    for (const key of keys) client.setQueryData(key, {})
     await invalidateResourceQueries(client, 'engineers')
-    assert.equal(client.getQueryState(key)?.isInvalidated, true)
-    client.setQueryData(key, { rows: [] })
+    for (const key of keys) {
+      assert.equal(client.getQueryState(key)?.isInvalidated, true)
+      client.setQueryData(key, {})
+    }
     await invalidateResourceQueries(client, 'incidents')
-    assert.equal(client.getQueryState(key)?.isInvalidated, true)
+    for (const key of keys) assert.equal(client.getQueryState(key)?.isInvalidated, true)
   } finally {
     client.clear()
   }

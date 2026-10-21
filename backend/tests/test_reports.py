@@ -182,6 +182,99 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["rows"][0]["id"], self.incidents[0])
         self.assertEqual(second["rows"][0]["id"], self.incidents[1])
 
+    async def test_summary_counts_complete_personal_and_assigned_scopes(self) -> None:
+        personal = await self.report("summary", "employee")
+        self.assertEqual(
+            personal,
+            {
+                "scope": "personal",
+                "total_count": 2,
+                "active_count": 2,
+                "open_count": 1,
+                "in_progress_count": 1,
+                "blocked_count": 0,
+                "resolved_count": 0,
+                "closed_count": 0,
+            },
+        )
+        assigned = await self.report("summary", "engineer", scope="assigned")
+        self.assertEqual(
+            assigned,
+            {
+                "scope": "assigned",
+                "total_count": 3,
+                "active_count": 2,
+                "open_count": 0,
+                "in_progress_count": 1,
+                "blocked_count": 1,
+                "resolved_count": 1,
+                "closed_count": 0,
+            },
+        )
+        self.assertEqual((await self.report("summary", "engineer"))["total_count"], 0)
+        self.assertEqual(
+            (await self.report("summary", "idle", scope="assigned"))["total_count"], 0
+        )
+        all_counts = await self.report("summary", scope="visible")
+        self.assertEqual(all_counts["total_count"], 5)
+        for field in (
+            "open_count",
+            "in_progress_count",
+            "blocked_count",
+            "resolved_count",
+            "closed_count",
+        ):
+            self.assertEqual(all_counts[field], 1)
+        # Caller-supplied IDs/search cannot replace identity or narrow these all-scope totals.
+        self.assertEqual(
+            await self.report(
+                "summary",
+                "employee",
+                reporter_id=self.users["other"],
+                search="nonexistent",
+                page_size=1,
+            ),
+            personal,
+        )
+
+    async def test_summary_follows_assignment_resolution_and_reassignment(self) -> None:
+        path = f"/incidents/{self.incidents[0]}"
+        response = await self.client.patch(
+            path + "/assignment",
+            headers=self.headers["admin"],
+            json={"assignee_id": self.users["engineer"]},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "In Progress")
+        assigned = await self.report("summary", "engineer", scope="assigned")
+        self.assertEqual(
+            (assigned["total_count"], assigned["in_progress_count"]), (4, 2)
+        )
+        response = await self.client.patch(
+            path + "/status",
+            headers=self.headers["engineer"],
+            json={"status": "Resolved"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        own = await self.report("summary", "employee")
+        self.assertEqual((own["active_count"], own["resolved_count"]), (1, 1))
+        response = await self.client.patch(
+            path + "/assignment",
+            headers=self.headers["admin"],
+            json={"assignee_id": self.users["idle"]},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            (await self.report("summary", "engineer", scope="assigned"))["total_count"],
+            3,
+        )
+        self.assertEqual(
+            (await self.report("summary", "idle", scope="assigned"))[
+                "in_progress_count"
+            ],
+            1,
+        )
+
     async def test_recurrence_ranks_location_category_groups_at_each_level(
         self,
     ) -> None:
@@ -235,11 +328,15 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["unassigned_count"], 1)
 
     async def test_authentication_privilege_and_query_validation(self) -> None:
-        for endpoint in ("locations", "categories", "timings", "workload"):
+        for endpoint in ("locations", "categories", "timings", "workload", "summary"):
             self.assertEqual(
                 (await self.client.get(f"/reports/{endpoint}")).status_code, 401
             )
-        for endpoint in ("workload", "categories?scope=assigned"):
+        for endpoint in (
+            "workload",
+            "categories?scope=assigned",
+            "summary?scope=assigned",
+        ):
             self.assertEqual(
                 (
                     await self.client.get(
@@ -254,6 +351,7 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             "timings?page=-1",
             "locations?level=unknown",
             "categories?scope=all",
+            "summary?scope=all",
         ):
             self.assertEqual(
                 (
@@ -269,6 +367,14 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             await session.execute(delete(Note))
             await session.execute(delete(Incident))
         self.assertFalse((await self.report("locations"))["rows"])
+        summary = await self.report("summary", scope="visible")
+        self.assertTrue(
+            all(
+                value == 0
+                for field, value in summary.items()
+                if field.endswith("_count")
+            )
+        )
         self.assertTrue(
             all(
                 row["percentage"] == 0

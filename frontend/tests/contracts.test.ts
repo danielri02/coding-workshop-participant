@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { incidentQuery } from '../src/resources/incidentQuery'
 import { formPayload, type Field } from '../src/resources/forms'
 import { decorateRow } from '../src/resources/rows'
-import { transitions } from '../src/generated/domain'
+import { adminTransitions, transitions } from '../src/generated/domain'
 import { createQueryClient, invalidateResourceQueries } from '../src/services/queries'
 import type { Lookups, EngineerProfile } from '../src/types'
 
@@ -55,6 +55,10 @@ test('resuming work clears the blocked reason without reopening the incident', (
   )
   assert.deepEqual(transitions.Blocked, ['In Progress'])
   assert.deepEqual(transitions.Closed, [])
+  assert.deepEqual(transitions.Open, [])
+  assert.deepEqual(transitions.Resolved, ['In Progress'])
+  assert.ok(adminTransitions.Closed.includes('Open'))
+  assert.ok(adminTransitions.Open.includes('Closed'))
 })
 
 test('grid queries retain false filters, ignore cleared values and encode literal search', () => {

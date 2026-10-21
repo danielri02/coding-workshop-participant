@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pydantic import ValidationError
 
 from backend.app import schemas
-from backend.app.models import IncidentPriority
+from backend.app.models import IncidentPriority, IncidentStatus
 from backend.app.schemas import (
     BuildingCreate,
     EngineerProfileCreate,
@@ -233,14 +233,13 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             EngineerProfileCreate(user_id=1, is_available="false")
 
-    def test_blocked_reason_and_no_reopening(self) -> None:
-        """Status requests cannot omit required context or reenter Open."""
+    def test_blocked_reason_and_role_neutral_status_validation(self) -> None:
+        """Validate blocked context; authorization decides whether reopening is allowed."""
 
         for data in (
             {"status": "Blocked"},
             {"status": "Blocked", "blocked_reason": " "},
             {"status": "Resolved", "blocked_reason": "Waiting"},
-            {"status": "Open"},
         ):
             with self.subTest(data=data), self.assertRaises(ValidationError):
                 IncidentStatusUpdate(**data)
@@ -251,6 +250,9 @@ class SchemaTests(unittest.TestCase):
             "Waiting for parts",
         )
         self.assertIsNone(IncidentStatusUpdate(status="In Progress").blocked_reason)
+        self.assertEqual(
+            IncidentStatusUpdate(status="Open").status, IncidentStatus.OPEN
+        )
 
     def test_read_timestamps_are_aware_and_normalized_to_utc(self) -> None:
         """Reject ambiguous naive timestamps and serialize a UTC instant."""

@@ -46,6 +46,23 @@ async function select(page: Page, name: string, option: string) {
   await page.getByRole('option', { name: option, exact: true }).click()
 }
 
+async function expectSummary(
+  page: Page,
+  scope: 'personal' | 'assigned',
+  counts: Record<string, number>,
+) {
+  const summary = page.getByRole('region', {
+    name: scope === 'assigned' ? 'Assigned incident summary' : 'My incident summary',
+    exact: true,
+  })
+  for (const [label, value] of Object.entries(counts))
+    await expect(
+      summary
+        .getByRole('article', { name: label, exact: true })
+        .getByText(String(value), { exact: true }),
+    ).toBeVisible()
+}
+
 async function save(page: Page, path: string, method = 'POST') {
   const responsePromise = page.waitForResponse(
     (response) =>
@@ -248,7 +265,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await save(page, `/incidents/${incident.id}/assignment`, 'PATCH')
   await page.getByRole('button', { name: `More actions for incidents ${incident.id}` }).click()
   await page.getByRole('menuitem', { name: 'Change status', exact: true }).click()
-  await select(page, 'Next status', 'In Progress')
+  await select(page, 'Next status', 'Open')
   await save(page, `/incidents/${incident.id}/status`, 'PATCH')
   await page.getByRole('button', { name: `More actions for incidents ${incident.id}` }).click()
   await page.getByRole('menuitem', { name: 'View notes', exact: true }).click()
@@ -710,7 +727,8 @@ test('incident details expose admin controls and links to notes and engineer pro
     .getByRole('button', { name: 'Assign engineer', exact: true })
     .click()
   await select(page, 'Assigned engineer', engineerUser.name)
-  await save(page, `/incidents/${incident.id}/assignment`, 'PATCH')
+  const assignment = await save(page, `/incidents/${incident.id}/assignment`, 'PATCH')
+  expect(assignment.status).toBe('In Progress')
   await openIncident()
   await page
     .getByRole('dialog')
@@ -718,6 +736,10 @@ test('incident details expose admin controls and links to notes and engineer pro
     .click()
   await select(page, 'Priority', 'High')
   await save(page, `/incidents/${incident.id}/priority`, 'PATCH')
+  await openIncident()
+  await page.getByRole('dialog').getByRole('button', { name: 'Change status', exact: true }).click()
+  await select(page, 'Next status', 'Closed')
+  await save(page, `/incidents/${incident.id}/status`, 'PATCH')
   await openIncident()
   await page.getByRole('dialog').getByRole('button', { name: 'Change status', exact: true }).click()
   await select(page, 'Next status', 'In Progress')
@@ -796,6 +818,15 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
       headers: { Authorization: `Bearer ${employeeToken}` },
     })
   ).json()
+  const activeBefore = owned.filter((row: { status: string }) =>
+    ['Open', 'In Progress', 'Blocked'].includes(row.status),
+  ).length
+  const summary = page.getByRole('region', { name: 'My incident summary', exact: true })
+  await expect(
+    summary
+      .getByRole('article', { name: 'Active', exact: true })
+      .getByText(String(activeBefore), { exact: true }),
+  ).toBeVisible()
   await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
   await page.getByRole('option', { name: '10', exact: true }).click()
   await expect(page.getByText(`1–10 of ${owned.length}`, { exact: true })).toBeVisible()
@@ -872,6 +903,16 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
   expect((await searched).status()).toBe(200)
   await expect(
+    summary
+      .getByRole('article', { name: 'Active', exact: true })
+      .getByText(String(activeBefore + 1), { exact: true }),
+  ).toBeVisible()
+  await expect(summary).toBeVisible()
+  await page.screenshot({
+    path: test.info().outputPath('employee-summary-mobile.png'),
+    fullPage: true,
+  })
+  await expect(
     page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }),
   ).toBeVisible()
   const scrollbar = page.getByRole('grid').locator('.MuiDataGrid-scrollbar--horizontal')
@@ -880,9 +921,12 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
     element.scrollLeft = element.scrollWidth
   })
   await expect.poll(() => scrollbar.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+  expect(requested.some((path) => /\/(users|engineer-profiles)(\/|$)/.test(path))).toBeFalsy()
   expect(
-    requested.some((path) => /\/(users|engineer-profiles|reports)(\/|$)/.test(path)),
-  ).toBeFalsy()
+    requested
+      .filter((path) => /\/reports(\/|$)/.test(path))
+      .every((path) => path.endsWith('/reports/summary')),
+  ).toBeTruthy()
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: 'Sign out', exact: true }).click()
   await signIn(page)
@@ -994,15 +1038,12 @@ async function engineerFixture(request: APIRequestContext, count = 1) {
     expect(response.ok(), await response.text()).toBeTruthy()
     const incident = await response.json()
     cleanup.unshift(`/incidents/${incident.id}`)
-    expect(
-      (
-        await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
-          headers,
-          data: { assignee_id: user.id },
-        })
-      ).ok(),
-    ).toBeTruthy()
-    assigned.push(incident)
+    const assignment = await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
+      headers,
+      data: { assignee_id: user.id },
+    })
+    expect(assignment.ok()).toBeTruthy()
+    assigned.push(await assignment.json())
   }
   const login = await request.post(`${apiUrl}/auth/login`, {
     data: { email: user.email, password: engineerPassword },
@@ -1038,6 +1079,7 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   await expect(page.getByRole('heading', { name: 'Assigned incidents', exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'New incident', exact: true })).toBeHidden()
+  await expectSummary(page, 'assigned', { 'In progress': 12, Blocked: 0, Resolved: 0 })
   await page.getByRole('combobox', { name: 'Rows per page:', exact: true }).click()
   await page.getByRole('option', { name: '10', exact: true }).click()
   await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
@@ -1054,14 +1096,21 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   })
   await page.getByRole('textbox', { name: 'Search assigned incidents' }).fill(incident.title)
   expect((await searched).status()).toBe(200)
+  await expectSummary(page, 'assigned', { 'In progress': 12, Blocked: 0, Resolved: 0 })
   await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
   await expect(page.getByRole('heading', { name: incident.title, exact: true })).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'Priority and escalation', exact: true }),
   ).toBeHidden()
-  for (const status of ['In Progress', 'Blocked', 'In Progress', 'Resolved', 'Closed']) {
+  for (const status of ['Blocked', 'In Progress', 'Resolved', 'In Progress', 'Resolved']) {
     await page.getByRole('button', { name: 'Change status', exact: true }).click()
-    await select(page, 'Next status', status)
+    await page
+      .getByRole('dialog')
+      .getByRole('combobox', { name: /^Next status/ })
+      .click()
+    await expect(page.getByRole('option', { name: 'Open', exact: true })).toBeHidden()
+    await expect(page.getByRole('option', { name: 'Closed', exact: true })).toBeHidden()
+    await page.getByRole('option', { name: status, exact: true }).click()
     if (status === 'Blocked') {
       await expect(
         page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
@@ -1097,9 +1146,25 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
       })
     } else
       await expect(page.getByRole('alert').filter({ hasText: 'Work is blocked:' })).toBeHidden()
-    if (status === 'Resolved' || status === 'Closed')
+    if (status === 'Resolved')
       await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
   }
+  await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
+  await expectSummary(page, 'assigned', { 'In progress': 11, Blocked: 0, Resolved: 1 })
+  await page.screenshot({
+    path: test.info().outputPath('engineer-summary-mobile.png'),
+    fullPage: true,
+  })
+  const closed = await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
+    headers,
+    data: { status: 'Closed' },
+  })
+  expect(closed.status()).toBe(200)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expectSummary(page, 'assigned', { 'In progress': 11, Blocked: 0, Resolved: 0 })
+  await page.getByRole('textbox', { name: 'Search assigned incidents' }).fill(incident.title)
+  await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
   await page.reload()
   await expect(
@@ -1108,6 +1173,7 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
     }),
   ).toBeVisible()
   await page.getByRole('tab', { name: 'My incidents', exact: true }).click()
+  await expectSummary(page, 'personal', { Active: 1, Resolved: 0, Closed: 0 })
   await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
   await expect(
     page.getByRole('link', { name: `#${fixture.own.id} · ${fixture.own.title}`, exact: true }),
@@ -1203,5 +1269,11 @@ test('engineer scope and permissions follow current assignment including reassig
   ).toBe(403)
   await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
   await expect(page.getByText('No records to show', { exact: true })).toBeVisible()
-  expect(reads.some((path) => /^\/(users|engineer-profiles|reports)(\/|$)/.test(path))).toBeFalsy()
+  await expectSummary(page, 'assigned', { 'In progress': 0, Blocked: 0, Resolved: 0 })
+  expect(reads.some((path) => /^\/(users|engineer-profiles)(\/|$)/.test(path))).toBeFalsy()
+  expect(
+    reads
+      .filter((path) => /^\/reports(\/|$)/.test(path))
+      .every((path) => path === '/reports/summary'),
+  ).toBeTruthy()
 })

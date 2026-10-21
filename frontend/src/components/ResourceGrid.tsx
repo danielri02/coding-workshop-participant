@@ -31,7 +31,7 @@ function RowActions({ row, resource, disabled, onAction }: ActionsProps) {
     resource === 'users'
       ? [{ action: 'admin', label: row.is_admin ? 'Remove admin access' : 'Grant admin access' }]
       : resource === 'incidents'
-        ? [...incidentCommands(row), { action: 'notes', label: 'View notes' }]
+        ? [...incidentCommands(), { action: 'notes', label: 'View notes' }]
         : []
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>

@@ -1,4 +1,4 @@
-import { Box, Paper, Typography } from '@mui/material'
+import { SummaryStats } from '../components/SummaryStats'
 import { duration, type Report } from './query'
 
 /** Explain each aggregate alongside its sample size or business meaning. */
@@ -53,31 +53,5 @@ export function ReportSummary({ report }: { report: Report }) {
                 detail: 'At least two incidents per group, across all statuses',
               },
             ]
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: {
-          xs: '1fr',
-          sm: 'repeat(2, minmax(0, 1fr))',
-          lg: `repeat(${metrics.length}, minmax(0, 1fr))`,
-        },
-        gap: 2,
-      }}
-    >
-      {metrics.map((metric) => (
-        <Paper key={metric.label} variant="outlined" sx={{ p: 2.5, minWidth: 0 }}>
-          <Typography variant="body2" color="text.secondary">
-            {metric.label}
-          </Typography>
-          <Typography variant="h5" sx={{ my: 1, fontWeight: 700 }}>
-            {metric.value}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {metric.detail}
-          </Typography>
-        </Paper>
-      ))}
-    </Box>
-  )
+  return <SummaryStats metrics={metrics} />
 }

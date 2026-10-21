@@ -182,6 +182,7 @@ Read-only report endpoints calculate across the complete authorized incident set
 
 | Endpoint | Result |
 | --- | --- |
+| `GET /reports/summary?scope=personal` | Total, active and per-status counts across all the caller's own reports; `assigned` requires Engineer capability, `visible` follows existing read grants |
 | `GET /reports/locations?level=building` | Recurring location/category groups, ranked by count; `level` also accepts `floor` and `seat` |
 | `GET /reports/categories` | Counts, active counts and percentage per category, including categories with zero incidents |
 | `GET /reports/timings` | First assignment, acknowledgment and resolution averages, sample counts and paged incident timing rows |
@@ -192,13 +193,21 @@ incident access), `personal` (own reports), or `assigned` (engineer assignments;
 requires Engineer capability). Employee and engineer access cannot be broadened
 by changing scope. The admin UI labels `visible` as “All incidents”.
 
+The summary defaults to `personal` and always covers the entire requested scope,
+independent of grid search, filters and pagination. Employee cards show active,
+resolved and closed reports; engineer cards show in-progress, blocked and resolved
+current assignments. Ordinary users cannot choose another employee/engineer ID.
+
 Reports are all-time. Recurrence means at least two incidents in the same location
 and category; floor/seat grouping excludes incidents without that location recorded.
 Active means Open, In Progress or Blocked. Workload includes idle and unavailable
 engineers; availability is a profile flag independent of assignment count.
 
-Timing durations start at creation; acknowledgment is the first transition to
-In Progress. Missing milestones are excluded from averages and have null durations,
+Timing durations start at creation; acknowledgment records the first In Progress
+entry, now automatic on assignment. If an admin resolves a ticket before that
+stage was recorded, resolution also records acknowledgment at that instant.
+First milestones are retained when work resumes or is reassigned.
+Missing milestones are excluded from averages and have null durations,
 not zero. Timing summaries cover all matching incidents, independent of the current
 page. `/reports/timings` accepts `search` (literal title/description substring, max
 200 characters), `page`, `page_size` (1–100), `sort_by` and `sort_direction`. Sorts
@@ -277,7 +286,7 @@ logout authenticate the supplied refresh credential rather than an access JWT.
 | Read incidents and their complete shared notes | Own reports; engineers also get current assignments; admins get all |
 | Create incidents | Any signed-in employee; reporter comes from the access token, priority defaults to Low; only admins may supply priority/escalation |
 | Correct submitted incident details, assign/unassign, delete incidents | Admin |
-| Change incident status | Assigned engineer or admin, following valid transitions |
+| Change incident status | Assigned engineer: In Progress → Blocked/Resolved, Blocked/Resolved → In Progress; admin: any status, including Open and Closed |
 | Change priority/escalation | Admin |
 | Post notes | Reporter, assigned engineer or admin on an active incident; author comes from the access token |
 | Edit/delete existing notes | Admin, including after resolution/closure |
@@ -291,6 +300,14 @@ database for every request, so role changes and reassignment do not require a ne
 access token. Incident list filters cannot expand the caller's read scope.
 Missing/invalid credentials return 401; denied actions return 403. Updates use
 PATCH, validation errors use 422, and conflicting operations use 409.
+
+A new engineer assignment or reassignment automatically sets In Progress, clears
+an obsolete blocked reason and records the first work-start milestone. Saving
+the same assignee preserves the status; unassignment clears only the assignee.
+Only admins close tickets, reopen Closed tickets, or set a ticket back to Open.
+Blocked always requires a reason. Existing records are not automatically rewritten;
+an admin can correct older assigned/Open tickets through the status endpoint. Fresh seed data follows
+the new assignment workflow without requiring database schema changes.
 
 ### Refresh and logout
 

@@ -64,7 +64,7 @@ export function RecordDetailsDialog({
               View notes
             </Button>
             {onIncidentAction &&
-              incidentCommands(record).map((command) => (
+              incidentCommands().map((command) => (
                 <Button
                   key={command.action}
                   variant="outlined"
