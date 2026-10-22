@@ -2369,3 +2369,122 @@ test('admin merges incidents while employees retain private tickets and read-onl
   ).toBe(403)
   await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: tokens.refresh_token } })
 })
+
+test('admin browses tickets and reattaches one report using grid and detail actions', async ({
+  request,
+  page,
+}) => {
+  const suffix = `reattach${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const tickets = []
+  for (const label of ['source', 'target', 'correction']) {
+    const response = await request.post(`${apiUrl}/tickets`, {
+      headers,
+      data: {
+        title: `${suffix} ${label}`,
+        description: `Original ${label} report.`,
+        category: 'Electrical',
+        building_id: building.id,
+      },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    const ticket = await response.json()
+    tickets.push(ticket)
+    cleanup.unshift(`/incidents/${ticket.incident_id}`)
+  }
+  const [source, target, correction] = tickets
+  await page.goto('/admin/incidents')
+  await signIn(page)
+  await navigate(page, 'Tickets')
+  await expect(page).toHaveURL(/\/admin\/tickets$/)
+  await expect(page.getByRole('button', { name: 'New ticket', exact: true })).toBeHidden()
+  await page.getByRole('textbox', { name: 'Search tickets' }).fill(suffix)
+  await expect(page.getByRole('link', { name: source.title, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: `More actions for tickets ${source.id}` }).click()
+  await page.getByRole('menuitem', { name: 'Reattach ticket', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog.getByRole('button', { name: 'Reattach ticket', exact: true })).toBeDisabled()
+  await dialog
+    .getByRole('combobox', { name: 'Incident', exact: true })
+    .fill(`#${target.incident_id}`)
+  await page.getByRole('option', { name: new RegExp(`^#${target.incident_id} ·`) }).click()
+  const moved = page.waitForResponse(
+    (response) =>
+      browserPath(new URL(response.url())) === `/tickets/${source.id}/reattach` &&
+      response.request().method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: 'Reattach ticket', exact: true }).click()
+  expect((await moved).status()).toBe(200)
+  await expect(dialog).toBeHidden()
+  await page.getByRole('link', { name: source.title, exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(`Ticket #${source.id}`)
+  await expect(dialog.getByText('Original source report.', { exact: true })).toBeVisible()
+  await expect(
+    dialog.getByRole('link', { name: `incident #${target.incident_id}`, exact: true }),
+  ).toBeVisible()
+  await dialog.getByRole('button', { name: 'Reattach ticket', exact: true }).click()
+  await expect(dialog).toHaveCount(1)
+  await dialog
+    .getByRole('combobox', { name: 'Incident', exact: true })
+    .fill(`#${correction.incident_id}`)
+  await page.getByRole('option', { name: new RegExp(`^#${correction.incident_id} ·`) }).click()
+  await dialog.getByRole('button', { name: 'Reattach ticket', exact: true }).click()
+  await expect(
+    dialog.getByRole('link', { name: `incident #${correction.incident_id}`, exact: true }),
+  ).toBeVisible()
+  await expect(dialog.getByText('Original source report.', { exact: true })).toBeVisible()
+  const oldProblem = await (
+    await request.get(`${apiUrl}/incidents/${source.incident_id}`, { headers })
+  ).json()
+  expect(oldProblem.status).toBe('Open')
+  expect(oldProblem.ticket_count).toBe(0)
+  expect(oldProblem.merged_into_id).toBeNull()
+})
+
+test('engineer controls own availability and keeps it after refresh and workspace switching', async ({
+  request,
+  page,
+}) => {
+  const login = await request.post(`${apiUrl}/auth/login`, {
+    data: { email: 'engineer@acme.inc', password: 'engineer' },
+  })
+  expect(login.ok(), await login.text()).toBeTruthy()
+  const tokens = await login.json()
+  const engineerHeaders = { Authorization: `Bearer ${tokens.access_token}` }
+  const account = await (
+    await request.get(`${apiUrl}/auth/me`, { headers: engineerHeaders })
+  ).json()
+  const original = account.engineer_profile.is_available
+  try {
+    await page.goto('/engineer/incidents')
+    await signIn(page, 'engineer@acme.inc', 'engineer')
+    const availability = page.getByRole('switch', { name: 'Available for assignment', exact: true })
+    await expect(availability).toBeChecked({ checked: original })
+    const saved = page.waitForResponse(
+      (response) =>
+        browserPath(new URL(response.url())) === `/engineer-profiles/${account.id}` &&
+        response.request().method() === 'PATCH',
+    )
+    await availability.click()
+    expect((await saved).status()).toBe(200)
+    await expect(availability).toBeChecked({ checked: !original })
+    await expect(availability).toBeEnabled()
+    const profile = await (
+      await request.get(`${apiUrl}/engineer-profiles/${account.id}`, { headers })
+    ).json()
+    expect(profile.is_available).toBe(!original)
+    await page.reload()
+    await expect(availability).toBeChecked({ checked: !original })
+    await switchWorkspace(page, 'My tickets')
+    await expect(availability).toBeHidden()
+    await switchWorkspace(page, 'Assigned to me')
+    await expect(availability).toBeChecked({ checked: !original })
+  } finally {
+    await request.patch(`${apiUrl}/engineer-profiles/${account.id}`, {
+      headers,
+      data: { is_available: original },
+    })
+    await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: tokens.refresh_token } })
+  }
+})

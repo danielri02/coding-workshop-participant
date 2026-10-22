@@ -15,6 +15,7 @@ from ..schemas import (
 )
 from ..schemas.grid import GridQuery, Page
 from ..security.dependencies import AdminUser, CurrentUser
+from ..security.permissions import require_account_access
 from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(
@@ -82,10 +83,11 @@ async def update_engineer_profile(
     user_id: RecordID,
     payload: EngineerProfileUpdate,
     session: DatabaseSession,
-    _admin: AdminUser,
+    user: CurrentUser,
 ) -> EngineerProfile:
-    """Update manually managed availability."""
+    """Admins manage any profile; engineers manage their own availability."""
 
+    require_account_access(user, user_id)
     record = await crud.get_record(session, EngineerProfile, user_id, for_update=True)
     return await crud.update_record(
         session, record, payload.model_dump(exclude_unset=True)

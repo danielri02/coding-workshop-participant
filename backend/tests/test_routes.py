@@ -1709,6 +1709,180 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             "Keep the shared update",
         )
 
+    async def test_reattach_moves_only_one_ticket_and_updates_reporter_visibility(self):
+        actor = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        original = (
+            await self.client.post(
+                "/tickets", headers=actor, json=self.report_data(title="Private report")
+            )
+        ).json()
+        source, target = (
+            original["incident_id"],
+            (await self.create_report(title="Target problem"))["id"],
+        )
+        # A second report remains on the source after the first one moves.
+        follower = await self.create_report(title="Other reporter")
+        await self.client.post(
+            f"/incidents/{follower['id']}/merge", json={"target_incident_id": source}
+        )
+        for incident_id in (source, target):
+            await self.client.post(
+                f"/incidents/{incident_id}/notes",
+                json={"body": f"Update for {incident_id}"},
+            )
+        before = {
+            i: (await self.client.get(f"/incidents/{i}")).json()
+            for i in (source, target)
+        }
+        response = await self.client.post(
+            f"/tickets/{original['id']}/reattach", json={"target_incident_id": target}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        moved = response.json()
+        self.assertEqual(moved["incident_id"], target)
+        for field in (
+            "title",
+            "description",
+            "reporter_id",
+            "building_id",
+            "floor_id",
+            "seat_id",
+            "created_at",
+        ):
+            self.assertEqual(moved[field], original[field])
+        for i in (source, target):
+            after = (await self.client.get(f"/incidents/{i}")).json()
+            after.pop("ticket_count")
+            previous = before[i].copy()
+            previous.pop("ticket_count")
+            self.assertEqual(after, previous)
+            notes = (await self.client.get(f"/incidents/{i}/notes")).json()
+            self.assertEqual([n["body"] for n in notes], [f"Update for {i}"])
+        self.assertEqual(
+            (await self.client.get(f"/incidents/{source}", headers=actor)).status_code,
+            403,
+        )
+        self.assertEqual(
+            (await self.client.get(f"/incidents/{target}", headers=actor)).status_code,
+            200,
+        )
+        self.assertEqual(
+            (await self.client.get(f"/incidents/{target}/notes", headers=actor)).json()[
+                0
+            ]["body"],
+            f"Update for {target}",
+        )
+        old_grid = (await self.client.get(f"/tickets/grid?incident_id={source}")).json()
+        self.assertEqual(old_grid["row_count"], 1)
+        grid = (
+            await self.client.get(
+                f"/tickets/grid?incident_id={target}&search=Private&sort_by=incident_id"
+            )
+        ).json()
+        self.assertEqual([r["id"] for r in grid["rows"]], [original["id"]])
+        self.assertEqual(
+            (
+                await self.client.get("/tickets/grid?search=Private", headers=actor)
+            ).json()["row_count"],
+            1,
+        )
+
+    async def test_reattach_authorization_validation_and_empty_source(self):
+        original = (await self.client.post("/tickets", json=self.report_data())).json()
+        target = (await self.create_report())["id"]
+        path = f"/tickets/{original['id']}/reattach"
+        actor = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        self.assertEqual(
+            (
+                await self.client.post(
+                    path, headers=actor, json={"target_incident_id": target}
+                )
+            ).status_code,
+            403,
+        )
+        for payload, expected in (
+            ({}, 422),
+            ({"target_incident_id": -1}, 422),
+            ({"target_incident_id": target, "reporter_id": self.engineer_id}, 422),
+            ({"target_incident_id": 999999}, 404),
+            ({"target_incident_id": original["incident_id"]}, 409),
+        ):
+            response = await self.client.post(path, json=payload)
+            self.assertEqual(response.status_code, expected, response.text)
+        await self.client.patch(
+            f"/incidents/{target}/status", json={"status": "Closed"}
+        )
+        self.assertEqual(
+            (
+                await self.client.post(path, json={"target_incident_id": target})
+            ).status_code,
+            409,
+        )
+        await self.client.patch(f"/incidents/{target}/status", json={"status": "Open"})
+        self.assertEqual(
+            (
+                await self.client.post(path, json={"target_incident_id": target})
+            ).status_code,
+            200,
+        )
+        source_after = (
+            await self.client.get(f"/incidents/{original['incident_id']}")
+        ).json()
+        self.assertEqual(source_after["status"], "Open")
+        self.assertEqual(source_after["ticket_count"], 0)
+        self.assertIsNone(source_after["merged_into_id"])
+        # A stale merge reference cannot become a ticket's destination.
+        await self.client.post(
+            f"/incidents/{original['incident_id']}/merge",
+            json={"target_incident_id": target},
+        )
+        self.assertEqual(
+            (
+                await self.client.post(
+                    path, json={"target_incident_id": original["incident_id"]}
+                )
+            ).status_code,
+            409,
+        )
+        self.assertEqual(
+            (
+                await self.client.post(
+                    "/tickets/999999/reattach", json={"target_incident_id": target}
+                )
+            ).status_code,
+            404,
+        )
+
+    async def test_reattach_and_merge_concurrently_keep_ticket_on_live_incident(self):
+        import asyncio
+
+        ticket = (await self.client.post("/tickets", json=self.report_data())).json()
+        target, survivor = (
+            (await self.create_report())["id"],
+            (await self.create_report())["id"],
+        )
+        results = await asyncio.gather(
+            self.client.post(
+                f"/tickets/{ticket['id']}/reattach", json={"target_incident_id": target}
+            ),
+            self.client.post(
+                f"/incidents/{ticket['incident_id']}/merge",
+                json={"target_incident_id": survivor},
+            ),
+        )
+        self.assertEqual(results[1].status_code, 200, results[1].text)
+        self.assertIn(results[0].status_code, (200, 409), results[0].text)
+        saved = (await self.client.get(f"/tickets/{ticket['id']}")).json()
+        self.assertIn(saved["incident_id"], (target, survivor))
+        self.assertIsNone(saved["incident"]["merged_into_id"])
+        self.assertEqual(
+            (await self.client.get("/tickets/grid")).json()["row_count"], 3
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

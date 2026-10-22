@@ -194,12 +194,11 @@ export const resources: ResourceDefinition[] = [
     title: 'Tickets',
     singular: 'ticket',
     endpoint: '/tickets',
-    description: 'Original reports attached to this incident.',
-    hidden: true,
+    description: 'Review original employee reports and correct which incident each follows.',
     readOnly: true,
     lookups: ['buildings', 'floors', 'seats'],
     fields: [],
-    columns: () => {
+    columns: (data) => {
       const columns: GridColDef<AdminRow>[] = [
         {
           ...text('title', 'Report', 300),
@@ -212,13 +211,45 @@ export const resources: ResourceDefinition[] = [
         },
         { ...text('reporter_name', 'Reported by', 200), sortable: false },
         {
+          field: 'incident_id',
+          headerName: 'Incident',
+          width: 290,
+          renderCell: ({ row, hasFocus }) => (
+            <RecordLink resource="incidents" id={row.incident_id!} tabIndex={hasFocus ? 0 : -1}>
+              #{row.incident_id} · {row.incident?.title}
+            </RecordLink>
+          ),
+        },
+        { ...tag('status', 'Status', statuses), valueGetter: (_, row) => row.incident?.status },
+        {
+          ...tag('category', 'Category', categories),
+          valueGetter: (_, row) => row.incident?.category,
+        },
+        {
+          ...text('building_id', 'Reported building', 190),
+          type: 'singleSelect',
+          valueOptions: data.buildings.map((row) => ({ value: row.id, label: row.name })),
+          renderCell: ({ row, formattedValue, hasFocus }) => (
+            <RecordLink resource="buildings" id={row.building_id!} tabIndex={hasFocus ? 0 : -1}>
+              {String(formattedValue)}
+            </RecordLink>
+          ),
+        },
+        {
           ...text('created_at', 'Reported', 190),
           type: 'dateTime',
           valueGetter: (value) => new Date(String(value)),
           filterable: false,
         },
       ]
-      return columns.map((column) => ({ ...column, filterable: false }))
+      return columns.map((column) => ({
+        ...column,
+        filterable: column.type === 'singleSelect',
+        filterOperators:
+          column.type === 'singleSelect'
+            ? getGridSingleSelectOperators().filter((operator) => operator.value === 'is')
+            : undefined,
+      }))
     },
   },
   {

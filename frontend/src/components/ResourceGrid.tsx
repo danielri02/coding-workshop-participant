@@ -18,7 +18,16 @@ import { incidentCommands } from '../resources/incidentActions'
 import { defaultIncidentColumns } from '../resources/incidentViews'
 
 export type RowAction =
-  'view' | 'edit' | 'delete' | 'admin' | 'assignment' | 'priority' | 'status' | 'notes' | 'merge'
+  | 'view'
+  | 'edit'
+  | 'delete'
+  | 'admin'
+  | 'assignment'
+  | 'priority'
+  | 'status'
+  | 'notes'
+  | 'merge'
+  | 'reattach'
 interface ActionsProps {
   row: AdminRow
   resource: ResourceKey
@@ -37,7 +46,9 @@ function RowActions({ row, resource, disabled, onAction }: ActionsProps) {
             ...(row.merged_into_id ? [] : incidentCommands()),
             { action: 'notes', label: 'View notes' },
           ]
-        : []
+        : resource === 'tickets'
+          ? [{ action: 'reattach', label: 'Reattach ticket' }]
+          : []
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
       {(

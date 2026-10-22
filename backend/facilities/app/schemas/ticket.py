@@ -1,7 +1,15 @@
 """A private employee report and the current state of its shared incident."""
 
+from typing import Literal
+
 from .base import Body, Name, PositiveID, Schema, Title, UTCDateTime
-from .incident import FilterID, IncidentCreate, IncidentGridQuery, IncidentRead
+from .incident import (
+    FilterID,
+    IncidentCreate,
+    IncidentGridQuery,
+    IncidentRead,
+    IncidentSortField,
+)
 
 
 class TicketCreate(IncidentCreate):
@@ -24,3 +32,10 @@ class TicketRead(Schema):
 
 class TicketGridQuery(IncidentGridQuery):
     incident_id: FilterID | None = None
+    sort_by: IncidentSortField | Literal["incident_id"] = "created_at"
+
+
+class TicketReattach(Schema):
+    """Admin-only correction of the problem followed by one original report."""
+
+    target_incident_id: PositiveID

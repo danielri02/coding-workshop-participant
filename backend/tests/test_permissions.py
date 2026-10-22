@@ -476,8 +476,8 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                 actor, "DELETE", f"/incidents/{response.json()['id']}", 204
             )
 
-    async def test_facility_and_engineer_management_is_admin_only(self) -> None:
-        """Allow authenticated lookup reads while reserving management for admins."""
+    async def test_facility_and_engineer_management_permissions(self) -> None:
+        """Lookup reads are shared; only own engineer availability is editable."""
 
         resources = (
             ("buildings", self.building_id, {"name": "New"}, {"name": "Updated"}),
@@ -507,7 +507,13 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                 if actor not in {"admin", "combined"}:
                     await self.request(actor, "POST", f"/{name}", 403, create)
                     await self.request(
-                        actor, "PATCH", f"/{name}/{record_id}", 403, update
+                        actor,
+                        "PATCH",
+                        f"/{name}/{record_id}",
+                        200
+                        if name == "engineer-profiles" and record_id == self.ids[actor]
+                        else 403,
+                        update,
                     )
                     await self.request(actor, "DELETE", f"/{name}/{record_id}", 403)
         await self.request(
@@ -527,6 +533,42 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         await self.request(
             "combined", "DELETE", f"/engineer-profiles/{self.ids['other']}", 204
         )
+
+    async def test_engineers_change_only_own_availability_without_affecting_work(self):
+        for actor in ("engineer", "combined"):
+            path = f"/engineer-profiles/{self.ids[actor]}"
+            for available in (False, True):
+                response = await self.request(
+                    actor, "PATCH", path, 200, {"is_available": available}
+                )
+                self.assertEqual(response.json()["is_available"], available)
+                account = await self.request(actor, "GET", "/auth/me", 200)
+                self.assertEqual(
+                    account.json()["engineer_profile"]["is_available"], available
+                )
+            await self.request(
+                actor, "PATCH", path, 422, {"user_id": self.ids["other"]}
+            )
+            await self.request(actor, "PATCH", path, 422, {"is_available": None})
+            await self.request(actor, "PATCH", path, 422, {"is_available": "true"})
+        await self.request(
+            "engineer",
+            "PATCH",
+            f"/engineer-profiles/{self.ids['replacement']}",
+            403,
+            {"is_available": False},
+        )
+        await self.request(
+            "employee",
+            "PATCH",
+            f"/engineer-profiles/{self.ids['employee']}",
+            404,
+            {"is_available": False},
+        )
+        incident = await self.request(
+            "engineer", "GET", f"/incidents/{self.reports['assigned']}", 200
+        )
+        self.assertEqual(incident.json()["assignee_id"], self.ids["engineer"])
 
     async def test_account_management_cannot_self_grant_capabilities(self) -> None:
         """Permit own account edits but reserve directory, roles and deletion for admins."""

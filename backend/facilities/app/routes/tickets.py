@@ -7,11 +7,11 @@ from sqlalchemy import or_, select
 
 from ..database.grids import grid_records
 from ..database.loading import TICKET_READ_OPTIONS
-from ..database.tickets import create_ticket, ticket_visibility
+from ..database.tickets import create_ticket, reattach_ticket, ticket_visibility
 from ..models import Incident, Ticket, User
 from ..schemas.grid import GridQuery, Page
-from ..schemas.ticket import TicketCreate, TicketGridQuery, TicketRead
-from ..security.dependencies import CurrentUser
+from ..schemas.ticket import TicketCreate, TicketGridQuery, TicketRead, TicketReattach
+from ..security.dependencies import AdminUser, CurrentUser
 from .dependencies import DatabaseSession, RecordID
 
 router = APIRouter(prefix="/tickets", tags=[Ticket.__name__])
@@ -65,6 +65,7 @@ async def grid_tickets(
         "building_id": Ticket.building_id,
         "floor_id": Ticket.floor_id,
         "seat_id": Ticket.seat_id,
+        "incident_id": Ticket.incident_id,
         "assignee_name": User.name,
         **{
             field: getattr(Incident, field)
@@ -113,3 +114,13 @@ async def get_ticket(
     if ticket is None:
         raise HTTPException(404, "Ticket not found")
     return ticket
+
+
+@router.post("/{ticket_id}/reattach", response_model=TicketRead)
+async def reattach_report(
+    ticket_id: RecordID,
+    payload: TicketReattach,
+    session: DatabaseSession,
+    _admin: AdminUser,
+) -> Ticket:
+    return await reattach_ticket(session, ticket_id, payload.target_incident_id)

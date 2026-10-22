@@ -22,7 +22,7 @@ from .incident import (
     IncidentStatusUpdate,
 )
 from .note import NoteCreate, NoteRead, NoteUpdate
-from .ticket import TicketCreate, TicketRead
+from .ticket import TicketCreate, TicketRead, TicketReattach
 from .user import (
     EngineerProfileCreate,
     EngineerProfileRead,
@@ -52,6 +52,7 @@ __all__ = [
     "IncidentMerge",
     "TicketCreate",
     "TicketRead",
+    "TicketReattach",
     "IncidentPriorityUpdate",
     "IncidentRead",
     "IncidentStatusUpdate",

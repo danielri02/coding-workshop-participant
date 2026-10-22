@@ -144,25 +144,28 @@ class IncidentFilters(Schema):
     unassigned: bool | None = None
 
 
+IncidentSortField = Literal[
+    "id",
+    "title",
+    "category",
+    "status",
+    "priority",
+    "assignee_name",
+    "building_id",
+    "floor_id",
+    "seat_id",
+    "assignee_id",
+    "created_at",
+    "assigned_at",
+    "acknowledged_at",
+    "resolved_at",
+]
+
+
 class IncidentGridQuery(IncidentFilters, PaginationQuery):
     """Zero-based paging and a single validated sort, matching MUI Data Grid."""
 
-    sort_by: Literal[
-        "id",
-        "title",
-        "category",
-        "status",
-        "priority",
-        "assignee_name",
-        "building_id",
-        "floor_id",
-        "seat_id",
-        "assignee_id",
-        "created_at",
-        "assigned_at",
-        "acknowledged_at",
-        "resolved_at",
-    ] = "created_at"
+    sort_by: IncidentSortField = "created_at"
     sort_direction: Literal["asc", "desc"] = "desc"
 
 

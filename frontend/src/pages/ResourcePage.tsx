@@ -21,7 +21,7 @@ import type {
 } from '@mui/x-data-grid'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import type { AdminOutlet } from '../components/AdminLayout'
-import { MergeIncidentDialog } from '../components/MergeIncidentDialog'
+import { IncidentTransferDialog } from '../components/IncidentTransferDialog'
 import { IncidentPicker } from '../components/IncidentPicker'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useRecordDialogs } from '../dialogs/context'
@@ -69,6 +69,9 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     setPagination((previous) => ({ ...previous, page: 0 }))
   }
   const {
+    reattach,
+    setReattach,
+    reattachSaved,
     merge,
     setMerge,
     mergeSaved,
@@ -138,16 +141,18 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
             {resource.description}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => setEditor({ action: 'create', row: null })}
-          disabled={
-            loading || Boolean(failure) || (resource.key === 'notes' && (!scope || !canAddNotes))
-          }
-        >
-          New {resource.singular}
-        </Button>
+        {!resource.readOnly && (
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => setEditor({ action: 'create', row: null })}
+            disabled={
+              loading || Boolean(failure) || (resource.key === 'notes' && (!scope || !canAddNotes))
+            }
+          >
+            New {resource.singular}
+          </Button>
+        )}
       </Stack>
       {resource.key === 'notes' && (
         <Paper variant="outlined" sx={{ p: 2.5 }}>
@@ -280,7 +285,20 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
         )}
       </Paper>
       {merge && (
-        <MergeIncidentDialog source={merge} onClose={() => setMerge(null)} onMerged={mergeSaved} />
+        <IncidentTransferDialog
+          action="merge"
+          source={merge}
+          onClose={() => setMerge(null)}
+          onSaved={mergeSaved}
+        />
+      )}
+      {reattach && (
+        <IncidentTransferDialog
+          action="reattach"
+          source={reattach}
+          onClose={() => setReattach(null)}
+          onSaved={reattachSaved}
+        />
       )}
       {editor && (
         <RecordFormDialog

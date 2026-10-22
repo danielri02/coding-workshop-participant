@@ -13,9 +13,11 @@ import { IncidentDetailsPage } from './IncidentDetailsPage'
 export function TicketDetailsPage({
   recordId,
   embedded = false,
+  onReattach,
 }: {
   recordId?: number
   embedded?: boolean
+  onReattach?: (ticket: Ticket) => void
 }) {
   const params = useParams()
   const id = recordId ?? Number(params.incidentId)
@@ -50,6 +52,11 @@ export function TicketDetailsPage({
         <Typography component="h1" variant="h5">
           Ticket #{ticket.id}
         </Typography>
+        {adminView && onReattach && (
+          <Button sx={{ mt: 1 }} onClick={() => onReattach(ticket)}>
+            Reattach ticket
+          </Button>
+        )}
         <Typography component="h2" variant="h6" sx={{ mt: 1 }}>
           Original report
         </Typography>

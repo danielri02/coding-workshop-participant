@@ -14,18 +14,22 @@ import { useRecordDialogs } from '../dialogs/context'
 import { api, errorMessage } from '../services/client'
 import type { AdminRow, Incident } from '../types'
 
-/** Confirm a whole-incident merge on the existing single dialog surface. */
-export function MergeIncidentDialog({
+/** A whole-incident merge and a single-ticket correction use the same confirmation. */
+export function IncidentTransferDialog({
+  action,
   source,
   embedded = false,
   onClose,
-  onMerged,
+  onSaved,
 }: {
+  action: 'merge' | 'reattach'
   source: AdminRow
   embedded?: boolean
   onClose: () => void
-  onMerged: () => void
+  onSaved: () => void
 }) {
+  const merging = action === 'merge'
+  const label = merging ? 'Merge incident' : 'Reattach ticket'
   const [target, setTarget] = useState<Incident | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -36,11 +40,11 @@ export function MergeIncidentDialog({
     if (embedded) setNavigationBusy(true)
     setError('')
     try {
-      await api<Incident>(`/incidents/${source.id}/merge`, {
+      await api(`/${merging ? 'incidents' : 'tickets'}/${source.id}/${action}`, {
         method: 'POST',
         body: JSON.stringify({ target_incident_id: target.id }),
       })
-      onMerged()
+      onSaved()
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {
@@ -52,28 +56,29 @@ export function MergeIncidentDialog({
     <Stack spacing={3}>
       {embedded && (
         <Typography component="h2" variant="h6">
-          Merge incident #{source.id}
+          {label} #{source.id}
         </Typography>
       )}
       <Typography>
-        Move all {source.ticket_count ?? 0} tickets and all notes from “{source.title}” to the
-        selected incident. Close this incident and retain a merge reference.
+        {merging
+          ? `Move all ${source.ticket_count ?? 0} tickets and all notes from “${source.title}” to the selected incident. Close this incident and retain a merge reference.`
+          : `Move the report “${source.title}” from incident #${source.incident_id} to the selected incident.`}
       </Typography>
       <IncidentPicker
         id={target?.id || null}
         value={target}
         onChange={setTarget}
-        excludeId={source.id}
+        excludeId={merging ? source.id : source.incident_id}
         mergeTargets
       />
       <Alert severity="warning">
-        The target keeps its location, category, priority, engineer and response-time milestones.
-        Original ticket reports are preserved. Transferred notes become visible to the target
-        incident’s reporters. This action has no automatic undo.
+        {merging
+          ? 'The target keeps its location, category, priority, engineer and response-time milestones. Original ticket reports are preserved. Transferred notes become visible to the target incident’s reporters. This action has no automatic undo.'
+          : 'The original report is preserved. Both incidents keep their notes and status, even if the source has no tickets left. The reporter will follow the target’s progress and see its shared description and notes. Review those before confirming.'}
       </Alert>
       {target && (
         <Typography variant="body2">
-          Merge into #{target.id}: {target.title} ({target.status}).
+          {merging ? 'Merge into' : 'Attach to'} #{target.id}: {target.title} ({target.status}).
         </Typography>
       )}
       {error && <Alert severity="error">{error}</Alert>}
@@ -82,7 +87,7 @@ export function MergeIncidentDialog({
           Cancel
         </Button>
         <Button variant="contained" disabled={busy || !target} onClick={() => void save()}>
-          {busy ? 'Merging…' : 'Merge incident'}
+          {busy ? 'Saving…' : label}
         </Button>
       </Stack>
     </Stack>
@@ -95,9 +100,11 @@ export function MergeIncidentDialog({
       fullWidth
       maxWidth="sm"
       onClose={busy ? undefined : onClose}
-      aria-labelledby="merge-title"
+      aria-labelledby="transfer-title"
     >
-      <DialogTitle id="merge-title">Merge incident #{source.id}</DialogTitle>
+      <DialogTitle id="transfer-title">
+        {label} #{source.id}
+      </DialogTitle>
       <DialogContent sx={{ pt: '12px !important' }}>{content}</DialogContent>
     </Dialog>
   )

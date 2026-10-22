@@ -149,7 +149,7 @@ export interface components {
     }
     /**
      * EngineerProfileUpdate
-     * @description Admin-managed manual availability; does not infer workload.
+     * @description Manual availability managed by the engineer or an admin.
      */
     EngineerProfileUpdate: {
       /** Is Available */
@@ -675,6 +675,14 @@ export interface components {
       seat_id?: number | null
       /** Title */
       title: string
+    }
+    /**
+     * TicketReattach
+     * @description Admin-only correction of the problem followed by one original report.
+     */
+    TicketReattach: {
+      /** Target Incident Id */
+      target_incident_id: number
     }
     /** TimingReport */
     TimingReport: {

@@ -9,7 +9,7 @@ export function createQueryClient(): QueryClient {
 }
 
 const dependencies: Record<ResourceKey, string[]> = {
-  tickets: ['tickets', 'incidents'],
+  tickets: ['tickets', 'incidents', 'notes'],
   users: ['tickets', 'users', 'engineer-profiles', 'incidents', 'notes'],
   engineers: ['engineer-profiles', 'users', 'incidents', 'tickets'],
   buildings: ['buildings', 'floors', 'seats', 'incidents', 'tickets', 'notes'],

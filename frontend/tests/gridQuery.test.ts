@@ -79,3 +79,24 @@ test('related location grids carry fixed parent scopes separately from column fi
   )
   expect(seatUrl.searchParams.get('floor_id')).toBe('34')
 })
+
+test('ticket grids combine parent scope with incident status filters and ticket sorting', () => {
+  const tickets = resources.find((item) => item.key === 'tickets')!
+  expect(tickets.hidden).not.toBe(true)
+  const url = new URL(
+    gridQuery(
+      tickets,
+      page,
+      [{ field: 'incident_id', sort: 'asc' }],
+      { items: [{ field: 'status', operator: 'is', value: 'Blocked' }] },
+      'leak',
+      { incident_id: 42 },
+    )!,
+    'http://localhost',
+  )
+  expect(url.pathname).toBe('/tickets/grid')
+  expect(url.searchParams.get('incident_id')).toBe('42')
+  expect(url.searchParams.get('status')).toBe('Blocked')
+  expect(url.searchParams.get('sort_by')).toBe('incident_id')
+  expect(url.searchParams.get('search')).toBe('leak')
+})

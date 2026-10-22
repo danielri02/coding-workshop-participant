@@ -45,7 +45,7 @@ class EngineerProfileCreate(Schema):
 
 
 class EngineerProfileUpdate(PatchSchema):
-    """Admin-managed manual availability; does not infer workload."""
+    """Manual availability managed by the engineer or an admin."""
 
     is_available: StrictBool | None = None
 

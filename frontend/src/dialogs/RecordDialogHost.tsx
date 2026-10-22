@@ -13,7 +13,7 @@ import { IncidentDetailsPage } from '../incidents/IncidentDetailsPage'
 import { useRecordDialogs } from './context'
 import { targetKey, type DialogEntry } from './navigation'
 import { TicketDetailsPage } from '../incidents/TicketDetailsPage'
-import { MergeIncidentDialog } from '../components/MergeIncidentDialog'
+import { IncidentTransferDialog } from '../components/IncidentTransferDialog'
 import { RecordDetailsContent } from './RecordDetailsContent'
 import { RelatedGrid } from './RelatedGrid'
 
@@ -38,11 +38,22 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
   }, [actions.confirmation, actions.busy, setBusy])
   if (actions.merge)
     return (
-      <MergeIncidentDialog
+      <IncidentTransferDialog
+        action="merge"
         embedded
         source={actions.merge}
         onClose={() => actions.setMerge(null)}
-        onMerged={actions.mergeSaved}
+        onSaved={actions.mergeSaved}
+      />
+    )
+  if (actions.reattach)
+    return (
+      <IncidentTransferDialog
+        action="reattach"
+        embedded
+        source={actions.reattach}
+        onClose={() => actions.setReattach(null)}
+        onSaved={actions.reattachSaved}
       />
     )
   if (actions.editor)
@@ -84,7 +95,14 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
         }
       />
     )
-  if (target.resource === 'tickets') return <TicketDetailsPage recordId={target.id} embedded />
+  if (target.resource === 'tickets')
+    return (
+      <TicketDetailsPage
+        recordId={target.id}
+        embedded
+        onReattach={(ticket) => actions.setReattach(ticket)}
+      />
+    )
   if (!adminView && target.resource === 'incidents')
     return (
       <IncidentDetailsPage
