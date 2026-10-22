@@ -37,4 +37,18 @@ jobs:
         run: ruff check --ignore UP017,RUF022 backend/facilities backend/scripts backend/tests
       - run: bandit -q -r backend
       - name: Run unit and PostgreSQL integration tests
-        run: python -m unittest discover -s backend/tests
+        run: python -m coverage run -m unittest discover -s backend/tests
+      - name: Report backend coverage (measurement only)
+        if: always()
+        run: |
+          python -m coverage report
+          python -m coverage xml
+          python -m coverage json
+          python -m coverage html
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/backend/
+          if-no-files-found: warn

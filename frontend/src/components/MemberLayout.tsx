@@ -14,11 +14,14 @@ import LogoutOutlined from '@mui/icons-material/LogoutOutlined'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { RecordDialogProvider } from '../dialogs/RecordDialogProvider'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
+import { useWorkspace } from '../hooks/useWorkspace'
 
 /** Share responsive account controls and navigation for employees and engineers. */
 export function MemberLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const { workspace } = useWorkspace()
   const engineer = Boolean(user?.engineer_profile)
   return (
     <Box sx={{ minHeight: '100dvh', minWidth: 0 }}>
@@ -42,10 +45,10 @@ export function MemberLayout() {
             variant="caption"
             sx={{ fontSize: { xs: 11, sm: 12 }, color: '#a6b9cd' }}
           >
-            {engineer ? 'Engineer workspace' : 'Employee workspace'}
+            {workspace?.id === 'assigned' ? 'Engineer workspace' : 'Employee workspace'}
           </Typography>
         </Box>
-        {!engineer && (
+        {!engineer && !user?.is_admin && (
           <Button
             component={Link}
             to="/employee/incidents"
@@ -55,6 +58,7 @@ export function MemberLayout() {
             My incidents
           </Button>
         )}
+        <WorkspaceSwitcher dark />
         <Avatar
           sx={{
             display: { xs: 'none', sm: 'flex' },
@@ -92,7 +96,7 @@ export function MemberLayout() {
           Sign out
         </Button>
       </Toolbar>
-      {engineer && (
+      {engineer && !user?.is_admin && (
         <Tabs
           component="nav"
           aria-label="Engineer workspace"

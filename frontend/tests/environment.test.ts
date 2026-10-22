@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { applicationEnvironment, publicEnvironmentDefinitions } from '../config/environment'
 
 function fixture() {

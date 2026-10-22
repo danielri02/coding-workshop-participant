@@ -1,17 +1,19 @@
 import { Box, CircularProgress } from '@mui/material'
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter, Navigate, useLocation } from 'react-router-dom'
 import { lazy, Suspense, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from './services/queries'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/context'
 import { LoginPage } from './pages/LoginPage'
+import { availableWorkspaces, workspaceForPath } from './auth/workspaces'
 const AdminRoutes = lazy(() => import('./pages/AdminRoutes'))
 const MemberRoutes = lazy(() => import('./pages/MemberRoutes'))
 
 /** Route each server-verified account to its permitted workspace. */
-function Application() {
+export function Application() {
   const { user, booting } = useAuth()
+  const { pathname } = useLocation()
   if (booting)
     return (
       <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
@@ -19,7 +21,9 @@ function Application() {
       </Box>
     )
   if (!user) return <LoginPage />
-  return user.is_admin ? <AdminRoutes /> : <MemberRoutes />
+  const workspace = workspaceForPath(user, pathname)
+  if (!workspace) return <Navigate to={availableWorkspaces(user)[0].path} replace />
+  return workspace.id === 'admin' ? <AdminRoutes /> : <MemberRoutes />
 }
 
 Application.propTypes = {}

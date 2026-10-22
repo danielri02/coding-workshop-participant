@@ -1,3 +1,4 @@
+import { useWorkspace } from '../hooks/useWorkspace'
 import { useAuth } from '../auth/context'
 import { RecordLink } from './RecordLink'
 
@@ -12,7 +13,8 @@ export function PersonLink({
   tabIndex?: number
 }) {
   const { user } = useAuth()
-  return user?.is_admin || user?.id === id ? (
+  const { adminView } = useWorkspace()
+  return adminView || user?.id === id ? (
     <RecordLink resource="users" id={id} tabIndex={tabIndex}>
       {name}
     </RecordLink>

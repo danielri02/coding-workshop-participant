@@ -51,7 +51,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
       - run: npm audit --audit-level=high
       - run: npx playwright install --with-deps chromium
@@ -69,4 +69,13 @@ jobs:
           done
           curl --fail --silent http://localhost:8000/health
           cd frontend
-          npm run test:e2e
+          npm run test:e2e:coverage
+      - name: Report combined frontend coverage (measurement only)
+        run: npm run coverage:report
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          if-no-files-found: warn

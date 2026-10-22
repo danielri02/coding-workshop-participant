@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { incidentQuery } from '../src/resources/incidentQuery'
 import { formPayload, type Field } from '../src/resources/forms'
 import { decorateRow } from '../src/resources/rows'

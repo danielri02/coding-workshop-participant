@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer as createHttpServer } from 'node:http'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { apiBaseUrl, isDirectApi, workshopEndpoint } from '../src/services/apiConfig'
 import { workshopProxy } from '../config/workshopProxy'
 

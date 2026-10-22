@@ -1,3 +1,4 @@
+import { useWorkspace } from '../hooks/useWorkspace'
 import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import { useAuth } from '../auth/context'
 import { RecordLink } from '../components/RecordLink'
@@ -47,11 +48,12 @@ export function RecordDetailsContent({
   onAction: (action: RowAction, row: AdminRow) => void
 }) {
   const { user } = useAuth()
+  const { adminView, workspace } = useWorkspace()
   const query = useApiQuery<ApiRecord | null>(`${resource.endpoint}/${id}`, null)
   if (query.error) return <Alert severity="error">{query.error}</Alert>
   if (!query.data) return <CircularProgress aria-label="Loading record" />
   const record = decorateRow(resource.key, query.data, lookups)
-  const admin = Boolean(user?.is_admin)
+  const admin = adminView
   const display = (field: string, value: unknown): string => {
     if (value === null || value === undefined || value === '') return '—'
     if (field === 'assignee_id') return record.assignee_name || recordLabel(lookups.users, value)
@@ -111,15 +113,16 @@ export function RecordDetailsContent({
             View incidents
           </RelatedLink>
         )}
-        {resource.key === 'engineers' && (admin || (user?.id === id && user.engineer_profile)) && (
-          <RelatedLink
-            resource="incidents"
-            filters={{ assignee_id: id }}
-            title={`Incidents assigned to ${label || record.user_name}`}
-          >
-            Assigned incidents
-          </RelatedLink>
-        )}
+        {resource.key === 'engineers' &&
+          (admin || (workspace?.id === 'assigned' && user?.id === id && user.engineer_profile)) && (
+            <RelatedLink
+              resource="incidents"
+              filters={{ assignee_id: id }}
+              title={`Incidents assigned to ${label || record.user_name}`}
+            >
+              Assigned incidents
+            </RelatedLink>
+          )}
         {resource.key === 'users' && (
           <>
             <RelatedLink

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import PropTypes from 'prop-types'
 import { useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { api, ApiError, errorMessage } from '../services/client'
 import { getSession, sessionEvent, setSession } from '../services/session'
 import type { TokenPair, User } from '../types'
@@ -10,6 +11,7 @@ import { isTokenPair, isUser } from '../services/authContracts'
 /** Restore a tab session, verify account capabilities and manage login/logout. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
   const [booting, setBooting] = useState(Boolean(getSession()))
   const [notice, setNotice] = useState('')
@@ -78,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const tokens = getSession()
     setSession(null)
     setUser(null)
+    // A different account's next login should start at its own default workspace.
+    navigate('/', { replace: true })
     if (tokens) {
       try {
         await api(

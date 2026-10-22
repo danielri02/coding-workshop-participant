@@ -23,6 +23,8 @@
     "e2e/**/*.ts",
     "tests/**/*.ts",
     "config/**/*.ts",
-    "src/vite-env.d.ts"
+    "src/vite-env.d.ts",
+    "vitest.config.ts",
+    "tests/**/*.tsx"
   ]
 }

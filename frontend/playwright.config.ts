@@ -32,6 +32,7 @@ export default defineConfig({
     url: 'http://localhost:3011',
     reuseExistingServer: false,
     env: {
+      E2E_COVERAGE: process.env.E2E_COVERAGE || '',
       VITE_API_MODE: process.env.E2E_API_MODE || 'direct',
       VITE_API_URL:
         process.env.E2E_API_MODE === 'workshop'

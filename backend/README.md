@@ -379,6 +379,32 @@ been run or verified as part of this local integration.
 
 This folder contains backend services for CRUD operations with examples. Python with PostgreSQL are preferred, but Java and NodeJS with MongoDB options are available.
 
+## Coverage measurement
+
+Install `backend/requirements-dev.txt` and point `TEST_DATABASE_URL` at a disposable
+PostgreSQL database, then run from the repository root:
+
+```bash
+python -m coverage run -m unittest discover -s backend/tests
+python -m coverage report
+python -m coverage html
+python -m coverage xml
+python -m coverage json
+```
+
+`.coveragerc` measures statements/lines and branches in the facilities runtime and
+application-owned maintenance/deployment scripts, including untested files. Tests,
+provided workshop scripts, examples and third-party packages are outside the
+measurement. Reports go to `coverage/backend/`; open `html/index.html` for the
+source-level report. CI uploads the same reports as `backend-coverage`.
+
+This is measurement only: no percentage thresholds are enforced. Coverage is not
+an endpoint/error-scenario or user-journey completeness claim. PostgreSQL-backed
+tests require `TEST_DATABASE_URL`; without it those integration classes skip and
+the reported coverage will be lower. Optional Terraform-dependent tests likewise
+need their tools/providers. Generated reports are ignored by Git. Alembic remains
+deferred; no migration framework is introduced by this setup.
+
 ## Prerequisites
 
 - Compute environment

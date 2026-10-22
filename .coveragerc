@@ -1,0 +1,18 @@
+[run]
+data_file = coverage/backend/.coverage
+branch = True
+source = backend/facilities,backend/scripts
+
+[report]
+show_missing = True
+skip_empty = True
+precision = 2
+
+[html]
+directory = coverage/backend/html
+
+[xml]
+output = coverage/backend/coverage.xml
+
+[json]
+output = coverage/backend/coverage.json

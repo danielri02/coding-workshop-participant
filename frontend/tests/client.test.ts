@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { afterEach, beforeEach, mock, test } from 'node:test'
+import { afterEach, beforeEach, vi, test } from 'vitest'
 import { api, ApiError } from '../src/services/client'
 import { getSession, setSession } from '../src/services/session'
 import { isTokenPair, isUser } from '../src/services/authContracts'
@@ -29,20 +29,22 @@ beforeEach(() => {
   })
   setSession(initial)
 })
-afterEach(() => mock.restoreAll())
+afterEach(() => vi.restoreAllMocks())
 
 test('concurrent expired requests rotate once and all retry with the replacement token', async () => {
   let refreshes = 0
-  mock.method(globalThis, 'fetch', async (input: string | URL | Request, options?: RequestInit) => {
-    if (String(input).endsWith('/auth/refresh')) {
-      refreshes += 1
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      return json(replacement)
-    }
-    return new Headers(options?.headers).get('Authorization') === 'Bearer renewed'
-      ? json({ ok: true })
-      : json({ detail: 'Expired' }, 401)
-  })
+  vi.spyOn(globalThis, 'fetch').mockImplementation(
+    async (input: string | URL | Request, options?: RequestInit) => {
+      if (String(input).endsWith('/auth/refresh')) {
+        refreshes += 1
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return json(replacement)
+      }
+      return new Headers(options?.headers).get('Authorization') === 'Bearer renewed'
+        ? json({ ok: true })
+        : json({ detail: 'Expired' }, 401)
+    },
+  )
   const results = await Promise.all([api('/buildings'), api('/users'), api('/floors')])
   assert.deepEqual(results, [{ ok: true }, { ok: true }, { ok: true }])
   assert.equal(refreshes, 1)
@@ -50,7 +52,7 @@ test('concurrent expired requests rotate once and all retry with the replacement
 })
 
 test('a transient refresh outage preserves credentials for a later retry', async () => {
-  mock.method(globalThis, 'fetch', async (input: string | URL | Request) =>
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: string | URL | Request) =>
     String(input).endsWith('/auth/refresh')
       ? json({ detail: 'Try later' }, 503)
       : json({ detail: 'Expired' }, 401),
@@ -63,7 +65,7 @@ test('a transient refresh outage preserves credentials for a later retry', async
 })
 
 test('rejected refresh credentials clear the login', async () => {
-  mock.method(globalThis, 'fetch', async () => json({ detail: 'Expired' }, 401))
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => json({ detail: 'Expired' }, 401))
   await assert.rejects(
     api('/buildings'),
     (error: unknown) => error instanceof ApiError && error.status === 401,
@@ -73,7 +75,9 @@ test('rejected refresh credentials clear the login', async () => {
 
 test('unrelated proxy JSON cannot be accepted as a login token pair', async () => {
   setSession(null)
-  mock.method(globalThis, 'fetch', async () => json({ message: 'Development CORS Proxy Server' }))
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+    json({ message: 'Development CORS Proxy Server' }),
+  )
   await assert.rejects(
     api('/auth/login', { method: 'POST', body: '{}' }, false, isTokenPair),
     (error: unknown) =>
@@ -83,9 +87,7 @@ test('unrelated proxy JSON cannot be accepted as a login token pair', async () =
 })
 
 test('a successful HTML fallback explains the API configuration problem', async () => {
-  mock.method(
-    globalThis,
-    'fetch',
+  vi.spyOn(globalThis, 'fetch').mockImplementation(
     async () =>
       new Response('<html>Frontend</html>', {
         status: 200,
@@ -110,7 +112,7 @@ test('missing or malformed account roles are rejected, while an explicit non-adm
   assert.equal(isUser(account), true)
   assert.equal(isUser({ ...account, is_admin: true }), true)
   assert.equal(isUser({ ...account, is_admin: 'false' }), false)
-  mock.method(globalThis, 'fetch', async () => json({ message: 'Proxy status' }))
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => json({ message: 'Proxy status' }))
   await assert.rejects(
     api('/auth/me', {}, true, isUser),
     (error: unknown) => error instanceof ApiError && error.status === 502,
@@ -118,7 +120,7 @@ test('missing or malformed account roles are rejected, while an explicit non-adm
 })
 
 test('an invalid refresh response cannot replace the existing credentials', async () => {
-  mock.method(globalThis, 'fetch', async (input: string | URL | Request) =>
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: string | URL | Request) =>
     String(input).endsWith('/auth/refresh')
       ? json({ message: 'Proxy status' })
       : json({ detail: 'Expired' }, 401),

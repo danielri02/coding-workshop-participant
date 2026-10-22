@@ -1,3 +1,4 @@
+import { useWorkspace } from '../hooks/useWorkspace'
 import { useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Stack, TextField } from '@mui/material'
@@ -28,11 +29,12 @@ export function RelatedGrid({
   onAction: (action: RowAction | 'create', row: AdminRow) => void
 }) {
   const { user } = useAuth()
+  const { adminView, workspace } = useWorkspace()
   const client = useQueryClient()
   const { setState } = useRecordDialogs()
   const resource = resources.find((item) => item.key === target.resource)!
   const lookups = useLookups({
-    lookups: resource.lookups.filter((key) => key !== 'users' || user?.is_admin),
+    lookups: resource.lookups.filter((key) => key !== 'users' || adminView),
   })
   const search = useDebouncedValue(state.search)
   const pagination = { page: state.page, pageSize: state.pageSize }
@@ -43,7 +45,14 @@ export function RelatedGrid({
   )
   const server = resource.key === 'incidents'
   const path = server
-    ? incidentQuery(pagination, sorting, state.filters, search, target.filters)
+    ? incidentQuery(pagination, sorting, state.filters, search, {
+        ...target.filters,
+        ...(!adminView && user
+          ? workspace?.id === 'assigned'
+            ? { assignee_id: user.id }
+            : { reporter_id: user.id }
+          : {}),
+      })
     : target.resource === 'notes'
       ? `/incidents/${target.filters.incident_id}/notes`
       : resource.endpoint
@@ -113,14 +122,14 @@ export function RelatedGrid({
       {parent.data?.status === 'Closed' && (
         <Alert severity="info">
           This incident is closed.{' '}
-          {user?.is_admin
+          {adminView
             ? 'Existing notes can be read, corrected or deleted.'
             : 'Existing notes remain available to read.'}
         </Alert>
       )}
       {error ? (
         <Alert severity="error">{error}</Alert>
-      ) : user?.is_admin ? (
+      ) : adminView ? (
         <ResourceGrid
           resource={resource.key}
           rows={rows}

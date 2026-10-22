@@ -29,6 +29,7 @@ import { resources } from '../resources/definitions'
 import { reports } from '../reports/definitions'
 import { SidebarNavigation } from './SidebarNavigation'
 import { RecordDialogProvider } from '../dialogs/RecordDialogProvider'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 
 export interface AdminOutlet {
   changed: (message: string, resource?: ResourceKey) => void
@@ -165,6 +166,8 @@ export function AdminLayout() {
         <Toolbar
           sx={{
             minHeight: '76px !important',
+            flexWrap: 'wrap',
+            py: 1,
             bgcolor: 'background.paper',
             borderBottom: '1px solid',
             borderColor: 'divider',
@@ -202,6 +205,7 @@ export function AdminLayout() {
                 ?.title ?? current?.title}
             </Typography>
           </Breadcrumbs>
+          <WorkspaceSwitcher />
           <Avatar
             sx={{
               width: 32,

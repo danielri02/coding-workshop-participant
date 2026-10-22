@@ -3,7 +3,7 @@
 ## Overview
 
 The application uses React, TypeScript, Vite and MUI Data Grid Community.
-The backend-verified account selects the workspace after login:
+The backend-verified account determines the available workspaces:
 
 - Facility Admin: sidebar pages for incidents, users, engineer profiles,
   buildings, floors, seats, notes and reports. Demo: `admin@acme.inc` / `admin`.
@@ -11,6 +11,15 @@ The backend-verified account selects the workspace after login:
   Demo: `employee@acme.inc` / `employee`.
 - Engineer: assigned incidents, shared notes and status changes, plus access to
   their own submitted reports. Demo: `engineer@acme.inc` / `engineer`.
+
+Admins have a **Workspace** selector in both the administration and member
+headers. Choose Administration, My incidents, or Assigned to me (when the account
+has an engineer profile). Switching preserves the login and capabilities. Personal
+and assigned grids/summaries remain scoped to that account; member views hide
+administration controls. Returning to Administration restores admin controls.
+The selected workspace is represented by the URL and survives reload. Direct URLs
+without the required capability redirect to an allowed workspace. Engineers
+without admin access retain their existing Assigned to me / My incidents tabs.
 
 Run the backend seed command to add the demo employee and expanded samples to an
 existing development database. Existing seeded accounts and passwords are preserved.
@@ -191,8 +200,40 @@ PYTHON=/path/to/backend/venv/bin/python npm run generate:api
 No database connection is required. CI regenerates these files and rejects drift.
 Commit `package-lock.json` after dependency changes and use `npm ci` for repeatable
 installs. TypeScript is on the 5.9 release line to match the schema generator's
-supported peer dependency. `npm test` runs focused HTTP-client, payload, adapter
-and cache tests; it does not measure coverage.
+supported peer dependency. `npm test` runs Vitest unit/contract tests and React Testing Library component tests.
+The component tests cover workspace selection and capability-aware routing.
+
+### Coverage measurement
+
+Coverage is reported without pass/fail percentage thresholds. From `frontend/`:
+
+```bash
+npm run test:coverage
+# With the disposable seeded backend described in Browser verification:
+E2E_API_URL=http://localhost:8000 npm run test:e2e:coverage
+npm run coverage:report
+```
+
+Vitest/Istanbul writes unit/component reports to `coverage/unit/`. Playwright saves
+browser counters across reloads/navigation in `coverage/browser/`. The report
+command remaps browser counters to the TypeScript/TSX source and merges them with
+unit coverage, writing HTML, JSON and LCOV to `coverage/combined/`. Open
+`coverage/combined/index.html` for source-level uncovered lines. A combined report
+requires both runs; a filtered browser run gives coverage only for those journeys.
+Repeat the full browser suite for an application-wide baseline.
+
+All runtime files under `src/` are included, even if untested. Generated contracts,
+type-only aliases and declaration files are excluded. Third-party library code,
+Vite configuration and test helpers are outside this runtime measurement; their
+existing tests still run. Unit-only coverage does not measure browser journeys.
+Lines, statements, functions and branches are distinct metrics, and none proves
+complete user-path/error-case coverage.
+
+Browser instrumentation is enabled only by `test:e2e:coverage` (or explicitly
+`E2E_COVERAGE=1`) on the development server. Hot-reload wrappers are disabled in
+that mode so they do not inflate counters. Production builds remain uninstrumented.
+CI publishes the reports as the `frontend-coverage` artifact. Generated reports are
+ignored by Git.
 
 Grids provide view/edit/delete actions; the row's extra-actions menu handles admin
 access and incident assignment, priority/escalation, status and notes. Notes use an

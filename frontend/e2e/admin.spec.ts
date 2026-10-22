@@ -1,4 +1,5 @@
-import { expect, test, type Page, type APIRequestContext } from '@playwright/test'
+import { type Page, type APIRequestContext } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 const apiUrl = process.env.E2E_API_URL || 'http://localhost:8000'
 const browserApiUrl =
@@ -28,6 +29,11 @@ async function signIn(page: Page, userEmail = email, userPassword = password) {
   await page.getByRole('textbox', { name: 'Email address' }).fill(userEmail)
   await page.getByLabel('Password', { exact: false }).fill(userPassword)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+}
+
+async function switchWorkspace(page: Page, label: string) {
+  await page.getByRole('combobox', { name: 'Workspace', exact: true }).click()
+  await page.getByRole('option', { name: label, exact: true }).click()
 }
 
 async function navigate(page: Page, name: string) {
@@ -1743,4 +1749,183 @@ test('engineer scope and permissions follow current assignment including reassig
       .filter((path) => /^\/reports(\/|$)/.test(path))
       .every((path) => path === '/reports/summary'),
   ).toBeTruthy()
+})
+
+test('an admin engineer switches views while keeping incident scopes, member controls and the same login', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(120000)
+  const suffix = `workspace${Date.now()}`
+  const actorPassword = 'workspace-password-12345'
+  const actor = await (
+    await request.post(`${apiUrl}/users`, {
+      data: { name: suffix, email: `${suffix}@acme.inc`, password: actorPassword },
+    })
+  ).json()
+  cleanup.unshift(`/users/${actor.id}`)
+  expect(
+    (
+      await request.patch(`${apiUrl}/users/${actor.id}/admin`, {
+        headers,
+        data: { is_admin: true },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  expect(
+    (
+      await request.post(`${apiUrl}/engineer-profiles`, { headers, data: { user_id: actor.id } })
+    ).ok(),
+  ).toBeTruthy()
+  cleanup.unshift(`/engineer-profiles/${actor.id}`)
+  const tokens = await (
+    await request.post(`${apiUrl}/auth/login`, {
+      data: { email: actor.email, password: actorPassword },
+    })
+  ).json()
+  const actorHeaders = { Authorization: `Bearer ${tokens.access_token}` }
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const incidentData = (title: string) => ({
+    title,
+    description: 'Workspace scope verification.',
+    category: 'Other',
+    building_id: building.id,
+  })
+  const own = await (
+    await request.post(`${apiUrl}/incidents`, {
+      headers: actorHeaders,
+      data: incidentData(`${suffix} own`),
+    })
+  ).json()
+  const assigned = await (
+    await request.post(`${apiUrl}/incidents`, { headers, data: incidentData(`${suffix} assigned`) })
+  ).json()
+  cleanup.unshift(`/incidents/${own.id}`, `/incidents/${assigned.id}`)
+  expect(
+    (
+      await request.patch(`${apiUrl}/incidents/${assigned.id}/assignment`, {
+        headers,
+        data: { assignee_id: actor.id },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  let logins = 0
+  page.on('request', (req) => {
+    if (browserPath(new URL(req.url())) === '/auth/login') logins++
+  })
+  await page.goto('/admin/incidents')
+  await signIn(page, actor.email, actorPassword)
+  await expect(page.getByRole('button', { name: 'New incident', exact: true })).toBeVisible()
+  await switchWorkspace(page, 'My incidents')
+  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByText('1–1 of 1', { exact: true })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
+  await expect(page.getByRole('region', { name: 'My incident summary' })).toBeVisible()
+  await page.getByRole('link', { name: `#${own.id} · ${own.title}`, exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('heading', { name: own.title, exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Assign engineer', exact: true })).toBeHidden()
+  await expect(dialog.getByRole('button', { name: 'Delete incident', exact: true })).toBeHidden()
+  await dialog.getByRole('link', { name: building.name, exact: true }).click()
+  const scoped = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/incidents/grid' &&
+      url.searchParams.get('building_id') === String(building.id) &&
+      url.searchParams.get('reporter_id') === String(actor.id)
+    )
+  })
+  await dialog.getByRole('link', { name: 'View incidents', exact: true }).click()
+  expect((await (await scoped).json()).row_count).toBe(1)
+  await expect(dialog.getByRole('link', { name: assigned.title, exact: true })).toBeHidden()
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'New incident', exact: true }).click()
+  await expect(dialog.getByRole('combobox', { name: /^Priority/ })).toBeHidden()
+  await dialog.getByLabel('Title', { exact: false }).fill(`${suffix} submitted`)
+  await dialog.getByLabel('Description').fill('An admin reporting in the employee view.')
+  await select(page, 'Category', 'Other')
+  await select(page, 'Building', building.name)
+  const created = await save(page, '/incidents')
+  expect(created.reporter_id).toBe(actor.id)
+  expect(created.priority).toBe('Low')
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await switchWorkspace(page, 'Assigned to me')
+  await expect(page).toHaveURL(/\/engineer\/incidents$/)
+  await expect(page.getByText('1–1 of 1', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Assigned incident summary' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Workspace', exact: true })).toHaveText(
+    'Assigned to me',
+  )
+  await page.getByRole('link', { name: `#${assigned.id} · ${assigned.title}`, exact: true }).click()
+  const accepted = page.waitForResponse(
+    (response) =>
+      browserPath(new URL(response.url())) === `/incidents/${assigned.id}/status` &&
+      response.request().method() === 'PATCH',
+  )
+  await dialog.getByRole('button', { name: 'Accept and start work', exact: true }).click()
+  expect((await (await accepted).json()).status).toBe('In Progress')
+  await dialog.getByRole('button', { name: 'Change status', exact: true }).click()
+  await dialog.getByRole('combobox', { name: /^Next status/ }).click()
+  await expect(page.getByRole('option', { name: 'Closed', exact: true })).toBeHidden()
+  await page.getByRole('option', { name: 'Resolved', exact: true }).click()
+  await save(page, `/incidents/${assigned.id}/status`, 'PATCH')
+  await expect(dialog.getByRole('button', { name: 'Add note', exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await switchWorkspace(page, 'Administration')
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(assigned.title)
+  await page.getByRole('link', { name: assigned.title, exact: true }).click()
+  await dialog.getByRole('button', { name: 'Change status', exact: true }).click()
+  await select(page, 'Next status', 'Closed')
+  expect((await save(page, `/incidents/${assigned.id}/status`, 'PATCH')).status).toBe('Closed')
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  expect(logins).toBe(1)
+  await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: tokens.refresh_token } })
+})
+
+test('an admin without an engineer profile can switch to employee view and cannot open assigned workspace', async ({
+  request,
+  page,
+}) => {
+  const suffix = `adminviews${Date.now()}`
+  const actorPassword = 'admin-views-password-12345'
+  const actor = await (
+    await request.post(`${apiUrl}/users`, {
+      data: { name: suffix, email: `${suffix}@acme.inc`, password: actorPassword },
+    })
+  ).json()
+  cleanup.unshift(`/users/${actor.id}`)
+  expect(
+    (
+      await request.patch(`${apiUrl}/users/${actor.id}/admin`, {
+        headers,
+        data: { is_admin: true },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  await page.goto('/admin/incidents')
+  await signIn(page, actor.email, actorPassword)
+  await page.getByRole('combobox', { name: 'Workspace', exact: true }).click()
+  await expect(page.getByRole('option')).toHaveCount(2)
+  await expect(page.getByRole('option', { name: 'Assigned to me', exact: true })).toBeHidden()
+  await page.getByRole('option', { name: 'My incidents', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await page.goto('/engineer/incidents')
+  await expect(page).toHaveURL(/\/admin\/incidents$/)
+  await switchWorkspace(page, 'My incidents')
+  expect(
+    (
+      await request.patch(`${apiUrl}/users/${actor.id}/admin`, {
+        headers,
+        data: { is_admin: false },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Workspace', exact: true })).toBeHidden()
+  await page.goto('/admin/incidents')
+  await expect(page).toHaveURL(/\/employee\/incidents$/)
 })

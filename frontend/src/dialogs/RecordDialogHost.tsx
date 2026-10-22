@@ -1,8 +1,8 @@
+import { useWorkspace } from '../hooks/useWorkspace'
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Box, Button, Dialog, DialogContent, DialogTitle, Stack } from '@mui/material'
 import ArrowBack from '@mui/icons-material/ArrowBack'
-import { useAuth } from '../auth/context'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { RecordFormDialog } from '../components/RecordFormDialog'
 import { useLookups } from '../hooks/useLookups'
@@ -17,13 +17,13 @@ import { RelatedGrid } from './RelatedGrid'
 
 function DialogScreen({ entry }: { entry: DialogEntry }) {
   const { target } = entry
-  const { user } = useAuth()
+  const { adminView, workspace } = useWorkspace()
   const navigation = useRecordDialogs()
   const { setBusy } = navigation
   const client = useQueryClient()
   const resource = resources.find((item) => item.key === target.resource)!
   const lookups = useLookups({
-    lookups: resource.lookups.filter((key) => key !== 'users' || user?.is_admin),
+    lookups: resource.lookups.filter((key) => key !== 'users' || adminView),
   })
   const scope = target.kind === 'collection' ? target.filters.incident_id || 0 : 0
   const actions = useResourceActions(resource, scope, (message, key) => {
@@ -78,8 +78,14 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
         }
       />
     )
-  if (!user?.is_admin && target.resource === 'incidents')
-    return <IncidentDetailsPage recordId={target.id} scope={target.scope} embedded />
+  if (!adminView && target.resource === 'incidents')
+    return (
+      <IncidentDetailsPage
+        recordId={target.id}
+        scope={target.scope || (workspace?.id === 'assigned' ? 'assigned' : 'reported')}
+        embedded
+      />
+    )
   return (
     <RecordDetailsContent
       resource={resource}
