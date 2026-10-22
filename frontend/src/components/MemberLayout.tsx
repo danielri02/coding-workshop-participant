@@ -40,11 +40,11 @@ export function MemberLayout() {
         {!engineer && !user?.is_admin && (
           <Button
             component={Link}
-            to="/employee/incidents"
+            to="/employee/tickets"
             color="inherit"
             sx={{ fontSize: { xs: 12, sm: 13 }, px: { xs: 1, sm: 2 }, flexShrink: 0 }}
           >
-            My incidents
+            My tickets
           </Button>
         )}
         <WorkspaceSwitcher dark />

@@ -20,6 +20,7 @@ from .routes import (
     notes,
     reports,
     seats,
+    tickets,
     users,
 )
 from .routes.health import router as health_router
@@ -58,6 +59,7 @@ for api_router in (
     floors.router,
     seats.router,
     incidents.router,
+    tickets.router,
     notes.router,
     reports.router,
     dev.router,

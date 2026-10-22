@@ -14,17 +14,20 @@ from sqlalchemy import (
     Text,
     and_,
     func,
+    select,
     text,
 )
-from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, foreign, mapped_column, relationship
 
 from .base import Base
 from .enums import IncidentCategory, IncidentPriority, IncidentStatus
 from .facility import Building, Floor, Seat
+from .ticket import Ticket
+from .user import User
 
 if TYPE_CHECKING:
     from .note import Note
-    from .user import EngineerProfile, User
+    from .user import EngineerProfile
 
 
 def enum_values(
@@ -36,7 +39,7 @@ def enum_values(
 
 
 class Incident(Base):
-    """Current ticket state; services own permissions and workflow transitions."""
+    """A shared problem; tickets identify the employees following its progress."""
 
     __tablename__ = "incidents"
     __table_args__ = (
@@ -83,6 +86,13 @@ class Incident(Base):
             "AND (acknowledged_at IS NULL OR resolved_at >= acknowledged_at))",
             name="resolution_time_order",
         ),
+        CheckConstraint(
+            "merged_into_id IS NULL OR merged_into_id <> id", name="merge_not_self"
+        ),
+        CheckConstraint(
+            "(merged_into_id IS NULL AND merged_at IS NULL AND merged_by_id IS NULL) OR (merged_into_id IS NOT NULL AND merged_at IS NOT NULL AND status = 'Closed')",
+            name="merge_metadata",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Identity(), primary_key=True)
@@ -96,10 +106,6 @@ class Incident(Base):
             create_constraint=True,
             name="incident_category",
         ),
-        index=True,
-    )
-    reporter_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"),
         index=True,
     )
     assignee_id: Mapped[int | None] = mapped_column(
@@ -147,22 +153,35 @@ class Incident(Base):
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    reporter: Mapped["User"] = relationship(back_populates="reported_incidents")
+    merged_into_id: Mapped[int | None] = mapped_column(
+        ForeignKey("incidents.id", ondelete="CASCADE"), index=True
+    )
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    merged_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+    tickets: Mapped[list[Ticket]] = relationship(
+        back_populates="incident", passive_deletes="all"
+    )
     assignee: Mapped["EngineerProfile | None"] = relationship(
         back_populates="assignments"
     )
 
-    @property
-    def reporter_name(self) -> str | None:
-        """Expose the reporter's name within an authorized incident."""
+    # Count followers in SQL without loading their private report bodies.
+    ticket_count: Mapped[int] = column_property(
+        select(func.count(Ticket.id))
+        .where(Ticket.incident_id == id)
+        .correlate_except(Ticket)
+        .scalar_subquery()
+    )
 
-        return self.reporter.name if self.reporter is not None else None
-
-    @property
-    def assignee_name(self) -> str | None:
-        """Expose the assigned engineer's name within an authorized incident."""
-
-        return self.assignee.user.name if self.assignee is not None else None
+    assignee_name: Mapped[str | None] = column_property(
+        select(User.name)
+        .where(User.id == assignee_id)
+        .correlate_except(User)
+        .scalar_subquery()
+    )
 
     building: Mapped[Building] = relationship(back_populates="incidents")
     # Read-only convenience relationships avoid competing writes to the shared

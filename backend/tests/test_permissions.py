@@ -30,6 +30,7 @@ from backend.app.security.config import SecuritySettings
 from backend.app.security.dependencies import auth_settings
 from backend.app.security.jwt import create_access_token
 from backend.scripts.create_tables import initialize_database
+from backend.tests.support.factories import reported_incident
 
 
 class PermissionTests(unittest.IsolatedAsyncioTestCase):
@@ -127,7 +128,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                 ("other", "other", None),
                 ("engineer_owned", "engineer", "replacement"),
             ):
-                report = Incident(
+                report = reported_incident(
                     **self.report_data(),
                     reporter_id=self.ids[reporter],
                     assignee_id=self.ids[assignee] if assignee else None,
@@ -176,8 +177,14 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
     ) -> Response:
         """Send an authenticated request and check its permission outcome."""
 
+        params = None
+        if method == "DELETE" and expected == 204 and path.startswith("/incidents/"):
+            preview = await self.client.get(
+                f"/deletions{path}", headers=self.headers(actor)
+            )
+            params = {"confirmation": preview.json()["confirmation_token"]}
         response = await self.client.request(
-            method, path, headers=self.headers(actor), json=payload
+            method, path, headers=self.headers(actor), json=payload, params=params
         )
         self.assertEqual(
             response.status_code, expected, f"{actor} {method} {path}: {response.text}"
@@ -380,9 +387,9 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         incident_path = f"/incidents/{self.reports['assigned']}"
         response = await self.request("employee", "GET", incident_path, 200)
         self.assertEqual(response.json()["assignee_name"], "engineer")
-        self.assertEqual(response.json()["reporter_name"], "employee")
+        self.assertEqual(response.json()["ticket_count"], 1)
         response = await self.request("engineer", "GET", incident_path, 200)
-        self.assertEqual(response.json()["reporter_name"], "employee")
+        self.assertEqual(response.json()["ticket_count"], 1)
         await self.request("engineer", "GET", f"/users/{self.ids['employee']}", 403)
         await self.request("employee", "GET", f"/users/{self.ids['engineer']}", 403)
         response = await self.request(
@@ -422,7 +429,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
             201,
             self.report_data(),
         )
-        self.assertEqual(response.json()["reporter_id"], self.ids["employee"])
+        self.assertEqual(response.json()["ticket_count"], 1)
         response = await self.request(
             "engineer",
             "POST",
@@ -553,7 +560,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
     async def test_notes_inherit_visibility_and_only_admins_correct_or_delete(
         self,
     ) -> None:
-        """All incident viewers read/post shared notes; authors get no edit privilege."""
+        """Viewers read shared notes; only admins/current engineers post, even after resolution."""
 
         incident_path = f"/incidents/{self.reports['assigned']}"
         for actor in self.ids:
@@ -568,10 +575,10 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                 actor,
                 "POST",
                 incident_path + "/notes",
-                201 if visible else 403,
+                201 if actor in {"engineer", "admin", "combined"} else 403,
                 {"body": "Shared update"},
             )
-            if visible and actor not in {"admin", "combined"}:
+            if actor == "engineer":
                 for note_id in (self.note_id, response.json()["id"]):
                     await self.request(
                         actor, "PATCH", f"/notes/{note_id}", 403, {"body": "Correction"}
@@ -587,10 +594,10 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
                 actor,
                 "POST",
                 incident_path + "/notes",
-                201 if visible else 403,
+                201 if actor in {"engineer", "admin", "combined"} else 403,
                 {"body": "Follow-up after resolution"},
             )
-            if visible:
+            if actor in {"engineer", "admin", "combined"}:
                 self.assertEqual(response.json()["author_id"], self.ids[actor])
         after_notes = (await self.request("admin", "GET", incident_path, 200)).json()
         self.assertEqual(after_notes["status"], "Resolved")
@@ -601,7 +608,11 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         for actor in ("employee", "engineer", "admin", "combined"):
             await self.request(actor, "GET", incident_path + "/notes", 200)
             await self.request(
-                actor, "POST", incident_path + "/notes", 409, {"body": "Too late"}
+                actor,
+                "POST",
+                incident_path + "/notes",
+                403 if actor == "employee" else 409,
+                {"body": "Too late"},
             )
         await self.request(
             "admin",

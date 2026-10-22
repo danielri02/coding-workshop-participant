@@ -7,18 +7,14 @@ from sqlalchemy import select
 
 from ..database import crud
 from ..database.grids import grid_records
+from ..database.loading import NOTE_READ_OPTIONS
 from ..domain.incidents import NOTE_STATUSES
 from ..models import Note, User
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
 from ..schemas.grid import NoteGridQuery, Page
 from ..security.dependencies import AdminUser, CurrentUser
-from ..security.permissions import accessible_incident
-from .dependencies import (
-    NOTE_READ_OPTIONS,
-    DatabaseSession,
-    DeletionConfirmation,
-    RecordID,
-)
+from ..security.permissions import accessible_incident, require_incident_worker
+from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(tags=[Note.__name__])
 
@@ -76,9 +72,10 @@ async def create_note(
     session: DatabaseSession,
     user: CurrentUser,
 ) -> Note:
-    """Post as an authorized viewer, including after resolution, until closure."""
+    """Only admins/current assigned engineers post, including after resolution, until closure."""
 
     incident = await accessible_incident(session, incident_id, user, for_update=True)
+    require_incident_worker(user, incident)
     if incident.status not in NOTE_STATUSES:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "New notes are not allowed on closed incidents"

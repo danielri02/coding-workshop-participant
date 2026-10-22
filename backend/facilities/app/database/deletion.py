@@ -10,7 +10,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..domain.incidents import ACTIVE_STATUSES
-from ..models import Base, Building, EngineerProfile, Floor, Incident, Note, Seat, User
+from ..models import (
+    Base,
+    Building,
+    EngineerProfile,
+    Floor,
+    Incident,
+    Note,
+    Seat,
+    Ticket,
+    User,
+)
 from ..models.enums import IncidentStatus
 from ..schemas.deletion import DeletionPreview
 
@@ -22,6 +32,7 @@ RESOURCES = {
     "seats": Seat,
     "incidents": Incident,
     "notes": Note,
+    "tickets": Ticket,
 }
 TABLES = {
     "users": User,
@@ -31,6 +42,7 @@ TABLES = {
     "seats": Seat,
     "incidents": Incident,
     "notes": Note,
+    "tickets": Ticket,
 }
 
 
@@ -84,8 +96,7 @@ async def plan_deletion(
     if records["floors"]:
         records["seats"] = await ids(Seat, Seat.floor_id.in_(records["floors"]))
 
-    # A deleted account owns its reports. A removed engineer profile only
-    # unassigns work, so it deliberately has no incident-deletion condition.
+    # Accounts own tickets, not shared incidents. Engineer removal only unassigns work.
     incident_condition = false()
     if model is Building:
         incident_condition = Incident.building_id == record_id
@@ -93,8 +104,6 @@ async def plan_deletion(
         incident_condition = Incident.floor_id == record_id
     elif model is Seat:
         incident_condition = Incident.seat_id == record_id
-    elif model is User:
-        incident_condition = Incident.reporter_id == record_id
     elif model is Incident:
         incident_condition = Incident.id == record_id
 
@@ -108,6 +117,28 @@ async def plan_deletion(
             )
         )
     unassign = sorted(set(affected) - set(records["incidents"]))
+
+    # Deleting a survivor also removes the historical merge references pointing
+    # to it, including older chains. Include them in the confirmed impact count.
+    while records["incidents"]:
+        sources = await ids(Incident, Incident.merged_into_id.in_(records["incidents"]))
+        expanded = sorted(set(records["incidents"]) | set(sources))
+        if expanded == records["incidents"]:
+            break
+        records["incidents"] = expanded
+    ticket_conditions = [
+        Ticket.incident_id.in_(records["incidents"]),
+        Ticket.reporter_id.in_(records["users"]),
+    ]
+    if model is Building:
+        ticket_conditions.append(Ticket.building_id == record_id)
+    elif model is Floor:
+        ticket_conditions.append(Ticket.floor_id == record_id)
+    elif model is Seat:
+        ticket_conditions.append(Ticket.seat_id == record_id)
+    elif model is Ticket:
+        ticket_conditions.append(Ticket.id == record_id)
+    records["tickets"] = await ids(Ticket, or_(*ticket_conditions))
 
     note_conditions = [
         Note.incident_id.in_(records["incidents"]),
@@ -165,6 +196,7 @@ async def delete_with_dependents(
             )
         for key in (
             "notes",
+            "tickets",
             "incidents",
             "seats",
             "floors",

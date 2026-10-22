@@ -47,7 +47,7 @@ export function statusFields(status: IncidentStatus, admin = false): Field[] {
   ]
 }
 
-export type IncidentCommand = 'assignment' | 'priority' | 'status'
+export type IncidentCommand = 'assignment' | 'priority' | 'status' | 'merge'
 
 /** Use the same workflow controls in row menus and incident details. */
 export function incidentCommands(): { action: IncidentCommand; label: string }[] {
@@ -55,6 +55,7 @@ export function incidentCommands(): { action: IncidentCommand; label: string }[]
     { action: 'assignment', label: 'Assign engineer' },
     { action: 'priority', label: 'Priority and escalation' },
     { action: 'status', label: 'Change status' },
+    { action: 'merge', label: 'Merge incident' },
   ]
 }
 

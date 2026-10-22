@@ -29,6 +29,7 @@ from backend.app.models import (
     Incident,
     IncidentStatus,
     Note,
+    Ticket,
     User,
 )
 from backend.scripts.check_database import connection_timeout
@@ -407,6 +408,7 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
                 "floors": 18,
                 "seats": 108,
                 "incidents": 240,
+                "tickets": 264,
                 "notes": 653,
                 "refresh_tokens": 0,
             },
@@ -442,12 +444,16 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await session.get(EngineerProfile, employee.id))
             own = (
                 await session.scalars(
-                    select(Incident).where(Incident.reporter_id == employee.id)
+                    select(Incident).where(
+                        Incident.tickets.any(Ticket.reporter_id == employee.id)
+                    )
                 )
             ).all()
             others = (
                 await session.scalars(
-                    select(Incident).where(Incident.reporter_id != employee.id)
+                    select(Incident).where(
+                        ~Incident.tickets.any(Ticket.reporter_id == employee.id)
+                    )
                 )
             ).all()
             self.assertEqual(len(own), 192)
@@ -805,6 +811,74 @@ class AsyncDatabaseTests(unittest.IsolatedAsyncioTestCase):
         code, _, stderr = await self.cli(create, "--reset", "--yes")
         self.assertEqual(code, 0, stderr)
         self.assertEqual(await self.inserted_user_count(), 0)
+
+    async def test_ticket_upgrade_preserves_legacy_reports_notes_and_is_repeatable(
+        self,
+    ):
+        """Upgrade an actual legacy table shape without resetting existing data."""
+
+        async with self.engine.begin() as connection:
+            await connection.execute(text("DROP TABLE tickets"))
+            await connection.execute(
+                text(
+                    "ALTER TABLE incidents DROP COLUMN merged_into_id, DROP COLUMN merged_at, DROP COLUMN merged_by_id, ADD COLUMN reporter_id INTEGER REFERENCES users(id)"
+                )
+            )
+            user_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO users (name, email, password_hash) VALUES ('Legacy employee', 'legacy@acme.inc', 'test-hash') RETURNING id"
+                    )
+                )
+            ).scalar_one()
+            building_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO buildings (name) VALUES ('Legacy building') RETURNING id"
+                    )
+                )
+            ).scalar_one()
+            incident_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO incidents (title, description, category, building_id, reporter_id, created_at) VALUES ('Original report', 'Preserve the original description', 'Electrical', :building, :reporter, '2026-01-01T10:00:00Z') RETURNING id"
+                    ),
+                    {"building": building_id, "reporter": user_id},
+                )
+            ).scalar_one()
+            note_id = (
+                await connection.execute(
+                    text(
+                        "INSERT INTO notes (incident_id, author_id, body) VALUES (:incident, :author, 'Keep this historical note') RETURNING id"
+                    ),
+                    {"incident": incident_id, "author": user_id},
+                )
+            ).scalar_one()
+        await initialize_database(self.engine)
+        await initialize_database(self.engine)
+        from backend.app.database.loading import TICKET_READ_OPTIONS
+
+        async with self.factory() as session:
+            ticket = (
+                await session.scalars(select(Ticket).options(*TICKET_READ_OPTIONS))
+            ).one()
+            self.assertEqual(ticket.incident_id, incident_id)
+            self.assertEqual(ticket.reporter_id, user_id)
+            self.assertEqual(ticket.title, "Original report")
+            self.assertEqual(ticket.description, "Preserve the original description")
+            self.assertEqual(ticket.created_at, datetime(2026, 1, 1, 10, tzinfo=UTC))
+            self.assertEqual(ticket.incident.ticket_count, 1)
+            self.assertIsNone(ticket.incident.merged_into_id)
+            self.assertEqual(
+                (await session.get(Note, note_id)).body, "Keep this historical note"
+            )
+        async with self.engine.connect() as connection:
+            columns = await connection.run_sync(
+                lambda sync: {
+                    column["name"] for column in inspect(sync).get_columns("incidents")
+                }
+            )
+            self.assertNotIn("reporter_id", columns)
 
 
 if __name__ == "__main__":

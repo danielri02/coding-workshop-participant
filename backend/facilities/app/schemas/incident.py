@@ -100,11 +100,13 @@ class IncidentRead(Schema):
     """Ticket state and UTC milestones; authorize access before serialization."""
 
     id: PositiveID
+    ticket_count: Annotated[int, Field(ge=0)]
+    merged_into_id: PositiveID | None = None
+    merged_at: UTCDateTime | None = None
+    merged_by_id: PositiveID | None = None
     title: Title
     description: Body
     category: IncidentCategory
-    reporter_id: PositiveID
-    reporter_name: Name | None = None
     assignee_id: PositiveID | None = None
     assignee_name: Name | None = None
     building_id: PositiveID
@@ -135,6 +137,9 @@ class IncidentFilters(Schema):
     priority: IncidentPriority | None = None
     category: IncidentCategory | None = None
     search: Annotated[str, Field(max_length=200)] | None = None
+    include_merged: bool = False
+    merged: bool | None = None
+    merge_target: bool = False
     escalated: bool | None = None
     unassigned: bool | None = None
 
@@ -152,7 +157,6 @@ class IncidentGridQuery(IncidentFilters, PaginationQuery):
         "building_id",
         "floor_id",
         "seat_id",
-        "reporter_id",
         "assignee_id",
         "created_at",
         "assigned_at",
@@ -164,3 +168,9 @@ class IncidentGridQuery(IncidentFilters, PaginationQuery):
 
 class IncidentPage(Page[IncidentRead]):
     """Filtered rows and their total count for server-side grid pagination."""
+
+
+class IncidentMerge(Schema):
+    """Admin-only consolidation into an existing, non-closed incident."""
+
+    target_incident_id: PositiveID

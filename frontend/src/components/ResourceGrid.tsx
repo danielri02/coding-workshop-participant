@@ -18,7 +18,7 @@ import { incidentCommands } from '../resources/incidentActions'
 import { defaultIncidentColumns } from '../resources/incidentViews'
 
 export type RowAction =
-  'view' | 'edit' | 'delete' | 'admin' | 'assignment' | 'priority' | 'status' | 'notes'
+  'view' | 'edit' | 'delete' | 'admin' | 'assignment' | 'priority' | 'status' | 'notes' | 'merge'
 interface ActionsProps {
   row: AdminRow
   resource: ResourceKey
@@ -33,15 +33,30 @@ function RowActions({ row, resource, disabled, onAction }: ActionsProps) {
     resource === 'users'
       ? [{ action: 'admin', label: row.is_admin ? 'Remove admin access' : 'Grant admin access' }]
       : resource === 'incidents'
-        ? [...incidentCommands(), { action: 'notes', label: 'View notes' }]
+        ? [
+            ...(row.merged_into_id ? [] : incidentCommands()),
+            { action: 'notes', label: 'View notes' },
+          ]
         : []
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
       {(
         [
           { action: 'view', label: 'View', icon: <VisibilityOutlined fontSize="small" /> },
-          { action: 'edit', label: 'Edit', icon: <EditOutlined fontSize="small" /> },
-          { action: 'delete', label: 'Delete', icon: <DeleteOutlined fontSize="small" /> },
+          ...(resource === 'tickets' || row.merged_into_id
+            ? []
+            : [
+                { action: 'edit' as const, label: 'Edit', icon: <EditOutlined fontSize="small" /> },
+              ]),
+          ...(resource === 'tickets'
+            ? []
+            : [
+                {
+                  action: 'delete' as const,
+                  label: 'Delete',
+                  icon: <DeleteOutlined fontSize="small" />,
+                },
+              ]),
         ] as const
       ).map((item) => (
         <Tooltip title={item.label} key={item.action}>

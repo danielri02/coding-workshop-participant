@@ -3,7 +3,7 @@
 From the repository root: python backend/scripts/create_tables.py
 From backend/: python scripts/create_tables.py
 
-This deletes application users, incidents, notes, facilities and refresh tokens.
+This deletes application users, incidents, tickets, notes, facilities and refresh tokens.
 Unrelated tables and PostgreSQL accounts are preserved. Run seed_database.py next.
 DATABASE_URL / POSTGRES_* select the target via the shared root .env.
 """

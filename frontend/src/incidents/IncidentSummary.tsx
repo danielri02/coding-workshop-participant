@@ -52,12 +52,12 @@ export function IncidentSummary({
   return (
     <Box
       component="section"
-      aria-label={assigned ? 'Assigned incident summary' : 'My incident summary'}
+      aria-label={assigned ? 'Assigned incident summary' : 'My ticket summary'}
       aria-busy={query.loading}
     >
       <Stack spacing={1.5}>
         <Typography variant="body2" color="text.secondary">
-          {assigned ? 'All incidents currently assigned to you' : 'All incidents you submitted'} ·
+          {assigned ? 'All incidents currently assigned to you' : 'All tickets you submitted'} ·
           independent of grid filters
         </Typography>
         {query.error ? (

@@ -6,6 +6,7 @@ from .facility import Building, Floor, Seat
 from .incident import Incident
 from .note import Note
 from .refresh_token import RefreshToken
+from .ticket import Ticket
 from .user import EngineerProfile, User
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "RefreshToken",
     "Seat",
     "User",
+    "Ticket",
 ]

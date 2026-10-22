@@ -10,7 +10,7 @@ const handler = runInNewContext(
 }) => { uri: string }
 
 test('CloudFront rewrites only browser frontend navigation and retains API/asset paths', () => {
-  for (const path of ['/', '/admin/incidents', '/employee/incidents/123', '/engineer/incidents'])
+  for (const path of ['/', '/admin/incidents', '/employee/tickets/123', '/engineer/incidents'])
     assert.equal(
       handler({
         request: { uri: path, method: 'GET', headers: { accept: { value: 'text/html' } } },

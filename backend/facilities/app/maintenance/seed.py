@@ -17,6 +17,7 @@ from ..models import (
     IncidentStatus,
     Note,
     Seat,
+    Ticket,
     User,
 )
 from ..security.passwords import hash_password, validate_password
@@ -148,7 +149,6 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
                 Incident,
                 {
                     "title": sample.values["title"],
-                    "reporter_id": reporter.id,
                     "building_id": building.id,
                 },
                 {
@@ -161,10 +161,39 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
             counts["incidents"] += created
             if not created:
                 continue
+            session.add(
+                Ticket(
+                    incident_id=incident.id,
+                    reporter_id=reporter.id,
+                    title=incident.title,
+                    description=incident.description,
+                    building_id=building.id,
+                    floor_id=floor.id,
+                    seat_id=seat.id,
+                    created_at=incident.created_at,
+                )
+            )
+            counts["tickets"] += 1
+            if counts["incidents"] % 10 == 0:
+                # Several employees can follow the same problem without inflating
+                # incident counts or engineers' workloads.
+                session.add(
+                    Ticket(
+                        incident_id=incident.id,
+                        reporter_id=users["employee2"].id,
+                        title=f"Also affected: {incident.title}",
+                        description="I am affected by this facilities issue too.",
+                        building_id=building.id,
+                        floor_id=floor.id,
+                        seat_id=seat.id,
+                        created_at=incident.created_at,
+                    )
+                )
+                counts["tickets"] += 1
             updates = [
                 (
-                    reporter,
-                    "Please investigate this workplace issue.",
+                    users["admin"],
+                    "Facilities has received this report.",
                     incident.created_at + timedelta(minutes=2),
                 )
             ]
@@ -191,8 +220,8 @@ async def seed_database(session: AsyncSession) -> dict[str, int]:
             if incident.status == IncidentStatus.CLOSED:
                 updates.append(
                     (
-                        reporter,
-                        "Confirmed working again. Thank you for the update.",
+                        users["admin"],
+                        "Verified working again and closed by facilities.",
                         incident.resolved_at + timedelta(hours=4),
                     )
                 )

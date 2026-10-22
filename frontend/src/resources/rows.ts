@@ -33,6 +33,7 @@ export function decorateRow(
     record.floor_name = floorLabel(lookups, record.floor_id)
   } else if (key === 'incidents') {
     record.escalated = Boolean(record.escalation_reason)
+    record.merged = Boolean(record.merged_into_id)
   }
   return record
 }

@@ -16,6 +16,7 @@ import { reports } from '../reports/definitions'
 
 const icons = {
   incidents: <AssignmentOutlined />,
+  tickets: <AssignmentOutlined />,
   users: <GroupOutlined />,
   engineers: <EngineeringOutlined />,
   buildings: <ApartmentOutlined />,
@@ -59,26 +60,28 @@ export function SidebarNavigation({
         mt: showLabels ? 0 : 1,
       }}
     >
-      {resources.map((resource) => (
-        <Tooltip key={resource.key} title={showLabels ? '' : resource.title} placement="right">
-          <ListItemButton
-            component={NavLink}
-            aria-label={resource.title}
-            to={`/admin/${resource.key}`}
-            onClick={onNavigate}
-            sx={{ ...itemStyle, justifyContent: showLabels ? 'flex-start' : 'center' }}
-          >
-            <ListItemIcon sx={{ minWidth: showLabels ? 38 : 0, color: 'inherit' }}>
-              {icons[resource.key]}
-            </ListItemIcon>
-            <ListItemText
-              primary={resource.title}
-              sx={{ display: showLabels ? 'block' : 'none' }}
-              slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 600 } } }}
-            />
-          </ListItemButton>
-        </Tooltip>
-      ))}
+      {resources
+        .filter((resource) => !resource.hidden)
+        .map((resource) => (
+          <Tooltip key={resource.key} title={showLabels ? '' : resource.title} placement="right">
+            <ListItemButton
+              component={NavLink}
+              aria-label={resource.title}
+              to={`/admin/${resource.key}`}
+              onClick={onNavigate}
+              sx={{ ...itemStyle, justifyContent: showLabels ? 'flex-start' : 'center' }}
+            >
+              <ListItemIcon sx={{ minWidth: showLabels ? 38 : 0, color: 'inherit' }}>
+                {icons[resource.key]}
+              </ListItemIcon>
+              <ListItemText
+                primary={resource.title}
+                sx={{ display: showLabels ? 'block' : 'none' }}
+                slotProps={{ primary: { sx: { fontSize: 13, fontWeight: 600 } } }}
+              />
+            </ListItemButton>
+          </Tooltip>
+        ))}
       <Tooltip title={showLabels ? '' : 'Reports'} placement="right">
         <ListItemButton
           aria-label="Reports"

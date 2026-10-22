@@ -7,7 +7,7 @@ import { incidentQuery } from './incidentQuery'
 
 /** Pages, related dialogs and cleared sort controls share the same defaults. */
 export function defaultGridSort(resource: ResourceKey) {
-  if (resource === 'incidents') return incidentGrid.defaultSort
+  if (resource === 'incidents' || resource === 'tickets') return incidentGrid.defaultSort
   if (resource === 'notes') return { field: 'created_at', sort: 'desc' } as const
   return { field: 'id', sort: 'asc' } as const
 }
@@ -21,6 +21,14 @@ export function gridQuery(
   search: string,
   scope: RelatedFilters & { unassigned?: boolean } = {},
 ): string | null {
+  if (resource.key === 'tickets') {
+    const { incident_id, ...ticketScope } = scope
+    const path = incidentQuery(pagination, sorting, filters, search, ticketScope).replace(
+      '/incidents/grid',
+      '/tickets/grid',
+    )
+    return incident_id ? `${path}&incident_id=${incident_id}` : path
+  }
   if (resource.key === 'incidents')
     return incidentQuery(pagination, sorting, filters, search, scope)
   if (resource.key === 'notes' && !scope.incident_id) return null

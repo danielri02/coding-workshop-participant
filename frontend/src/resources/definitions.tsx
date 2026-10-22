@@ -23,6 +23,8 @@ export interface ResourceDefinition {
   singular: string
   description: string
   endpoint: string
+  hidden?: boolean
+  readOnly?: boolean
   lookups: (keyof Lookups)[]
   fields: Field[]
   columns: (lookups: Lookups) => GridColDef<AdminRow>[]
@@ -76,6 +78,39 @@ export const resources: ResourceDefinition[] = [
               {row.title}
             </RecordLink>
           ),
+        },
+        {
+          field: 'ticket_count',
+          headerName: 'Reports',
+          width: 105,
+          type: 'number',
+          sortable: false,
+          filterable: false,
+          renderCell: ({ row, hasFocus }) => (
+            <RelatedLink
+              resource="tickets"
+              filters={{ incident_id: row.id }}
+              title={`Tickets for incident #${row.id}`}
+              tabIndex={hasFocus ? 0 : -1}
+            >
+              {row.ticket_count || 0}
+            </RelatedLink>
+          ),
+        },
+        {
+          field: 'merged_into_id',
+          headerName: 'Merged into',
+          width: 150,
+          sortable: false,
+          filterable: false,
+          renderCell: ({ row, hasFocus }) =>
+            row.merged_into_id ? (
+              <RecordLink resource="incidents" id={row.merged_into_id} tabIndex={hasFocus ? 0 : -1}>
+                #{row.merged_into_id}
+              </RecordLink>
+            ) : (
+              '—'
+            ),
         },
         tag('status', 'Status', statuses),
         { ...text('blocked_reason', 'Blocked reason', 320), sortable: false, filterable: false },
@@ -133,6 +168,7 @@ export const resources: ResourceDefinition[] = [
           ),
         },
         { ...flag('escalated', 'Escalated'), sortable: false },
+        { ...flag('merged', 'Merged'), sortable: false },
         {
           ...text('created_at', 'Reported', 175),
           type: 'dateTime',
@@ -151,6 +187,38 @@ export const resources: ResourceDefinition[] = [
               ? getGridBooleanOperators()
               : undefined,
       }))
+    },
+  },
+  {
+    key: 'tickets',
+    title: 'Tickets',
+    singular: 'ticket',
+    endpoint: '/tickets',
+    description: 'Original reports attached to this incident.',
+    hidden: true,
+    readOnly: true,
+    lookups: ['buildings', 'floors', 'seats'],
+    fields: [],
+    columns: () => {
+      const columns: GridColDef<AdminRow>[] = [
+        {
+          ...text('title', 'Report', 300),
+          flex: 1,
+          renderCell: ({ row, hasFocus }) => (
+            <RecordLink resource="tickets" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+              {row.title}
+            </RecordLink>
+          ),
+        },
+        { ...text('reporter_name', 'Reported by', 200), sortable: false },
+        {
+          ...text('created_at', 'Reported', 190),
+          type: 'dateTime',
+          valueGetter: (value) => new Date(String(value)),
+          filterable: false,
+        },
+      ]
+      return columns.map((column) => ({ ...column, filterable: false }))
     },
   },
   {

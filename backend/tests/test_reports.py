@@ -30,6 +30,7 @@ from backend.app.security.config import SecuritySettings
 from backend.app.security.dependencies import auth_settings
 from backend.app.security.jwt import create_access_token
 from backend.scripts.create_tables import initialize_database
+from backend.tests.support.factories import reported_incident
 
 
 class ReportTests(unittest.IsolatedAsyncioTestCase):
@@ -101,7 +102,7 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             for index, state in enumerate(
                 ("Open", "In Progress", "Blocked", "Resolved", "Closed")
             ):
-                record = Incident(
+                record = reported_incident(
                     title=f"Issue {index}" if index else "Literal 100% issue",
                     description="A facility issue",
                     category="HVAC" if index < 3 else "Network",
@@ -408,7 +409,7 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
             session.add(building)
             await session.flush()
             session.add(
-                Incident(
+                reported_incident(
                     title="Separate HVAC issue",
                     description="Location filter fixture",
                     category="HVAC",
@@ -548,7 +549,7 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
                 ("Other", original.building_id, now - timedelta(days=5), True),
             ):
                 session.add(
-                    Incident(
+                    reported_incident(
                         title="Private peer incident",
                         description="Private peer details",
                         category=category,

@@ -243,6 +243,14 @@ export interface components {
       title: string
     }
     /**
+     * IncidentMerge
+     * @description Admin-only consolidation into an existing, non-closed incident.
+     */
+    IncidentMerge: {
+      /** Target Incident Id */
+      target_incident_id: number
+    }
+    /**
      * IncidentPage
      * @description Filtered rows and their total count for server-side grid pagination.
      */
@@ -302,16 +310,20 @@ export interface components {
       floor_id?: number | null
       /** Id */
       id: number
+      /** Merged At */
+      merged_at?: string | null
+      /** Merged By Id */
+      merged_by_id?: number | null
+      /** Merged Into Id */
+      merged_into_id?: number | null
       priority: components['schemas']['IncidentPriority']
-      /** Reporter Id */
-      reporter_id: number
-      /** Reporter Name */
-      reporter_name?: string | null
       /** Resolved At */
       resolved_at?: string | null
       /** Seat Id */
       seat_id?: number | null
       status: components['schemas']['IncidentStatus']
+      /** Ticket Count */
+      ticket_count: number
       /** Title */
       title: string
     }
@@ -525,6 +537,17 @@ export interface components {
       /** Rows */
       rows: components['schemas']['SeatRead'][]
     }
+    /** Page[TicketRead] */
+    Page_TicketRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['TicketRead'][]
+    }
     /** Page[UserRead] */
     Page_UserRead_: {
       /** Page */
@@ -604,6 +627,54 @@ export interface components {
     SeatUpdate: {
       /** Label */
       label: string | null
+    }
+    /**
+     * TicketCreate
+     * @description Create a report and its initial incident; ownership comes from login.
+     */
+    TicketCreate: {
+      /** Building Id */
+      building_id: number
+      category: components['schemas']['IncidentCategory']
+      /** Description */
+      description: string
+      /** Escalation Reason */
+      escalation_reason?: string | null
+      /** Floor Id */
+      floor_id?: number | null
+      /** @default Low */
+      priority: components['schemas']['IncidentPriority']
+      /** Seat Id */
+      seat_id?: number | null
+      /** Title */
+      title: string
+    }
+    /** TicketRead */
+    TicketRead: {
+      /** Building Id */
+      building_id: number
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string
+      /** Description */
+      description: string
+      /** Floor Id */
+      floor_id?: number | null
+      /** Id */
+      id: number
+      incident: components['schemas']['IncidentRead']
+      /** Incident Id */
+      incident_id: number
+      /** Reporter Id */
+      reporter_id: number
+      /** Reporter Name */
+      reporter_name: string
+      /** Seat Id */
+      seat_id?: number | null
+      /** Title */
+      title: string
     }
     /** TimingReport */
     TimingReport: {

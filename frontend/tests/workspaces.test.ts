@@ -25,7 +25,7 @@ test.each([
 })
 
 test('direct URLs require the current capability and cannot match a similar prefix', () => {
-  expect(workspaceForPath(employee, '/employee/incidents/8')?.id).toBe('reported')
+  expect(workspaceForPath(employee, '/employee/tickets/8')?.id).toBe('reported')
   for (const path of ['/admin/incidents', '/engineer/incidents', '/employee-other/incidents', '/'])
     expect(workspaceForPath(employee, path)).toBeUndefined()
   expect(workspaceForPath({ ...employee, is_admin: true }, '/admin/reports/timings')?.id).toBe(

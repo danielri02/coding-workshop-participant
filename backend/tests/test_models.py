@@ -24,6 +24,7 @@ from backend.app.models import (
     User,
 )
 from backend.app.schemas import IncidentRead, NoteRead, UserRead
+from backend.tests.support.factories import reported_incident
 
 
 class ModelTests(unittest.TestCase):
@@ -101,7 +102,7 @@ class ModelTests(unittest.TestCase):
     def make_incident(self, **changes: object) -> Incident:
         """Persist a valid incident with optional field overrides."""
 
-        incident = Incident(
+        incident = reported_incident(
             **{
                 "title": "Flickering light",
                 "description": "The lobby light flickers.",

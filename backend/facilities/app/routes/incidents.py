@@ -7,6 +7,9 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..database import crud, reports
 from ..database.incident_queries import incident_criteria, incident_order
+from ..database.loading import INCIDENT_READ_OPTIONS
+from ..database.merging import merge_incidents
+from ..database.tickets import create_ticket
 from ..domain.incidents import ACTIVE_STATUSES, ENGINEER_TRANSITIONS
 from ..models import (
     EngineerProfile,
@@ -21,19 +24,20 @@ from ..schemas import (
     IncidentRead,
     IncidentStatusUpdate,
 )
-from ..schemas.incident import IncidentFilters, IncidentGridQuery, IncidentPage
+from ..schemas.incident import (
+    IncidentFilters,
+    IncidentGridQuery,
+    IncidentMerge,
+    IncidentPage,
+)
 from ..schemas.report import ResponseTimeSummary
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import (
     accessible_incident,
     require_incident_worker,
+    require_unmerged,
 )
-from .dependencies import (
-    INCIDENT_READ_OPTIONS,
-    DatabaseSession,
-    DeletionConfirmation,
-    RecordID,
-)
+from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])
 
@@ -109,23 +113,11 @@ async def create_incident(
 ) -> Incident:
     """Create an Open report owned by the authenticated employee."""
 
-    if (
-        not user.is_admin
-        and {"priority", "escalation_reason"} & payload.model_fields_set
-    ):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Admin capability required to set priority or escalation",
-        )
-    await crud.validate_location(
-        session, payload.building_id, payload.floor_id, payload.seat_id
-    )
-    return await crud.create_record(
-        session,
-        Incident,
-        {**payload.model_dump(), "reporter_id": user.id},
-        options=INCIDENT_READ_OPTIONS,
-    )
+    # Preserve the original create API while the employee UI moves to /tickets.
+    # Every submission still creates a Ticket, so incidents have no single owner.
+
+    ticket = await create_ticket(session, payload.model_dump(exclude_unset=True), user)
+    return ticket.incident
 
 
 @router.get("/{incident_id}", response_model=IncidentRead)
@@ -149,6 +141,7 @@ async def update_incident(
     """Correct submitted details, checking location after merging the patch."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
+    require_unmerged(record)
     values = payload.model_dump(exclude_unset=True)
     await crud.validate_location(
         session,
@@ -171,6 +164,7 @@ async def update_incident_priority(
     """Admin triage: change priority or set/clear an escalation reason."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
+    require_unmerged(record)
     return await crud.update_record(
         session,
         record,
@@ -189,6 +183,7 @@ async def assign_incident(
     """A new assignee awaits acceptance; unassigning active work returns it to Open."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
+    require_unmerged(record)
     values = payload.model_dump()
     if payload.assignee_id is not None:
         await crud.get_record(session, EngineerProfile, payload.assignee_id)
@@ -224,6 +219,7 @@ async def update_incident_status(
     """Admins choose any state; engineers follow the assigned-work transitions."""
 
     record = await crud.get_record(session, Incident, incident_id, for_update=True)
+    require_unmerged(record)
     require_incident_worker(user, record)
     if not user.is_admin:
         if payload.status in {IncidentStatus.OPEN, IncidentStatus.CLOSED}:
@@ -264,3 +260,18 @@ async def incident_response_times(
 
     incident = await accessible_incident(session, incident_id, user)
     return await reports.incident_response_times(session, incident)
+
+
+@router.post("/{incident_id}/merge", response_model=IncidentRead)
+async def merge_incident(
+    incident_id: RecordID,
+    payload: IncidentMerge,
+    session: DatabaseSession,
+    admin: AdminUser,
+) -> Incident:
+    """Move all followers/notes, then retire the source without recording a repair."""
+
+    await merge_incidents(session, incident_id, payload.target_incident_id, admin.id)
+    return await crud.get_record(
+        session, Incident, incident_id, options=INCIDENT_READ_OPTIONS
+    )

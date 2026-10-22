@@ -16,6 +16,7 @@ from ..models import (
     IncidentPriority,
     IncidentStatus,
     Seat,
+    Ticket,
     User,
 )
 from ..schemas.report import (
@@ -29,7 +30,7 @@ from ..schemas.report import (
 from ..security.permissions import incident_visibility
 
 ACTIVE = Incident.status.in_(ACTIVE_STATUSES)
-TICKET_COLUMNS = (
+INCIDENT_COLUMNS = (
     Incident.id,
     Incident.title,
     Incident.status,
@@ -72,7 +73,7 @@ def visibility(user: User, scope: ReportScope):
     """Narrow existing grants for personal/assigned views; never broaden access."""
 
     if scope == ReportScope.PERSONAL:
-        return Incident.reporter_id == user.id
+        return Incident.tickets.any(Ticket.reporter_id == user.id)
     if scope == ReportScope.ASSIGNED:
         if user.engineer_profile is None:
             raise HTTPException(
@@ -101,6 +102,7 @@ def period_criteria(user: User, query: ReportFilters, window: dict) -> list:
     conditions = [
         visibility(user, query.scope),
         Incident.created_at <= window["end_at"],
+        Incident.merged_into_id.is_(None),
     ]
     if window["start_at"] is not None:
         conditions.append(Incident.created_at >= window["start_at"])
@@ -133,15 +135,27 @@ async def summary(session: AsyncSession, user: User, scope: ReportScope) -> dict
     for state in IncidentStatus:
         status_count = func.count().filter(Incident.status == state)
         columns.append(status_count.label(f"{state.name.lower()}_count"))
-    statement = select(*columns).select_from(Incident).where(visibility(user, scope))
+    if scope == ReportScope.PERSONAL:
+        statement = (
+            select(*columns)
+            .select_from(Ticket)
+            .join(Incident)
+            .where(Ticket.reporter_id == user.id)
+        )
+    else:
+        statement = (
+            select(*columns)
+            .select_from(Incident)
+            .where(visibility(user, scope), Incident.merged_into_id.is_(None))
+        )
     result = await session.execute(statement)
     counts = result.mappings().one()
     return {"scope": scope, **counts}
 
 
-def tickets(*extra):
+def incident_rows(*extra):
     return (
-        select(*TICKET_COLUMNS, *extra)
+        select(*INCIDENT_COLUMNS, *extra)
         .select_from(Incident)
         .outerjoin(User, User.id == Incident.assignee_id)
     )
@@ -289,8 +303,10 @@ async def response_time_summary(session: AsyncSession, conditions: list) -> dict
         session,
         [
             *conditions,
+            Incident.merged_into_id.is_(None),
             Incident.created_at >= window["start_at"],
             Incident.created_at <= window["end_at"],
+            Incident.merged_into_id.is_(None),
         ],
     )
     return {**window, **aggregate}
@@ -322,7 +338,7 @@ async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict
     aggregate = await timing_aggregate(session, conditions)
     rows = await page(
         session,
-        tickets(*[value.label(name) for name, value in DURATIONS.items()]).where(
+        incident_rows(*[value.label(name) for name, value in DURATIONS.items()]).where(
             *conditions
         ),
         query,
@@ -360,7 +376,9 @@ async def workload(session: AsyncSession) -> dict:
         .join(User, User.id == EngineerProfile.user_id)
     )
     statement = statement.outerjoin(
-        Incident, Incident.assignee_id == EngineerProfile.user_id
+        Incident,
+        (Incident.assignee_id == EngineerProfile.user_id)
+        & Incident.merged_into_id.is_(None),
     )
     rows = (
         (
@@ -376,6 +394,8 @@ async def workload(session: AsyncSession) -> dict:
     unassigned = await session.scalar(
         select(func.count())
         .select_from(Incident)
-        .where(ACTIVE, Incident.assignee_id.is_(None))
+        .where(
+            ACTIVE, Incident.assignee_id.is_(None), Incident.merged_into_id.is_(None)
+        )
     )
     return {"rows": [dict(row) for row in rows], "unassigned_count": unassigned or 0}

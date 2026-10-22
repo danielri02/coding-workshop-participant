@@ -27,6 +27,7 @@ export function useResourceActions(
     action: 'delete' | 'admin'
     row: AdminRow
   } | null>(null)
+  const [merge, setMerge] = useState<AdminRow | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const previewPath =
@@ -60,6 +61,7 @@ export function useResourceActions(
       setError('')
       if (command === 'notes')
         openCollection('notes', { incident_id: row.id }, `Notes for incident #${row.id}`)
+      else if (command === 'merge') setMerge(row)
       else if (command === 'view') openRecord(resource.key, row.id)
       else if (command === 'delete' || command === 'admin')
         setConfirmation({ action: command, row })
@@ -130,6 +132,12 @@ export function useResourceActions(
   }
 
   return {
+    merge,
+    setMerge,
+    mergeSaved: () => {
+      setMerge(null)
+      changed('Incident merged.', 'incidents')
+    },
     user,
     editor,
     setEditor,

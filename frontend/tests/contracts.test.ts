@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
+import { resources } from '../src/resources/definitions'
 import { incidentQuery } from '../src/resources/incidentQuery'
 import { formPayload, type Field } from '../src/resources/forms'
 import { decorateRow } from '../src/resources/rows'
@@ -209,4 +210,17 @@ test('note mutations refresh both conversation lists and paged note grids', asyn
   } finally {
     client.clear()
   }
+})
+
+test('incident quick-view filters refer to real columns so MUI retains their state', () => {
+  const columns = resources.find((resource) => resource.key === 'incidents')!.columns(empty)
+  assert.equal(columns.find((column) => column.filterable)?.field, 'status')
+  const fields = new Set(columns.map((column) => column.field))
+  for (const view of incidentViews) {
+    for (const item of incidentViewState(view).filters.items)
+      assert.ok(fields.has(item.field), item.field)
+  }
+  const merged = incidentViewState(incidentViews.find((view) => view.id === 'merged')!)
+  const path = incidentQuery({ page: 0, pageSize: 25 }, merged.sorting, merged.filters, '')
+  assert.equal(new URL(path, 'http://localhost').searchParams.get('merged'), 'true')
 })

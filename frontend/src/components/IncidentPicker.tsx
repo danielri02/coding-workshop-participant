@@ -10,8 +10,12 @@ export function IncidentPicker({
   id,
   value,
   onChange,
+  excludeId,
+  mergeTargets = false,
 }: {
   id: number | null
+  excludeId?: number
+  mergeTargets?: boolean
   value: Incident | null
   onChange: (incident: Incident | null) => void
 }) {
@@ -25,6 +29,7 @@ export function IncidentPicker({
   const query = useApiQuery<IncidentPage>(
     open
       ? `/incidents/grid?${new URLSearchParams({
+          ...(mergeTargets ? { merge_target: 'true' } : {}),
           page: '0',
           page_size: '25',
           sort_by: 'created_at',
@@ -38,7 +43,12 @@ export function IncidentPicker({
     ...(value?.id === id ? [value] : []),
     ...(exact.data?.id === exactId && !exact.error ? [exact.data] : []),
     ...query.data.rows,
-  ].filter((row, index, all) => all.findIndex((other) => other.id === row.id) === index)
+  ].filter(
+    (row, index, all) =>
+      row.id !== excludeId &&
+      (!mergeTargets || (row.status !== 'Closed' && !row.merged_into_id)) &&
+      all.findIndex((other) => other.id === row.id) === index,
+  )
   const loading = query.loading || exact.loading || term !== input
   return (
     <Stack spacing={1}>

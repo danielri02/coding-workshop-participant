@@ -182,7 +182,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                 root = {"buildings": building, "floors": floor, "seats": seat}[kind]
                 path = f"/{kind}/{root}"
                 preview = (await self.client.get(f"/deletions{path}")).json()
-                expected = {"incidents": 1, "notes": 1, "seats": 1}
+                expected = {"incidents": 1, "tickets": 1, "notes": 1, "seats": 1}
                 if kind != "seats":
                     expected["floors"] = 1
                 if kind == "buildings":
@@ -231,7 +231,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         report = await self.create_report()
         path = f"/incidents/{report['id']}"
         preview = (await self.client.get(f"/deletions{path}")).json()
-        self.assertEqual(preview["counts"], {"incidents": 1})
+        self.assertEqual(preview["counts"], {"incidents": 1, "tickets": 1})
         note = (
             await self.client.post(
                 f"{path}/notes", json={"body": "Added after preview"}
@@ -325,6 +325,9 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         await self.client.patch(
             f"{path}/assignment", json={"assignee_id": self.engineer_id}
         )
+        await self.client.patch(
+            f"/incidents/{own['id']}/assignment", json={"assignee_id": self.engineer_id}
+        )
         removed_notes = []
         for incident_id, author_id in (
             (own["id"], self.reporter_id),
@@ -339,24 +342,26 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                 json={"body": "Dependent note"},
             )
             self.assertEqual(response.status_code, 201, response.text)
-            removed_notes.append(response.json()["id"])
+            if author_id == self.engineer_id:
+                removed_notes.append(response.json()["id"])
         kept_note = (
             await self.client.post(f"{path}/notes", json={"body": "Keep me"})
         ).json()["id"]
         user_path = f"/users/{self.engineer_id}"
         preview = (await self.client.get(f"/deletions{user_path}")).json()
         self.assertEqual(
-            preview["counts"], {"users": 1, "engineers": 1, "incidents": 1, "notes": 3}
+            preview["counts"], {"users": 1, "engineers": 1, "tickets": 1, "notes": 2}
         )
-        self.assertEqual(preview["unassigned_incidents"], 1)
+        self.assertEqual(preview["unassigned_incidents"], 2)
         self.assertEqual((await self.confirmed_delete(user_path)).status_code, 204)
         for removed in (
             user_path,
             f"/engineer-profiles/{self.engineer_id}",
-            f"/incidents/{own['id']}",
             *(f"/notes/{note}" for note in removed_notes),
         ):
             self.assertEqual((await self.client.get(removed)).status_code, 404)
+        preserved = (await self.client.get(f"/incidents/{own['id']}")).json()
+        self.assertEqual(preserved["ticket_count"], 0)
         saved = (await self.client.get(path)).json()
         self.assertIsNone(saved["assignee_id"])
         self.assertEqual(saved["status"], "Open")
@@ -636,7 +641,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         incident = report["id"]
         self.assertEqual(report["status"], "Open")
         self.assertEqual(report["priority"], "Low")
-        self.assertEqual(report["reporter_id"], self.reporter_id)
+        self.assertEqual(report["ticket_count"], 1)
         self.assertTrue(report["created_at"].endswith("Z"))
         self.assertIsNone(report["assigned_at"])
         self.assertEqual(
@@ -675,7 +680,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             (await self.client.delete(f"/seats/{self.seat_id}")).status_code, 409
         )
         self.assertEqual(
-            (await self.client.delete(f"/incidents/{incident}")).status_code, 204
+            (await self.confirmed_delete(f"/incidents/{incident}")).status_code, 204
         )
         self.assertEqual(
             (await self.client.get(f"/incidents/{incident}")).status_code, 404
@@ -1384,6 +1389,325 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.assertEqual(response.status_code, 422, response.text)
+
+    async def test_ticket_submission_owns_report_and_creates_problem_atomically(self):
+        headers = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        response = await self.client.post(
+            "/tickets", headers=headers, json=self.report_data()
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        ticket = response.json()
+        self.assertEqual(ticket["reporter_id"], self.engineer_id)
+        self.assertEqual(ticket["incident_id"], ticket["incident"]["id"])
+        self.assertEqual(ticket["incident"]["ticket_count"], 1)
+        self.assertNotIn("reporter_id", ticket["incident"])
+        self.assertEqual(ticket["incident"]["status"], "Open")
+        self.assertEqual(ticket["incident"]["priority"], "Low")
+        self.assertEqual(
+            (await self.client.get(f"/tickets/{ticket['id']}", headers=headers)).json(),
+            ticket,
+        )
+        response = await self.client.post(
+            f"/incidents/{ticket['incident_id']}/notes",
+            headers=headers,
+            json={"body": "Reporter cannot post"},
+        )
+        self.assertEqual(response.status_code, 403)
+        # Failed validation creates neither half of a submission.
+        response = await self.client.post(
+            "/tickets", headers=headers, json=self.report_data(building_id=999999)
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            (await self.client.get("/incidents/grid")).json()["row_count"], 1
+        )
+        self.assertEqual(
+            (await self.client.get("/tickets/grid")).json()["row_count"], 1
+        )
+        for payload in (
+            {"priority": "High"},
+            {"reporter_id": self.reporter_id},
+            {"incident_id": ticket["incident_id"]},
+        ):
+            response = await self.client.post(
+                "/tickets", headers=headers, json=self.report_data(**payload)
+            )
+            self.assertIn(response.status_code, (403, 422))
+
+    async def test_merge_preserves_original_tickets_moves_notes_and_shares_only_progress(
+        self,
+    ):
+        headers = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        original = (
+            await self.client.post(
+                "/tickets",
+                headers=headers,
+                json=self.report_data(title="Original personal report"),
+            )
+        ).json()
+        target_ticket = (
+            await self.client.post(
+                "/tickets",
+                json=self.report_data(
+                    title="Canonical problem",
+                    building_id=self.other_building_id,
+                    floor_id=self.other_floor_id,
+                    seat_id=self.other_seat_id,
+                ),
+            )
+        ).json()
+        source, target = original["incident_id"], target_ticket["incident_id"]
+        note = (
+            await self.client.post(
+                f"/incidents/{source}/notes", json={"body": "Facilities investigation"}
+            )
+        ).json()
+        target_before = (await self.client.get(f"/incidents/{target}")).json()
+        merged = await self.client.post(
+            f"/incidents/{source}/merge", json={"target_incident_id": target}
+        )
+        self.assertEqual(merged.status_code, 200, merged.text)
+        source_after = merged.json()
+        self.assertEqual(source_after["status"], "Closed")
+        self.assertEqual(source_after["merged_into_id"], target)
+        self.assertEqual(source_after["merged_by_id"], self.reporter_id)
+        self.assertIsNone(source_after["resolved_at"])
+        self.assertEqual(source_after["ticket_count"], 0)
+        moved = (
+            await self.client.get(f"/tickets/{original['id']}", headers=headers)
+        ).json()
+        for field in (
+            "id",
+            "reporter_id",
+            "title",
+            "description",
+            "building_id",
+            "floor_id",
+            "seat_id",
+            "created_at",
+        ):
+            self.assertEqual(moved[field], original[field])
+        self.assertEqual(moved["incident_id"], target)
+        self.assertEqual(moved["incident"]["ticket_count"], 2)
+        for field in (
+            "title",
+            "description",
+            "category",
+            "building_id",
+            "priority",
+            "assignee_id",
+            "status",
+            "created_at",
+            "assigned_at",
+            "acknowledged_at",
+            "resolved_at",
+        ):
+            self.assertEqual(moved["incident"][field], target_before[field])
+        self.assertEqual(
+            (
+                await self.client.get(
+                    f"/tickets/{target_ticket['id']}", headers=headers
+                )
+            ).status_code,
+            404,
+        )
+        notes = (
+            await self.client.get(f"/incidents/{target}/notes", headers=headers)
+        ).json()
+        self.assertEqual(
+            [(row["id"], row["author_id"], row["created_at"]) for row in notes],
+            [(note["id"], note["author_id"], note["created_at"])],
+        )
+        self.assertEqual(
+            (
+                await self.client.post(
+                    f"/incidents/{target}/notes",
+                    headers=headers,
+                    json={"body": "Still only a reporter"},
+                )
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            (await self.client.get("/tickets/grid", headers=headers)).json()[
+                "row_count"
+            ],
+            1,
+        )
+        self.assertEqual(
+            (
+                await self.client.get(
+                    "/reports/summary?scope=personal", headers=headers
+                )
+            ).json()["active_count"],
+            1,
+        )
+        timings = (await self.client.get("/reports/timings?period=all")).json()
+        self.assertEqual(timings["row_count"], 1)
+        self.assertEqual(
+            (await self.client.get("/incidents/grid")).json()["row_count"], 1
+        )
+        self.assertEqual(
+            (await self.client.get("/incidents/grid?merged=true")).json()["rows"][0][
+                "id"
+            ],
+            source,
+        )
+        for suffix, payload in (
+            ("", {"title": "Cannot edit"}),
+            ("/priority", {"priority": "High"}),
+            ("/assignment", {"assignee_id": self.engineer_id}),
+            ("/status", {"status": "Open"}),
+        ):
+            self.assertEqual(
+                (
+                    await self.client.patch(
+                        f"/incidents/{source}{suffix}", json=payload
+                    )
+                ).status_code,
+                409,
+            )
+        self.assertEqual(
+            (
+                await self.client.post(
+                    f"/incidents/{source}/notes", json={"body": "Too late"}
+                )
+            ).status_code,
+            409,
+        )
+
+    async def test_merge_authorization_invalid_targets_and_chains(self):
+        sources = [await self.create_report(title=f"Problem {i}") for i in range(3)]
+        first, second, third = [row["id"] for row in sources]
+        path = f"/incidents/{first}/merge"
+        headers = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        self.assertEqual(
+            (
+                await self.client.post(
+                    path, headers=headers, json={"target_incident_id": second}
+                )
+            ).status_code,
+            403,
+        )
+        for target, expected in ((first, 422), (999999, 404), (-1, 422)):
+            self.assertEqual(
+                (
+                    await self.client.post(path, json={"target_incident_id": target})
+                ).status_code,
+                expected,
+            )
+        await self.client.patch(
+            f"/incidents/{second}/status", json={"status": "Closed"}
+        )
+        self.assertEqual(
+            (
+                await self.client.post(path, json={"target_incident_id": second})
+            ).status_code,
+            409,
+        )
+        await self.client.patch(f"/incidents/{second}/status", json={"status": "Open"})
+        self.assertEqual(
+            (
+                await self.client.post(path, json={"target_incident_id": second})
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            (
+                await self.client.post(
+                    f"/incidents/{second}/merge", json={"target_incident_id": third}
+                )
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            (
+                await self.client.post(
+                    f"/incidents/{third}/merge", json={"target_incident_id": first}
+                )
+            ).status_code,
+            409,
+        )
+        self.assertEqual(
+            (await self.client.get("/incidents/grid?include_merged=true")).json()[
+                "row_count"
+            ],
+            3,
+        )
+        survivor = (await self.client.get(f"/incidents/{third}")).json()
+        self.assertEqual(survivor["ticket_count"], 3)
+        preview = (await self.client.get(f"/deletions/incidents/{third}")).json()
+        self.assertEqual(preview["counts"], {"incidents": 3, "tickets": 3})
+        self.assertEqual(
+            (await self.confirmed_delete(f"/incidents/{third}")).status_code, 204
+        )
+        self.assertEqual(
+            (await self.client.get("/incidents/grid?include_merged=true")).json()[
+                "row_count"
+            ],
+            0,
+        )
+
+    async def test_opposite_concurrent_merges_have_one_survivor_and_no_lost_tickets(
+        self,
+    ):
+        import asyncio
+
+        first, second = await self.create_report(), await self.create_report()
+        results = await asyncio.gather(
+            self.client.post(
+                f"/incidents/{first['id']}/merge",
+                json={"target_incident_id": second["id"]},
+            ),
+            self.client.post(
+                f"/incidents/{second['id']}/merge",
+                json={"target_incident_id": first["id"]},
+            ),
+        )
+        self.assertEqual(
+            sorted(response.status_code for response in results), [200, 409]
+        )
+        survivors = (await self.client.get("/incidents/grid")).json()
+        self.assertEqual(survivors["row_count"], 1)
+        self.assertEqual(survivors["rows"][0]["ticket_count"], 2)
+        self.assertEqual(
+            (await self.client.get("/tickets/grid")).json()["row_count"], 2
+        )
+
+    async def test_deleting_a_reporter_preserves_the_shared_problem_and_other_tickets(
+        self,
+    ):
+        headers = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        ticket = (
+            await self.client.post("/tickets", headers=headers, json=self.report_data())
+        ).json()
+        target = await self.create_report(title="Shared problem")
+        await self.client.post(
+            f"/incidents/{ticket['incident_id']}/merge",
+            json={"target_incident_id": target["id"]},
+        )
+        await self.client.post(
+            f"/incidents/{target['id']}/notes", json={"body": "Keep the shared update"}
+        )
+        self.assertEqual(
+            (await self.confirmed_delete(f"/users/{self.engineer_id}")).status_code, 204
+        )
+        saved = (await self.client.get(f"/incidents/{target['id']}")).json()
+        self.assertEqual(saved["ticket_count"], 1)
+        self.assertEqual(
+            (await self.client.get(f"/incidents/{target['id']}/notes")).json()[0][
+                "body"
+            ],
+            "Keep the shared update",
+        )
 
 
 if __name__ == "__main__":

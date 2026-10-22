@@ -4,10 +4,11 @@ import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '
 import ArrowBack from '@mui/icons-material/ArrowBack'
 import Refresh from '@mui/icons-material/Refresh'
 import { Link, useParams } from 'react-router-dom'
+import { useWorkspace } from '../hooks/useWorkspace'
+import { RelatedLink } from '../components/RelatedLink'
 import { useAuth } from '../auth/context'
 import { RecordFormDialog } from '../components/RecordFormDialog'
 import { RecordLink } from '../components/RecordLink'
-import { PersonLink } from '../components/PersonLink'
 import { useRecordDialogs } from '../dialogs/context'
 import { ValueChip } from '../components/ValueChip'
 import { transitions } from '../generated/domain'
@@ -39,6 +40,7 @@ export function IncidentDetailsPage({
   const id = recordId ?? Number(incidentId)
   const validId = Number.isSafeInteger(id) && id > 0 && id <= 2147483647
   const { user } = useAuth()
+  const { workspace } = useWorkspace()
   const client = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [accepting, setAccepting] = useState(false)
@@ -53,6 +55,7 @@ export function IncidentDetailsPage({
     incident &&
     user?.engineer_profile &&
     incident.assignee_id === user.id &&
+    !incident.merged_into_id &&
     transitions[incident.status].length,
   )
   const refresh = () =>
@@ -94,8 +97,18 @@ export function IncidentDetailsPage({
           ),
         ],
         [
-          'Reported by',
-          <PersonLink id={incident.reporter_id} name={incident.reporter_name || 'Employee'} />,
+          'Reports',
+          workspace?.id === 'assigned' ? (
+            <RelatedLink
+              resource="tickets"
+              filters={{ incident_id: incident.id }}
+              title={`Tickets for incident #${incident.id}`}
+            >
+              {incident.ticket_count} reports
+            </RelatedLink>
+          ) : (
+            incident.ticket_count
+          ),
         ],
         [
           'Assigned engineer',
@@ -147,12 +160,21 @@ export function IncidentDetailsPage({
       )}
       {incident && !query.error && (
         <>
+          {incident.merged_into_id && (
+            <Alert severity="info">
+              This incident was merged into{' '}
+              <RecordLink resource="incidents" id={incident.merged_into_id}>
+                incident #{incident.merged_into_id}
+              </RecordLink>
+              .
+            </Alert>
+          )}
           <Box>
             <Typography variant="overline" color="text.secondary">
               Incident #{incident.id}
             </Typography>
             <Typography
-              component="h1"
+              component={embedded ? 'h2' : 'h1'}
               variant="h4"
               sx={{ fontWeight: 750, overflowWrap: 'anywhere' }}
             >
@@ -242,7 +264,7 @@ export function IncidentDetailsPage({
               ))}
             </Box>
           </Paper>
-          {scope !== 'assigned' && incident.reporter_id === user?.id && (
+          {scope !== 'assigned' && (
             <ResponseTimeStats key={`response-times:${incident.id}`} incident={incident} />
           )}
           <IncidentNotes key={`notes:${incident.id}`} incident={incident} embedded={embedded} />

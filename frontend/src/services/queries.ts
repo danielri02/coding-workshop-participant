@@ -9,12 +9,13 @@ export function createQueryClient(): QueryClient {
 }
 
 const dependencies: Record<ResourceKey, string[]> = {
-  users: ['users', 'engineer-profiles', 'incidents', 'notes'],
-  engineers: ['engineer-profiles', 'users', 'incidents'],
-  buildings: ['buildings', 'floors', 'seats', 'incidents', 'notes'],
-  floors: ['floors', 'seats', 'incidents', 'notes'],
-  seats: ['seats', 'incidents', 'notes'],
-  incidents: ['incidents', 'notes'],
+  tickets: ['tickets', 'incidents'],
+  users: ['tickets', 'users', 'engineer-profiles', 'incidents', 'notes'],
+  engineers: ['engineer-profiles', 'users', 'incidents', 'tickets'],
+  buildings: ['buildings', 'floors', 'seats', 'incidents', 'tickets', 'notes'],
+  floors: ['floors', 'seats', 'incidents', 'tickets', 'notes'],
+  seats: ['seats', 'incidents', 'tickets', 'notes'],
+  incidents: ['incidents', 'tickets', 'notes'],
   notes: ['notes'],
 }
 

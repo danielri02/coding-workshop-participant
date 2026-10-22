@@ -7,16 +7,20 @@ import type { Incident, Lookups } from '../types'
 import type { IncidentScope } from './scope'
 
 /** Display names supplied with incidents; members never need a user directory. */
-export function incidentColumns(lookups: Lookups, scope: IncidentScope): GridColDef<Incident>[] {
+export function incidentColumns(
+  lookups: Lookups,
+  scope: IncidentScope,
+  resource: 'incidents' | 'tickets' = 'incidents',
+): GridColDef<Incident>[] {
   const columns: GridColDef<Incident>[] = [
     {
       field: 'title',
-      headerName: 'Incident',
+      headerName: resource === 'tickets' ? 'Ticket' : 'Incident',
       width: 290,
       minWidth: 230,
       flex: 1,
       renderCell: ({ row, hasFocus }) => (
-        <RecordLink resource="incidents" id={row.id} scope={scope} tabIndex={hasFocus ? 0 : -1}>
+        <RecordLink resource={resource} id={row.id} scope={scope} tabIndex={hasFocus ? 0 : -1}>
           #{row.id} · {row.title}
         </RecordLink>
       ),

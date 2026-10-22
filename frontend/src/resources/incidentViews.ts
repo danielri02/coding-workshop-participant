@@ -3,6 +3,8 @@ import { incidentGrid } from '../generated/domain'
 
 export const defaultIncidentColumns: GridColumnVisibilityModel = {
   id: false,
+  merged_into_id: false,
+  merged: false,
   category: false,
   building_id: false,
   blocked_reason: false,
@@ -14,11 +16,17 @@ interface IncidentView {
   label: string
   assignment?: 'unassigned' | 'assigned'
   filter?: GridFilterModel['items'][number]
-  show?: 'blocked_reason' | 'escalation_reason'
+  show?: 'blocked_reason' | 'escalation_reason' | 'merged_into_id'
 }
 
 export const incidentViews: IncidentView[] = [
   { id: 'all', label: 'All incidents' },
+  {
+    id: 'merged',
+    label: 'Merged history',
+    filter: { field: 'merged', operator: 'is', value: true },
+    show: 'merged_into_id',
+  },
   {
     id: 'unassigned',
     label: 'Unassigned',

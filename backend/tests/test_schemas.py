@@ -259,7 +259,7 @@ class SchemaTests(unittest.TestCase):
 
         data = self.incident_data(
             id=1,
-            reporter_id=1,
+            ticket_count=1,
             status="Open",
             priority="Medium",
             created_at=datetime(2026, 1, 1, 10, tzinfo=timezone(timedelta(hours=2))),

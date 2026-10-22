@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.sql import SQLColumnExpression
 
-from ..models import Incident, User
+from ..models import Incident, Ticket, User
 from ..schemas.incident import IncidentFilters, IncidentGridQuery
 from ..security.permissions import incident_visibility
 
@@ -17,7 +17,6 @@ def incident_criteria(
 
     filters = query.model_dump(
         include={
-            "reporter_id",
             "assignee_id",
             "building_id",
             "floor_id",
@@ -29,6 +28,20 @@ def incident_criteria(
         exclude_none=True,
     )
     conditions = [incident_visibility(user)]
+    if query.merged is not None:
+        conditions.append(
+            Incident.merged_into_id.is_not(None)
+            if query.merged
+            else Incident.merged_into_id.is_(None)
+        )
+    elif not query.include_merged:
+        conditions.append(Incident.merged_into_id.is_(None))
+    if query.merge_target:
+        conditions.extend(
+            [Incident.merged_into_id.is_(None), Incident.status != "Closed"]
+        )
+    if query.reporter_id is not None:
+        conditions.append(Incident.tickets.any(Ticket.reporter_id == query.reporter_id))
     if query.search and (term := query.search.strip()):
         conditions.append(
             or_(

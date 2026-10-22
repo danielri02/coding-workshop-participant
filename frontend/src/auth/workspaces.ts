@@ -16,12 +16,12 @@ export function availableWorkspaces(user: User): Workspace[] {
     ...(user.engineer_profile
       ? [{ id: 'assigned' as const, label: 'Assigned to me', path: '/engineer/incidents' }]
       : []),
-    { id: 'reported', label: 'My incidents', path: '/employee/incidents' },
+    { id: 'reported', label: 'My tickets', path: '/employee/tickets' },
   ]
 }
 
 export function workspaceForPath(user: User, pathname: string): Workspace | undefined {
   return availableWorkspaces(user).find((view) =>
-    pathname.startsWith(`${view.path.split('/incidents')[0]}/`),
+    pathname.startsWith(`${view.path.split('/').slice(0, 2).join('/')}/`),
   )
 }

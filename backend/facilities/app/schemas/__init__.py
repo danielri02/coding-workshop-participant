@@ -16,11 +16,13 @@ from .incident import (
     IncidentAdminUpdate,
     IncidentAssignment,
     IncidentCreate,
+    IncidentMerge,
     IncidentPriorityUpdate,
     IncidentRead,
     IncidentStatusUpdate,
 )
 from .note import NoteCreate, NoteRead, NoteUpdate
+from .ticket import TicketCreate, TicketRead
 from .user import (
     EngineerProfileCreate,
     EngineerProfileRead,
@@ -47,6 +49,9 @@ __all__ = [
     "IncidentAdminUpdate",
     "IncidentAssignment",
     "IncidentCreate",
+    "IncidentMerge",
+    "TicketCreate",
+    "TicketRead",
     "IncidentPriorityUpdate",
     "IncidentRead",
     "IncidentStatusUpdate",

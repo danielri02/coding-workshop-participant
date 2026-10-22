@@ -1,12 +1,12 @@
-import type { Incident, User } from '../types'
+import type { Incident, Ticket, User } from '../types'
 
 export const incidentViews = {
   reported: {
-    path: '/employee/incidents',
-    title: 'My incidents',
-    search: 'Search my incidents',
+    path: '/employee/tickets',
+    title: 'My tickets',
+    search: 'Search my tickets',
     description: 'Report a workplace issue and follow updates from the facilities team.',
-    unavailable: 'This incident is not available in your submitted reports.',
+    unavailable: 'This ticket is not available in your submitted reports.',
   },
   assigned: {
     path: '/engineer/incidents',
@@ -19,8 +19,13 @@ export const incidentViews = {
 export type IncidentScope = keyof typeof incidentViews
 
 /** Narrow each view within the account's additive backend read permissions. */
-export function inIncidentScope(incident: Incident, user: User, scope: IncidentScope): boolean {
+export function inIncidentScope(
+  incident: Incident | Ticket,
+  user: User,
+  scope: IncidentScope,
+): boolean {
   return scope === 'assigned'
-    ? Boolean(user.engineer_profile) && incident.assignee_id === user.id
-    : incident.reporter_id === user.id
+    ? Boolean(user.engineer_profile) &&
+        ('incident' in incident ? incident.incident.assignee_id : incident.assignee_id) === user.id
+    : 'reporter_id' in incident && incident.reporter_id === user.id
 }

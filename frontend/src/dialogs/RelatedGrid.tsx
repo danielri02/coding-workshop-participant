@@ -61,7 +61,13 @@ export function RelatedGrid({
   const rows = query.data.rows.map((row) => decorateRow(resource.key, row, lookups.data))
   const loading = query.loading || lookups.loading || search !== state.search
   const error = query.error || lookups.error || parent.error
-  const canAddNote = parent.data && noteStatuses.some((status) => status === parent.data?.status)
+  const canPostNote =
+    adminView ||
+    (workspace?.id === 'assigned' &&
+      Boolean(user?.engineer_profile) &&
+      parent.data?.assignee_id === user?.id)
+  const canAddNote =
+    canPostNote && parent.data && noteStatuses.some((status) => status === parent.data?.status)
   const readColumns: GridColDef<AdminRow>[] = [
     {
       field: 'id',
@@ -88,7 +94,7 @@ export function RelatedGrid({
           onChange={(event) => setState({ search: event.target.value, page: 0 })}
           slotProps={{ htmlInput: { maxLength: 200 } }}
         />
-        {target.resource === 'notes' && (
+        {target.resource === 'notes' && canPostNote && (
           <Button
             disabled={!canAddNote || Boolean(error)}
             onClick={() => onAction('create', { id: 0 })}

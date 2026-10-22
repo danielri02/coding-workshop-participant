@@ -15,7 +15,7 @@ import { incidentFields } from '../resources/incidentFields'
 import { incidentQuery } from '../resources/incidentQuery'
 import { api } from '../services/client'
 import { invalidateResourceQueries } from '../services/queries'
-import type { Incident, IncidentPage } from '../types'
+import type { IncidentPage, Ticket, TicketPage } from '../types'
 import { incidentColumns } from './columns'
 import { incidentViews, type IncidentScope } from './scope'
 import { IncidentSummary } from './IncidentSummary'
@@ -41,19 +41,25 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
     debouncedSearch,
     scope === 'assigned' ? { assignee_id: user!.id } : { reporter_id: user!.id },
   )
-  const query = useApiQuery<IncidentPage>(path, { rows: [], row_count: 0, page: 0, page_size: 25 })
-  const columns = useMemo(() => incidentColumns(lookups.data, scope), [lookups.data, scope])
+  const query = useApiQuery<IncidentPage | TicketPage>(
+    scope === 'reported' ? path.replace('/incidents/grid', '/tickets/grid') : path,
+    { rows: [], row_count: 0, page: 0, page_size: 25 },
+  )
+  const columns = useMemo(
+    () => incidentColumns(lookups.data, scope, scope === 'reported' ? 'tickets' : 'incidents'),
+    [lookups.data, scope],
+  )
   const refresh = () =>
     void invalidateResourceQueries(client, 'incidents', ['buildings', 'floors', 'seats'])
   const resetPage = () => setPagination((previous) => ({ ...previous, page: 0 }))
   const save = async (payload: Record<string, unknown>) => {
-    const incident = await api<Incident>('/incidents', {
+    const ticket = await api<Ticket>('/tickets', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
     await invalidateResourceQueries(client, 'incidents')
     setCreating(false)
-    openRecord('incidents', incident.id, { scope })
+    openRecord('tickets', ticket.id)
   }
   const failure = query.error || lookups.error
   return (
@@ -78,7 +84,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
             onClick={() => setCreating(true)}
             disabled={lookups.loading || Boolean(lookups.error)}
           >
-            New incident
+            New ticket
           </Button>
         )}
       </Stack>
@@ -115,7 +121,18 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
           initialState={{
             columns: { columnVisibilityModel: { assignee_name: scope !== 'assigned' } },
           }}
-          rows={query.data.rows}
+          rows={query.data.rows.map((row) =>
+            'incident' in row
+              ? {
+                  ...row.incident,
+                  id: row.id,
+                  title: row.title,
+                  description: row.description,
+                  created_at: row.created_at,
+                  building_id: row.building_id,
+                }
+              : row,
+          )}
           columns={columns}
           loading={query.loading || lookups.loading || search !== debouncedSearch}
           rowCount={query.data.row_count}
@@ -138,12 +155,12 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
       </Paper>
       {creating && scope === 'reported' && (
         <RecordFormDialog
-          title="New incident"
+          title="New ticket"
           fields={incidentFields}
           lookups={lookups.data}
           onSave={save}
           onClose={() => setCreating(false)}
-          subtitle="This report will be submitted in your name and start Open with Low priority. Facilities admins handle escalation. Building is required; floor and seat are optional."
+          subtitle="This ticket will be submitted in your name and create an Open incident with Low priority. Facilities admins handle escalation. Building is required; floor and seat are optional."
         />
       )}
     </Stack>

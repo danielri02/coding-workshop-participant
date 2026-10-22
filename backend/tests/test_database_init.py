@@ -23,6 +23,8 @@ from backend.app.security.jwt import create_access_token
 
 PATH = "/dev/database/init"
 
+from backend.tests.support.factories import reported_incident
+
 
 class DatabaseInitAccessTests(unittest.IsolatedAsyncioTestCase):
     async def test_upgrade_uses_the_same_key_and_never_calls_reset(self):
@@ -197,7 +199,7 @@ class DatabaseInitTests(unittest.IsolatedAsyncioTestCase):
             building = Building(name="Existing location")
             session.add_all([user, building])
             await session.flush()
-            incident = Incident(
+            incident = reported_incident(
                 title="Existing work",
                 description="Keep this incident",
                 category="Other",

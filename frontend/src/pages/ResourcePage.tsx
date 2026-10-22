@@ -21,6 +21,7 @@ import type {
 } from '@mui/x-data-grid'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import type { AdminOutlet } from '../components/AdminLayout'
+import { MergeIncidentDialog } from '../components/MergeIncidentDialog'
 import { IncidentPicker } from '../components/IncidentPicker'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useRecordDialogs } from '../dialogs/context'
@@ -68,6 +69,9 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     setPagination((previous) => ({ ...previous, page: 0 }))
   }
   const {
+    merge,
+    setMerge,
+    mergeSaved,
     editor,
     setEditor,
     confirmation,
@@ -275,6 +279,9 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           />
         )}
       </Paper>
+      {merge && (
+        <MergeIncidentDialog source={merge} onClose={() => setMerge(null)} onMerged={mergeSaved} />
+      )}
       {editor && (
         <RecordFormDialog
           key={`${editor.action}:${editor.row?.id || 'new'}`}

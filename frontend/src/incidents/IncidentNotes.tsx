@@ -1,3 +1,5 @@
+import { useWorkspace } from '../hooks/useWorkspace'
+import { useAuth } from '../auth/context'
 import { useState } from 'react'
 import { Alert, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
@@ -21,12 +23,18 @@ export function IncidentNotes({
   incident: Incident
   embedded?: boolean
 }) {
+  const { adminView, workspace } = useWorkspace()
+  const { user } = useAuth()
   const { setBusy } = useRecordDialogs()
   const [adding, setAdding] = useState(false)
   const client = useQueryClient()
   const path = `/incidents/${incident.id}/notes`
   const query = useApiQuery<Note[]>(path, [])
-  const canAddNotes = noteStatuses.some((status) => status === incident.status)
+  const canAddNotes =
+    !incident.merged_into_id &&
+    noteStatuses.some((status) => status === incident.status) &&
+    (adminView ||
+      (workspace?.id === 'assigned' && user?.engineer_profile && incident.assignee_id === user.id))
   const refresh = () => void client.invalidateQueries({ queryKey: ['api', path] })
   const save = async (payload: Record<string, unknown>) => {
     await api<Note>(path, { method: 'POST', body: JSON.stringify(payload) })
@@ -60,7 +68,8 @@ export function IncidentNotes({
       </Stack>
       {!canAddNotes && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          This incident is {incident.status.toLowerCase()}. Its updates remain available to read.
+          Updates from the facilities team are available to read. Only admins and the assigned
+          engineer can add notes.
         </Alert>
       )}
       {query.error && (

@@ -54,7 +54,7 @@ test('an admin engineer can switch all three views without reauthenticating or e
   const actor = userEvent.setup()
   const auth = mount(admin, '/admin/incidents')
   for (const [label, path] of [
-    ['My incidents', '/employee/incidents'],
+    ['My tickets', '/employee/tickets'],
     ['Assigned to me', '/engineer/incidents'],
     ['Administration', '/admin/incidents'],
   ]) {
@@ -68,7 +68,7 @@ test('an admin engineer can switch all three views without reauthenticating or e
 })
 
 test('an admin without an engineer profile has no assigned-work option', async () => {
-  mount({ ...admin, engineer_profile: null }, '/employee/incidents')
+  mount({ ...admin, engineer_profile: null }, '/employee/tickets')
   await userEvent.click(screen.getByRole('combobox', { name: 'Workspace' }))
   expect(screen.getAllByRole('option')).toHaveLength(2)
   expect(screen.queryByRole('option', { name: 'Assigned to me' })).not.toBeInTheDocument()
@@ -79,8 +79,8 @@ test('engineers switch between assigned and employee views without admin access'
   await userEvent.click(screen.getByRole('combobox', { name: 'Workspace' }))
   expect(screen.getAllByRole('option')).toHaveLength(2)
   expect(screen.queryByRole('option', { name: 'Administration' })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole('option', { name: 'My incidents', exact: true }))
-  expect(screen.getByTestId('location')).toHaveTextContent('/employee/incidents')
+  await userEvent.click(screen.getByRole('option', { name: 'My tickets', exact: true }))
+  expect(screen.getByTestId('location')).toHaveTextContent('/employee/tickets')
   await userEvent.click(screen.getByRole('combobox', { name: 'Workspace' }))
   await userEvent.click(screen.getByRole('option', { name: 'Assigned to me', exact: true }))
   expect(screen.getByTestId('location')).toHaveTextContent('/engineer/incidents')
@@ -88,15 +88,15 @@ test('engineers switch between assigned and employee views without admin access'
 })
 
 test('employees with only one workspace do not need a switcher', () => {
-  mount({ ...admin, is_admin: false, engineer_profile: null }, '/employee/incidents')
+  mount({ ...admin, is_admin: false, engineer_profile: null }, '/employee/tickets')
   expect(screen.queryByRole('combobox', { name: 'Workspace' })).not.toBeInTheDocument()
 })
 
 test.each([
-  [true, true, '/employee/incidents', '/employee/incidents', 'Member routes'],
+  [true, true, '/employee/tickets', '/employee/tickets', 'Member routes'],
   [true, true, '/engineer/incidents/7', '/engineer/incidents/7', 'Member routes'],
   [true, false, '/engineer/incidents', '/admin/incidents', 'Admin routes'],
-  [false, false, '/admin/incidents', '/employee/incidents', 'Member routes'],
+  [false, false, '/admin/incidents', '/employee/tickets', 'Member routes'],
   [false, true, '/admin/incidents', '/engineer/incidents', 'Member routes'],
   [true, true, '/', '/admin/incidents', 'Admin routes'],
 ] as const)(

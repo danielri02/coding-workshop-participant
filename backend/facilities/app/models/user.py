@@ -18,6 +18,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .incident import Incident
     from .note import Note
+    from .ticket import Ticket
 
 
 class User(Base):
@@ -47,7 +48,7 @@ class User(Base):
         back_populates="user",
         passive_deletes="all",
     )
-    reported_incidents: Mapped[list["Incident"]] = relationship(
+    tickets: Mapped[list["Ticket"]] = relationship(
         back_populates="reporter",
         passive_deletes="all",
     )

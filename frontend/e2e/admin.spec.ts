@@ -67,7 +67,7 @@ async function expectSummary(
   counts: Record<string, number>,
 ) {
   const summary = page.getByRole('region', {
-    name: scope === 'assigned' ? 'Assigned incident summary' : 'My incident summary',
+    name: scope === 'assigned' ? 'Assigned incident summary' : 'My ticket summary',
     exact: true,
   })
   for (const [label, value] of Object.entries(counts))
@@ -76,6 +76,34 @@ async function expectSummary(
         .getByRole('article', { name: label, exact: true })
         .getByText(String(value), { exact: true }),
     ).toBeVisible()
+}
+
+async function allTickets(
+  request: APIRequestContext,
+  actorHeaders: Record<string, string>,
+  filters: Record<string, string> = {},
+) {
+  const rows = []
+  for (let page = 0; ; page++) {
+    const response = await request.get(`${apiUrl}/tickets/grid`, {
+      headers: actorHeaders,
+      params: { page, page_size: 100, ...filters },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    const result = await response.json()
+    rows.push(...result.rows)
+    if (rows.length >= result.row_count) return rows
+  }
+}
+
+async function ticketForIncident(
+  request: APIRequestContext,
+  incidentId: number,
+  actorHeaders: Record<string, string>,
+) {
+  const tickets = await allTickets(request, actorHeaders, { incident_id: String(incidentId) })
+  expect(tickets).toHaveLength(1)
+  return tickets[0]
 }
 
 async function save(page: Page, path: string, method = 'POST') {
@@ -88,7 +116,11 @@ async function save(page: Page, path: string, method = 'POST') {
   expect(response.ok(), await response.text()).toBeTruthy()
   const row = await response.json()
   if (method === 'POST')
-    cleanup.unshift(`${path.startsWith('/incidents/') ? '/notes' : path}/${row.id ?? row.user_id}`)
+    cleanup.unshift(
+      path === '/tickets'
+        ? `/incidents/${row.incident_id}`
+        : `${path.startsWith('/incidents/') ? '/notes' : path}/${row.id ?? row.user_id}`,
+    )
   await expect(
     page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
   ).toBeHidden()
@@ -376,12 +408,12 @@ test('employee credentials open their workspace and exclude admin navigation', a
   cleanup.unshift(`/users/${user.id}`)
   await page.goto('/admin/incidents')
   await signIn(page, employeeEmail, employeePassword)
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
-  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/employee\/tickets$/)
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
 })
 
-test('new employees register on mobile, sign in and add follow-up notes after resolution', async ({
+test('new employees register on mobile, sign in and read facilities notes after resolution', async ({
   request,
   page,
 }) => {
@@ -395,7 +427,7 @@ test('new employees register on mobile, sign in and add follow-up notes after re
       posts.push(request.postData() || '')
   })
   await page.setViewportSize({ width: 320, height: 640 })
-  await page.goto('/employee/incidents')
+  await page.goto('/employee/tickets')
   await page.getByRole('button', { name: 'Create an account', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Create your account' })
   const create = dialog.getByRole('button', { name: 'Create account', exact: true })
@@ -449,7 +481,7 @@ test('new employees register on mobile, sign in and add follow-up notes after re
   await expectSummary(page, 'personal', { Active: 0, Resolved: 0, Closed: 0 })
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
   const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
-  await page.getByRole('button', { name: 'New incident', exact: true }).click()
+  await page.getByRole('button', { name: 'New ticket', exact: true }).click()
   await page.getByRole('dialog').getByLabel('Title', { exact: false }).fill(suffix)
   await page
     .getByRole('dialog')
@@ -457,8 +489,9 @@ test('new employees register on mobile, sign in and add follow-up notes after re
     .fill('A newly registered employee can report workplace issues.')
   await select(page, 'Category', 'Other')
   await select(page, 'Building', building.name)
-  const incident = await save(page, '/incidents')
-  expect(incident.reporter_id).toBe(account.id)
+  const ticket = await save(page, '/tickets')
+  const incident = ticket.incident
+  expect(ticket.reporter_id).toBe(account.id)
   expect(incident.priority).toBe('Low')
   const resolved = await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
     headers,
@@ -466,17 +499,16 @@ test('new employees register on mobile, sign in and add follow-up notes after re
   })
   expect(resolved.status()).toBe(200)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await page.getByRole('button', { name: 'Add note', exact: true }).click()
-  await page
-    .getByRole('dialog')
-    .getByLabel('Note', { exact: false })
-    .fill('Thanks, this is working after resolution.')
-  const note = await save(page, `/incidents/${incident.id}/notes`)
-  expect(note.author_id).toBe(account.id)
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  const note = await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+    headers,
+    data: { body: 'Facilities verified the repair after resolution.' },
+  })
+  expect(note.status()).toBe(201)
   await page.reload()
-  await page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }).click()
+  await page.getByRole('link', { name: `#${ticket.id} · ${suffix}`, exact: true }).click()
   await expect(
-    page.getByText('Thanks, this is working after resolution.', { exact: true }),
+    page.getByText('Facilities verified the repair after resolution.', { exact: true }),
   ).toBeVisible()
   const closed = await request.patch(`${apiUrl}/incidents/${incident.id}/status`, {
     headers,
@@ -486,7 +518,7 @@ test('new employees register on mobile, sign in and add follow-up notes after re
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
   await expect(
-    page.getByText('Thanks, this is working after resolution.', { exact: true }),
+    page.getByText('Facilities verified the repair after resolution.', { exact: true }),
   ).toBeVisible()
 })
 
@@ -1144,9 +1176,6 @@ test('employee dialog relationships keep account privacy and incident permission
   })
   const tokens = await employeeLogin.json()
   const employeeHeaders = { Authorization: `Bearer ${tokens.access_token}` }
-  const employee = await (
-    await request.get(`${apiUrl}/auth/me`, { headers: employeeHeaders })
-  ).json()
   const response = await request.post(`${apiUrl}/incidents`, {
     headers: employeeHeaders,
     data: {
@@ -1157,6 +1186,7 @@ test('employee dialog relationships keep account privacy and incident permission
     },
   })
   const incident = await response.json()
+  const ticket = await ticketForIncident(request, incident.id, employeeHeaders)
   cleanup.unshift(`/incidents/${incident.id}`)
   await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
     headers,
@@ -1186,11 +1216,11 @@ test('employee dialog relationships keep account privacy and incident permission
     if (request.method() === 'GET' && request.url().startsWith(browserApiUrl))
       reads.push(browserPath(new URL(request.url())))
   })
-  await page.goto('/employee/incidents')
+  await page.goto('/employee/tickets')
   await signIn(page, 'employee@acme.inc', 'employee')
-  await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
+  await page.getByRole('textbox', { name: 'Search my tickets' }).fill(suffix)
   const origin = page.url()
-  await page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }).click()
+  await page.getByRole('link', { name: `#${ticket.id} · ${suffix}`, exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toHaveCount(1)
   await expect(dialog.getByRole('link', { name: adminNote.author_name, exact: true })).toBeHidden()
@@ -1214,27 +1244,21 @@ test('employee dialog relationships keep account privacy and incident permission
   expect((await (await searched).json()).row_count).toBe(1)
   await expect(dialog.getByRole('link', { name: `${suffix} private`, exact: true })).toBeHidden()
   await dialog.getByRole('link', { name: suffix, exact: true }).click()
-  await dialog.getByRole('link', { name: employee.name, exact: true }).click()
-  await expect(dialog).toHaveAccessibleName(`User #${employee.id}`)
-  await dialog.getByRole('button', { name: 'Back', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Add note', exact: true }).click()
-  await expect(page.locator('[role="dialog"]')).toHaveCount(1)
-  await dialog.getByLabel('Note', { exact: false }).fill('A follow-up through the record dialog.')
-  await save(page, `/incidents/${incident.id}/notes`)
-  await expect(
-    dialog.getByText('A follow-up through the record dialog.', { exact: true }),
-  ).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  const rejected = await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+    headers: employeeHeaders,
+    data: { body: 'Reporters cannot add notes' },
+  })
+  expect(rejected.status()).toBe(403)
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   expect(page.url()).toBe(origin)
-  await expect(page.getByRole('textbox', { name: 'Search my incidents' })).toHaveValue(suffix)
-  expect([...new Set(reads.filter((path) => /^\/users(\/|$)/.test(path)))]).toEqual([
-    `/users/${employee.id}`,
-  ])
+  await expect(page.getByRole('textbox', { name: 'Search my tickets' })).toHaveValue(suffix)
+  expect([...new Set(reads.filter((path) => /^\/users(\/|$)/.test(path)))]).toEqual([])
   expect(reads).not.toContain('/engineer-profiles')
   expect(reads).not.toContain(`/incidents/${privateIncident.id}`)
 })
 
-test('demo employee submits incidents, tracks progress and shares notes on mobile', async ({
+test('demo employee submits tickets, tracks progress and reads facilities notes on mobile', async ({
   request,
   page,
 }) => {
@@ -1251,20 +1275,18 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   })
   await page.goto('/')
   await signIn(page, 'employee@acme.inc', 'employee')
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
   const employeeToken = await page.evaluate(
     () => JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token,
   )
-  const owned = await (
-    await request.get(`${apiUrl}/incidents`, {
-      headers: { Authorization: `Bearer ${employeeToken}` },
-    })
-  ).json()
+  const owned = (await allTickets(request, { Authorization: `Bearer ${employeeToken}` })).map(
+    (ticket) => ticket.incident,
+  )
   const activeBefore = owned.filter((row: { status: string }) =>
     ['Open', 'Assigned', 'In Progress', 'Blocked'].includes(row.status),
   ).length
-  const summary = page.getByRole('region', { name: 'My incident summary', exact: true })
+  const summary = page.getByRole('region', { name: 'My ticket summary', exact: true })
   await expect(
     summary
       .getByRole('article', { name: 'Active', exact: true })
@@ -1277,7 +1299,7 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   await expect(
     page.getByText(`11–${Math.min(20, owned.length)} of ${owned.length}`, { exact: true }),
   ).toBeVisible()
-  await page.getByRole('button', { name: 'New incident', exact: true }).click()
+  await page.getByRole('button', { name: 'New ticket', exact: true }).click()
   await expect(
     page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
   ).toBeDisabled()
@@ -1294,10 +1316,11 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
     page.getByRole('dialog').getByRole('combobox', { name: 'Priority', exact: false }),
   ).toBeHidden()
   await expect(page.getByRole('dialog').getByLabel('Escalation reason')).toBeHidden()
-  const incident = await save(page, '/incidents')
+  const ticket = await save(page, '/tickets')
+  const incident = ticket.incident
   expect(incident.priority).toBe('Low')
-  await expect(page).toHaveURL(/\/employee\/incidents$/)
-  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Incident #${incident.id}`)
+  await expect(page).toHaveURL(/\/employee\/tickets$/)
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Ticket #${ticket.id}`)
   await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
   await expect(
     page.getByRole('dialog').getByText('Awaiting assignment', { exact: true }),
@@ -1314,14 +1337,15 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   expect(escalated.status()).toBe(200)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Unable to join meetings' })).toBeVisible()
-  await page.getByRole('button', { name: 'Add note', exact: true }).click()
-  await page
-    .getByRole('dialog')
-    .getByLabel('Note', { exact: false })
-    .fill('The connection also drops after restarting.')
-  await save(page, `/incidents/${incident.id}/notes`)
+  await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  const update = await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+    headers,
+    data: { body: 'Facilities is investigating the connection drops.' },
+  })
+  expect(update.status()).toBe(201)
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(
-    page.getByText('The connection also drops after restarting.', { exact: true }),
+    page.getByText('Facilities is investigating the connection drops.', { exact: true }),
   ).toBeVisible()
   await page.setViewportSize({ width: 390, height: 640 })
   await page.screenshot({
@@ -1330,18 +1354,18 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   })
   await page.setViewportSize({ width: 320, height: 640 })
   await page.reload()
-  await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
-  await page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search my tickets' }).fill(suffix)
+  await page.getByRole('link', { name: `#${ticket.id} · ${suffix}`, exact: true }).click()
   await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
   await expect(
-    page.getByText('The connection also drops after restarting.', { exact: true }),
+    page.getByText('Facilities is investigating the connection drops.', { exact: true }),
   ).toBeVisible()
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
     .toBeLessThanOrEqual(1)
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Search my incidents' }).fill('')
-  await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
+  await page.getByRole('textbox', { name: 'Search my tickets' }).fill('')
+  await page.getByRole('textbox', { name: 'Search my tickets' }).fill(suffix)
   await expect(
     summary
       .getByRole('article', { name: 'Active', exact: true })
@@ -1353,7 +1377,7 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
     fullPage: true,
   })
   await expect(
-    page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }),
+    page.getByRole('link', { name: `#${ticket.id} · ${suffix}`, exact: true }),
   ).toBeVisible()
   const scrollbar = page.getByRole('grid').locator('.MuiDataGrid-scrollbar--horizontal')
   await expect(scrollbar).toBeVisible()
@@ -1384,8 +1408,8 @@ test('employee workspace and API exclude other reports and privileged operations
   })
   await page.goto('/admin/users')
   await signIn(page, 'employee@acme.inc', 'employee')
-  await expect(page).toHaveURL(/\/employee\/incidents$/)
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/employee\/tickets$/)
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   const accessToken = await page.evaluate(
     () => JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token,
   )
@@ -1393,50 +1417,59 @@ test('employee workspace and API exclude other reports and privileged operations
   const account = await (
     await request.get(`${apiUrl}/auth/me`, { headers: employeeHeaders })
   ).json()
-  const own = await (await request.get(`${apiUrl}/incidents`, { headers: employeeHeaders })).json()
+  const own = await allTickets(request, employeeHeaders)
   expect(own.length).toBeGreaterThan(10)
   expect(own.every((row: { reporter_id: number }) => row.reporter_id === account.id)).toBeTruthy()
-  const all = await (await request.get(`${apiUrl}/incidents`, { headers })).json()
-  const other = all.find((row: { reporter_id: number }) => row.reporter_id !== account.id)
-  const closed = own.find((row: { status: string }) => row.status === 'Closed')
+  const all = await allTickets(request, headers)
+  const other = all.find(
+    (row) =>
+      row.reporter_id !== account.id &&
+      !own.some((ticket) => ticket.incident_id === row.incident_id),
+  )
+  const closed = own.find((row) => row.incident.status === 'Closed')
   for (const path of [
-    `/incidents/${other.id}`,
-    `/incidents/${other.id}/notes`,
+    `/incidents/${other.incident_id}`,
+    `/incidents/${other.incident_id}/notes`,
     '/users',
     '/reports/workload',
   ]) {
     expect((await request.get(`${apiUrl}${path}`, { headers: employeeHeaders })).status()).toBe(403)
   }
   for (const [path, data] of [
-    [`/incidents/${own[0].id}/status`, { status: 'In Progress' }],
-    [`/incidents/${own[0].id}/assignment`, { assignee_id: null }],
-    [`/incidents/${own[0].id}`, { title: 'Not permitted' }],
-    [`/incidents/${other.id}/priority`, { priority: 'High' }],
-    [`/incidents/${own[0].id}/priority`, { priority: 'High', escalation_reason: 'Not permitted' }],
+    [`/incidents/${own[0].incident_id}/status`, { status: 'In Progress' }],
+    [`/incidents/${own[0].incident_id}/assignment`, { assignee_id: null }],
+    [`/incidents/${own[0].incident_id}`, { title: 'Not permitted' }],
+    [`/incidents/${other.incident_id}/priority`, { priority: 'High' }],
+    [
+      `/incidents/${own[0].incident_id}/priority`,
+      { priority: 'High', escalation_reason: 'Not permitted' },
+    ],
   ] as const)
     expect(
       (await request.patch(`${apiUrl}${path}`, { headers: employeeHeaders, data })).status(),
     ).toBe(403)
   expect(
     (
-      await request.delete(`${apiUrl}/incidents/${own[0].id}`, { headers: employeeHeaders })
+      await request.delete(`${apiUrl}/incidents/${own[0].incident_id}`, {
+        headers: employeeHeaders,
+      })
     ).status(),
   ).toBe(403)
   await page.goto('/engineer/incidents')
-  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page).toHaveURL(/\/employee\/tickets$/)
   await expect(page.getByRole('tab', { name: 'Assigned to me', exact: true })).toBeHidden()
-  await page.goto(`/employee/incidents/${other.id}`)
+  await page.goto(`/employee/tickets/${other.id}`)
   await expect(page.getByRole('alert')).toBeVisible()
   await expect(page.getByRole('heading', { name: other.title, exact: true })).toBeHidden()
-  expect(requested).not.toContain(`/incidents/${other.id}/notes`)
-  await page.goto(`/employee/incidents/${closed.id}`)
+  expect(requested).not.toContain(`/incidents/${other.incident_id}/notes`)
+  await page.goto(`/employee/tickets/${closed.id}`)
   await expect(page.getByRole('heading', { name: closed.title, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
   await expect(
     page.getByRole('button', { name: 'Priority and escalation', exact: true }),
   ).toBeHidden()
   await expect(
-    page.getByText('Confirmed working again. Thank you for the update.', { exact: true }),
+    page.getByText('Verified working again and closed by facilities.', { exact: true }),
   ).toBeVisible()
   await expect(
     page.getByRole('button', { name: /Assign engineer|Change status|Delete|Edit/ }),
@@ -1671,17 +1704,18 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
     }),
   ).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await switchWorkspace(page, 'My incidents')
+  const ownTicket = await ticketForIncident(request, fixture.own.id, headers)
+  await switchWorkspace(page, 'My tickets')
   await expectSummary(page, 'personal', { Active: 1, Resolved: 0, Closed: 0 })
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   await expect(
-    page.getByRole('link', { name: `#${fixture.own.id} · ${fixture.own.title}`, exact: true }),
+    page.getByRole('link', { name: `#${ownTicket.id} · ${fixture.own.title}`, exact: true }),
   ).toBeVisible()
   await expect(
     page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }),
   ).toBeHidden()
   await page
-    .getByRole('link', { name: `#${fixture.own.id} · ${fixture.own.title}`, exact: true })
+    .getByRole('link', { name: `#${ownTicket.id} · ${fixture.own.title}`, exact: true })
     .click()
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
   await expect(
@@ -1708,8 +1742,8 @@ test('engineer scope and permissions follow current assignment including reassig
   const engineerHeaders = { Authorization: `Bearer ${accessToken}` }
   const all = await (await request.get(`${apiUrl}/incidents`, { headers })).json()
   const other = all.find(
-    (row: { reporter_id: number; assignee_id: number | null }) =>
-      row.assignee_id !== fixture.user.id && row.reporter_id !== fixture.user.id,
+    (row: { id: number; assignee_id: number | null }) =>
+      row.assignee_id !== fixture.user.id && row.id !== fixture.own.id,
   )
   expect(
     (await request.get(`${apiUrl}/incidents/${other.id}`, { headers: engineerHeaders })).status(),
@@ -1846,13 +1880,14 @@ test('an admin engineer switches views while keeping incident scopes, member con
   await page.goto('/admin/incidents')
   await signIn(page, actor.email, actorPassword)
   await expect(page.getByRole('button', { name: 'New incident', exact: true })).toBeVisible()
-  await switchWorkspace(page, 'My incidents')
-  await expect(page).toHaveURL(/\/employee\/incidents$/)
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  const ownTicket = await ticketForIncident(request, own.id, headers)
+  await switchWorkspace(page, 'My tickets')
+  await expect(page).toHaveURL(/\/employee\/tickets$/)
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   await expect(page.getByText('1–1 of 1', { exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
-  await expect(page.getByRole('region', { name: 'My incident summary' })).toBeVisible()
-  await page.getByRole('link', { name: `#${own.id} · ${own.title}`, exact: true }).click()
+  await expect(page.getByRole('region', { name: 'My ticket summary' })).toBeVisible()
+  await page.getByRole('link', { name: `#${ownTicket.id} · ${own.title}`, exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('heading', { name: own.title, exact: true })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Assign engineer', exact: true })).toBeHidden()
@@ -1870,15 +1905,15 @@ test('an admin engineer switches views while keeping incident scopes, member con
   expect((await (await scoped).json()).row_count).toBe(1)
   await expect(dialog.getByRole('link', { name: assigned.title, exact: true })).toBeHidden()
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('button', { name: 'New incident', exact: true }).click()
+  await page.getByRole('button', { name: 'New ticket', exact: true }).click()
   await expect(dialog.getByRole('combobox', { name: /^Priority/ })).toBeHidden()
   await dialog.getByLabel('Title', { exact: false }).fill(`${suffix} submitted`)
   await dialog.getByLabel('Description').fill('An admin reporting in the employee view.')
   await select(page, 'Category', 'Other')
   await select(page, 'Building', building.name)
-  const created = await save(page, '/incidents')
+  const created = await save(page, '/tickets')
   expect(created.reporter_id).toBe(actor.id)
-  expect(created.priority).toBe('Low')
+  expect(created.incident.priority).toBe('Low')
   await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   await switchWorkspace(page, 'Assigned to me')
   await expect(page).toHaveURL(/\/engineer\/incidents$/)
@@ -1940,11 +1975,11 @@ test('an admin without an engineer profile can switch to employee view and canno
   await page.getByRole('combobox', { name: 'Workspace', exact: true }).click()
   await expect(page.getByRole('option')).toHaveCount(2)
   await expect(page.getByRole('option', { name: 'Assigned to me', exact: true })).toBeHidden()
-  await page.getByRole('option', { name: 'My incidents', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await page.getByRole('option', { name: 'My tickets', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   await page.goto('/engineer/incidents')
   await expect(page).toHaveURL(/\/admin\/incidents$/)
-  await switchWorkspace(page, 'My incidents')
+  await switchWorkspace(page, 'My tickets')
   expect(
     (
       await request.patch(`${apiUrl}/users/${actor.id}/admin`, {
@@ -1954,10 +1989,10 @@ test('an admin without an engineer profile can switch to employee view and canno
     ).ok(),
   ).toBeTruthy()
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Workspace', exact: true })).toBeHidden()
   await page.goto('/admin/incidents')
-  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page).toHaveURL(/\/employee\/tickets$/)
 })
 
 test('notes incident picker searches server results by title, description and exact ID', async ({
@@ -2108,9 +2143,9 @@ test('employee details show building/category expectations and newest notes with
       })
     ).ok(),
   ).toBeTruthy()
-  await page.goto('/employee/incidents')
+  await page.goto('/employee/tickets')
   await signIn(page, 'employee@acme.inc', 'employee')
-  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   const employeeHeaders = await page.evaluate(() => ({
     Authorization: `Bearer ${JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token}`,
   }))
@@ -2129,12 +2164,18 @@ test('employee details show building/category expectations and newest notes with
     expect(
       (
         await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
-          headers: employeeHeaders,
+          headers,
           data: { body },
         })
       ).ok(),
     ).toBeTruthy()
-  await page.goto(`/employee/incidents/${incident.id}`)
+  const employeeAccess = await page.evaluate(
+    () => JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token,
+  )
+  const ownTicket = await ticketForIncident(request, incident.id, {
+    Authorization: `Bearer ${employeeAccess}`,
+  })
+  await page.goto(`/employee/tickets/${ownTicket.id}`)
   const expectations = page.getByRole('region', {
     name: 'Recent response times for similar incidents',
     exact: true,
@@ -2219,4 +2260,112 @@ test('reference grids search, sort, filter and fetch subsequent pages on the bac
   expect(narrowed.rows[0].name).toBe(`${suffix} office 00`)
   await page.keyboard.press('Escape')
   await expect(page.getByText('1–1 of 1', { exact: true })).toBeVisible()
+})
+
+test('admin merges incidents while employees retain private tickets and read-only shared progress', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(90000)
+  const suffix = `merge${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const login = await request.post(`${apiUrl}/auth/login`, {
+    data: { email: 'employee@acme.inc', password: 'employee' },
+  })
+  const tokens = await login.json()
+  const employeeHeaders = { Authorization: `Bearer ${tokens.access_token}` }
+  const sourceResult = await request.post(`${apiUrl}/tickets`, {
+    headers: employeeHeaders,
+    data: {
+      title: `${suffix} original report`,
+      description: 'My original report is preserved.',
+      category: 'Electrical',
+      building_id: building.id,
+    },
+  })
+  expect(sourceResult.ok(), await sourceResult.text()).toBeTruthy()
+  const source = await sourceResult.json()
+  cleanup.unshift(`/incidents/${source.incident_id}`)
+  const targetResult = await request.post(`${apiUrl}/tickets`, {
+    headers,
+    data: {
+      title: `${suffix} shared problem`,
+      description: 'Private original report from the other reporter.',
+      category: 'Electrical',
+      building_id: building.id,
+    },
+  })
+  const target = await targetResult.json()
+  cleanup.unshift(`/incidents/${target.incident_id}`)
+  await request.patch(`${apiUrl}/incidents/${target.incident_id}`, {
+    headers,
+    data: { description: 'Public summary of the shared electrical problem.' },
+  })
+  await request.post(`${apiUrl}/incidents/${source.incident_id}/notes`, {
+    headers,
+    data: { body: 'Facilities investigation continues on the shared problem.' },
+  })
+  await page.goto('/admin/incidents')
+  await signIn(page)
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await page
+    .getByRole('button', { name: `More actions for incidents ${source.incident_id}` })
+    .click()
+  await page.getByRole('menuitem', { name: 'Merge incident', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog.getByRole('button', { name: 'Merge incident', exact: true })).toBeDisabled()
+  await dialog
+    .getByRole('combobox', { name: 'Incident', exact: true })
+    .fill(`#${target.incident_id}`)
+  await page.getByRole('option', { name: new RegExp(`^#${target.incident_id} ·`) }).click()
+  const merged = page.waitForResponse(
+    (response) =>
+      browserPath(new URL(response.url())) === `/incidents/${source.incident_id}/merge` &&
+      response.request().method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: 'Merge incident', exact: true }).click()
+  expect((await merged).status()).toBe(200)
+  await expect(dialog).toBeHidden()
+  await expect(
+    page.getByRole('button', { name: `More actions for incidents ${source.incident_id}` }),
+  ).toBeHidden()
+  await page.getByRole('combobox', { name: 'Quick view', exact: true }).click()
+  await page.getByRole('option', { name: 'Merged history', exact: true }).click()
+  await page.getByRole('link', { name: `#${target.incident_id}`, exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(`Incident #${target.incident_id}`)
+  await dialog.getByRole('link', { name: 'View tickets (2)', exact: true }).click()
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog.getByRole('link', { name: source.title, exact: true })).toBeVisible()
+  await expect(dialog.getByRole('link', { name: target.title, exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /Edit tickets|Delete tickets/ })).toBeHidden()
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await signIn(page, 'employee@acme.inc', 'employee')
+  await page.getByRole('textbox', { name: 'Search my tickets' }).fill(suffix)
+  await page.getByRole('link', { name: `#${source.id} · ${source.title}`, exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(`Ticket #${source.id}`)
+  await expect(dialog.getByText('My original report is preserved.', { exact: true })).toBeVisible()
+  await expect(
+    dialog.getByText('Public summary of the shared electrical problem.', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    dialog.getByText('Facilities investigation continues on the shared problem.', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    dialog.getByText('Private original report from the other reporter.', { exact: true }),
+  ).toBeHidden()
+  await expect(dialog.getByRole('button', { name: 'Add note', exact: true })).toBeHidden()
+  expect(
+    (await request.get(`${apiUrl}/tickets/${target.id}`, { headers: employeeHeaders })).status(),
+  ).toBe(404)
+  expect(
+    (
+      await request.post(`${apiUrl}/incidents/${target.incident_id}/notes`, {
+        headers: employeeHeaders,
+        data: { body: 'Not permitted' },
+      })
+    ).status(),
+  ).toBe(403)
+  await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: tokens.refresh_token } })
 })

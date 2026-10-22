@@ -9,6 +9,8 @@ export type Floor = ApiSchemas['FloorRead']
 export type Seat = ApiSchemas['SeatRead']
 export type Incident = ApiSchemas['IncidentRead']
 export type Note = ApiSchemas['NoteRead']
+export type Ticket = ApiSchemas['TicketRead']
+export type TicketPage = ApiSchemas['Page_TicketRead_']
 export type TokenPair = ApiSchemas['TokenPair']
 export type DeletionPreview = ApiSchemas['DeletionPreview']
 export type IncidentPage = ApiSchemas['IncidentPage']
@@ -23,6 +25,7 @@ export interface ResourceRecords {
   seats: Seat
   incidents: Incident
   notes: Note
+  tickets: Ticket
 }
 export type ResourceKey = keyof ResourceRecords
 export type ApiRecord = ResourceRecords[ResourceKey]
@@ -31,6 +34,12 @@ export type ResourcePageData = Omit<IncidentPage, 'rows'> & { rows: ApiRecord[] 
 /** Common presentation adapter with explicit known fields and a normalized grid ID. */
 export interface AdminRow {
   id: number
+  ticket_count?: number
+  merged?: boolean
+  merged_into_id?: number | null
+  merged_at?: string | null
+  merged_by_id?: number | null
+  incident?: Incident
   name?: string
   email?: string
   is_admin?: boolean

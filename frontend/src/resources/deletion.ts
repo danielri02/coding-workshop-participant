@@ -9,6 +9,7 @@ export function deletionWarning(preview: DeletionPreview): string {
     floors: ['floor', 'floors'],
     seats: ['seat', 'seats'],
     incidents: ['incident', 'incidents'],
+    tickets: ['ticket', 'tickets'],
     notes: ['note', 'notes'],
   }
   const counts = Object.entries(preview.counts)

@@ -12,6 +12,8 @@ import { invalidateResourceQueries } from '../services/queries'
 import { IncidentDetailsPage } from '../incidents/IncidentDetailsPage'
 import { useRecordDialogs } from './context'
 import { targetKey, type DialogEntry } from './navigation'
+import { TicketDetailsPage } from '../incidents/TicketDetailsPage'
+import { MergeIncidentDialog } from '../components/MergeIncidentDialog'
 import { RecordDetailsContent } from './RecordDetailsContent'
 import { RelatedGrid } from './RelatedGrid'
 
@@ -34,6 +36,15 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
     if (actions.confirmation) setBusy(actions.busy)
     return () => setBusy(false)
   }, [actions.confirmation, actions.busy, setBusy])
+  if (actions.merge)
+    return (
+      <MergeIncidentDialog
+        embedded
+        source={actions.merge}
+        onClose={() => actions.setMerge(null)}
+        onMerged={actions.mergeSaved}
+      />
+    )
   if (actions.editor)
     return (
       <RecordFormDialog
@@ -73,11 +84,12 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
         }
       />
     )
+  if (target.resource === 'tickets') return <TicketDetailsPage recordId={target.id} embedded />
   if (!adminView && target.resource === 'incidents')
     return (
       <IncidentDetailsPage
         recordId={target.id}
-        scope={target.scope || (workspace?.id === 'assigned' ? 'assigned' : 'reported')}
+        scope={target.scope || (workspace?.id === 'assigned' ? 'assigned' : undefined)}
         embedded
       />
     )

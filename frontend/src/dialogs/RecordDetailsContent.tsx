@@ -19,6 +19,7 @@ const relationships: Partial<Record<keyof AdminRow, ResourceKey>> = {
   author_id: 'users',
   user_id: 'users',
   incident_id: 'incidents',
+  merged_into_id: 'incidents',
 }
 const labels: Record<string, string> = {
   building_id: 'Building',
@@ -29,6 +30,7 @@ const labels: Record<string, string> = {
   author_id: 'Author',
   user_id: 'Employee',
   incident_id: 'Incident',
+  merged_into_id: 'Merged into',
   user_name: 'Name',
   user_email: 'Email',
 }
@@ -71,6 +73,15 @@ export function RecordDetailsContent({
   return (
     <Stack spacing={3}>
       <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', gap: 2 }}>
+        {resource.key === 'incidents' && (
+          <RelatedLink
+            resource="tickets"
+            filters={{ incident_id: id }}
+            title={`Tickets for incident #${id}`}
+          >
+            View tickets ({record.ticket_count || 0})
+          </RelatedLink>
+        )}
         {resource.key === 'incidents' && (
           <RelatedLink
             resource="notes"
@@ -126,11 +137,11 @@ export function RecordDetailsContent({
         {resource.key === 'users' && (
           <>
             <RelatedLink
-              resource="incidents"
+              resource="tickets"
               filters={{ reporter_id: id }}
-              title={`Incidents reported by ${record.name}`}
+              title={`Tickets reported by ${record.name}`}
             >
-              Reported incidents
+              Reported tickets
             </RelatedLink>
             {record.engineer_profile && (
               <RecordLink resource="engineers" id={id}>
@@ -140,12 +151,17 @@ export function RecordDetailsContent({
           </>
         )}
       </Stack>
-      {admin && (
+      {admin && !resource.readOnly && (
         <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', gap: 1 }}>
-          <Button variant="outlined" onClick={() => onAction('edit', record)}>
+          <Button
+            disabled={Boolean(record.merged_into_id)}
+            variant="outlined"
+            onClick={() => onAction('edit', record)}
+          >
             Edit {resource.singular}
           </Button>
           {resource.key === 'incidents' &&
+            !record.merged_into_id &&
             incidentCommands().map((command) => (
               <Button
                 key={command.action}

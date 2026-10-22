@@ -11,13 +11,15 @@ export default function AdminRoutes() {
     <Routes>
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Navigate to="incidents" replace />} />
-        {resources.map((resource) => (
-          <Route
-            key={resource.key}
-            path={resource.key}
-            element={<ResourcePage key={resource.key} resource={resource} />}
-          />
-        ))}
+        {resources
+          .filter((resource) => !resource.hidden)
+          .map((resource) => (
+            <Route
+              key={resource.key}
+              path={resource.key}
+              element={<ResourcePage key={resource.key} resource={resource} />}
+            />
+          ))}
         {reports.map((report) => (
           <Route
             key={report.key}
