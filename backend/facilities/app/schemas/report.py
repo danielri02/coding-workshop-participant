@@ -94,6 +94,9 @@ class ReportWindow(Schema):
 
 class LocationRow(Schema):
     id: str
+    building_id: int
+    floor_id: int | None
+    seat_id: int | None
     building_name: str
     floor_label: str | None
     seat_label: str | None
@@ -135,6 +138,7 @@ class TimingRow(Schema):
     priority: IncidentPriority
     category: IncidentCategory
     assignee_name: str | None
+    assignee_id: int | None
     created_at: UTCDateTime
     assigned_minutes: Minutes | None
     acknowledged_minutes: Minutes | None

@@ -6,6 +6,9 @@ import Refresh from '@mui/icons-material/Refresh'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { RecordFormDialog } from '../components/RecordFormDialog'
+import { RecordLink } from '../components/RecordLink'
+import { PersonLink } from '../components/PersonLink'
+import { useRecordDialogs } from '../dialogs/context'
 import { ValueChip } from '../components/ValueChip'
 import { transitions } from '../generated/domain'
 import { useApiQuery } from '../hooks/useApiQuery'
@@ -20,10 +23,19 @@ import { IncidentProgress } from './IncidentProgress'
 import { incidentViews, inIncidentScope, type IncidentScope } from './scope'
 
 /** Show scoped incident details and controls granted to its reporter/assigned engineer. */
-export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
-  const view = incidentViews[scope]
+export function IncidentDetailsPage({
+  scope,
+  recordId,
+  embedded = false,
+}: {
+  scope?: IncidentScope
+  recordId?: number
+  embedded?: boolean
+}) {
+  const view = incidentViews[scope || 'reported']
+  const { setBusy } = useRecordDialogs()
   const { incidentId } = useParams()
-  const id = Number(incidentId)
+  const id = recordId ?? Number(incidentId)
   const validId = Number.isSafeInteger(id) && id > 0 && id <= 2147483647
   const { user } = useAuth()
   const client = useQueryClient()
@@ -33,7 +45,9 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
   const query = useApiQuery<Incident | null>(validId ? `/incidents/${id}` : null, null)
   const lookups = useLookups({ lookups: ['buildings', 'floors', 'seats'] })
   const incident =
-    query.data?.id === id && user && inIncidentScope(query.data, user, scope) ? query.data : null
+    query.data?.id === id && user && (!scope || inIncidentScope(query.data, user, scope))
+      ? query.data
+      : null
   const canChangeStatus = Boolean(
     incident &&
     user?.engineer_profile &&
@@ -52,19 +66,46 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
   }
   const details = incident
     ? [
-        ['Building', recordLabel(lookups.data.buildings, incident.building_id)],
+        [
+          'Building',
+          <RecordLink resource="buildings" id={incident.building_id}>
+            {recordLabel(lookups.data.buildings, incident.building_id)}
+          </RecordLink>,
+        ],
         [
           'Floor',
-          incident.floor_id ? floorLabel(lookups.data, incident.floor_id) : 'Not specified',
+          incident.floor_id ? (
+            <RecordLink resource="floors" id={incident.floor_id}>
+              {floorLabel(lookups.data, incident.floor_id)}
+            </RecordLink>
+          ) : (
+            'Not specified'
+          ),
         ],
         [
           'Seat',
-          incident.seat_id
-            ? recordLabel(lookups.data.seats, incident.seat_id, 'label')
-            : 'Not specified',
+          incident.seat_id ? (
+            <RecordLink resource="seats" id={incident.seat_id}>
+              {recordLabel(lookups.data.seats, incident.seat_id, 'label')}
+            </RecordLink>
+          ) : (
+            'Not specified'
+          ),
         ],
-        ['Reported by', incident.reporter_name || 'Employee'],
-        ['Assigned engineer', incident.assignee_name || 'Awaiting assignment'],
+        [
+          'Reported by',
+          <PersonLink id={incident.reporter_id} name={incident.reporter_name || 'Employee'} />,
+        ],
+        [
+          'Assigned engineer',
+          incident.assignee_id ? (
+            <RecordLink resource="engineers" id={incident.assignee_id}>
+              {incident.assignee_name || `#${incident.assignee_id}`}
+            </RecordLink>
+          ) : (
+            'Awaiting assignment'
+          ),
+        ],
         ['Reported', new Date(incident.created_at).toLocaleString()],
         [
           'Resolved',
@@ -74,12 +115,27 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
         ],
       ]
     : []
+  const form = editing && canChangeStatus && incident && (
+    <RecordFormDialog
+      embedded={embedded}
+      title="Change status"
+      fields={statusFields(incident.status)}
+      row={{ ...incident, status: '', blocked_reason: '' }}
+      lookups={lookups.data}
+      onSave={save}
+      onClose={() => setEditing(false)}
+      onBusyChange={embedded ? setBusy : undefined}
+    />
+  )
+  if (embedded && form) return form
   return (
     <Stack spacing={3} sx={{ minWidth: 0 }}>
       <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-        <Button component={Link} to={view.path} startIcon={<ArrowBack />}>
-          {view.title}
-        </Button>
+        {!embedded && (
+          <Button component={Link} to={view.path} startIcon={<ArrowBack />}>
+            {view.title}
+          </Button>
+        )}
         <Button startIcon={<Refresh />} onClick={refresh} disabled={query.loading}>
           Refresh
         </Button>
@@ -170,7 +226,7 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
               }}
             >
               {details.map(([label, value]) => (
-                <Box key={label} sx={{ display: 'contents' }}>
+                <Box key={String(label)} sx={{ display: 'contents' }}>
                   <Typography component="dt" variant="body2" color="text.secondary">
                     {label}
                   </Typography>
@@ -185,17 +241,8 @@ export function IncidentDetailsPage({ scope }: { scope: IncidentScope }) {
               ))}
             </Box>
           </Paper>
-          <IncidentNotes key={incident.id} incident={incident} />
-          {editing && canChangeStatus && (
-            <RecordFormDialog
-              title="Change status"
-              fields={statusFields(incident.status)}
-              row={{ ...incident, status: '', blocked_reason: '' }}
-              lookups={lookups.data}
-              onSave={save}
-              onClose={() => setEditing(false)}
-            />
-          )}
+          <IncidentNotes key={incident.id} incident={incident} embedded={embedded} />
+          {!embedded && form}
         </>
       )}
     </Stack>

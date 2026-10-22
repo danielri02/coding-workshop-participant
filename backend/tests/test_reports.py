@@ -322,6 +322,18 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         own = await self.report("timings", "employee")
         self.assertIsNone(own["milestones"][2]["average_minutes"])
 
+    async def test_report_navigation_ids_match_the_visible_incident_relationships(self):
+        incident = (
+            await self.client.get(
+                f"/incidents/{self.incidents[1]}", headers=self.headers["admin"]
+            )
+        ).json()
+        row = (await self.report("locations", level="seat"))["rows"][0]
+        for field in ("building_id", "floor_id", "seat_id"):
+            self.assertEqual(row[field], incident[field])
+        timing = await self.report("timings", "engineer", search="Issue 1")
+        self.assertEqual(timing["rows"][0]["assignee_id"], self.users["engineer"])
+
     async def test_workload_includes_idle_and_unavailable_engineers(self) -> None:
         data = await self.report("workload")
         busy, idle = data["rows"]

@@ -1,8 +1,8 @@
 import type { GridColDef } from '@mui/x-data-grid'
 import { getGridBooleanOperators, getGridSingleSelectOperators } from '@mui/x-data-grid'
-import { Link } from '@mui/material'
-import { Link as RouterLink } from 'react-router-dom'
 import { RecordLink } from '../components/RecordLink'
+import { RelatedLink } from '../components/RelatedLink'
+import { PersonLink } from '../components/PersonLink'
 import { ValueChip } from '../components/ValueChip'
 import { statuses, priorities, categories, constraints } from '../generated/domain'
 import type { Field } from './forms'
@@ -87,6 +87,11 @@ export const resources: ResourceDefinition[] = [
           ...text('building_id', 'Building', 190),
           type: 'singleSelect',
           valueOptions: data.buildings.map((row) => ({ value: row.id, label: String(row.name) })),
+          renderCell: ({ row, formattedValue, hasFocus }) => (
+            <RecordLink resource="buildings" id={row.building_id!} tabIndex={hasFocus ? 0 : -1}>
+              {String(formattedValue)}
+            </RecordLink>
+          ),
         },
         {
           ...text('assignee_id', 'Assigned engineer', 180),
@@ -110,14 +115,14 @@ export const resources: ResourceDefinition[] = [
           sortable: false,
           filterable: false,
           renderCell: ({ row, hasFocus }) => (
-            <Link
-              component={RouterLink}
-              to={`/admin/notes?incident=${row.id}`}
+            <RelatedLink
+              resource="notes"
+              filters={{ incident_id: row.id }}
+              title={`Notes for incident #${row.id}`}
               tabIndex={hasFocus ? 0 : -1}
-              onClick={(event) => event.stopPropagation()}
             >
               View notes
-            </Link>
+            </RelatedLink>
           ),
         },
         { ...flag('escalated', 'Escalated'), sortable: false },
@@ -150,7 +155,15 @@ export const resources: ResourceDefinition[] = [
     lookups: [],
     fields: userFields,
     columns: () => [
-      { ...text('name', 'Name', 220), flex: 1 },
+      {
+        ...text('name', 'Name', 220),
+        flex: 1,
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="users" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+            {row.name}
+          </RecordLink>
+        ),
+      },
       text('email', 'Email address', 290),
       flag('is_admin', 'Admin'),
       flag('is_engineer', 'Engineer'),
@@ -184,7 +197,15 @@ export const resources: ResourceDefinition[] = [
       },
     ],
     columns: () => [
-      { ...text('user_name', 'Engineer', 240), flex: 1 },
+      {
+        ...text('user_name', 'Engineer', 240),
+        flex: 1,
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="engineers" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+            {row.user_name}
+          </RecordLink>
+        ),
+      },
       text('user_email', 'Email address', 290),
       flag('is_available', 'Available'),
     ],
@@ -199,7 +220,17 @@ export const resources: ResourceDefinition[] = [
     fields: [
       { name: 'name', label: 'Building name', required: true, ...constraints.UserCreate.name },
     ],
-    columns: () => [{ ...text('name', 'Building name', 320), flex: 1 }],
+    columns: () => [
+      {
+        ...text('name', 'Building name', 320),
+        flex: 1,
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="buildings" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+            {row.name}
+          </RecordLink>
+        ),
+      },
+    ],
   },
   {
     key: 'floors',
@@ -213,8 +244,23 @@ export const resources: ResourceDefinition[] = [
       { name: 'label', label: 'Floor label', required: true, ...constraints.FloorCreate.label },
     ],
     columns: () => [
-      { ...text('building_name', 'Building', 300), flex: 1 },
-      text('label', 'Floor label', 240),
+      {
+        ...text('building_name', 'Building', 300),
+        flex: 1,
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="buildings" id={row.building_id!} tabIndex={hasFocus ? 0 : -1}>
+            {row.building_name}
+          </RecordLink>
+        ),
+      },
+      {
+        ...text('label', 'Floor label', 240),
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="floors" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+            {row.label}
+          </RecordLink>
+        ),
+      },
     ],
   },
   {
@@ -238,8 +284,23 @@ export const resources: ResourceDefinition[] = [
       { name: 'label', label: 'Seat label', required: true, ...constraints.FloorCreate.label },
     ],
     columns: () => [
-      { ...text('floor_name', 'Building / floor', 340), flex: 1 },
-      text('label', 'Seat label', 240),
+      {
+        ...text('floor_name', 'Building / floor', 340),
+        flex: 1,
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="floors" id={row.floor_id!} tabIndex={hasFocus ? 0 : -1}>
+            {row.floor_name}
+          </RecordLink>
+        ),
+      },
+      {
+        ...text('label', 'Seat label', 240),
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="seats" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+            {row.label}
+          </RecordLink>
+        ),
+      },
     ],
   },
   {
@@ -251,8 +312,25 @@ export const resources: ResourceDefinition[] = [
     lookups: [],
     fields: noteFields,
     columns: () => [
-      { ...text('body', 'Note', 400), flex: 1 },
-      text('author_name', 'Author', 200),
+      {
+        ...text('body', 'Note', 400),
+        flex: 1,
+        renderCell: ({ row, hasFocus }) => (
+          <RecordLink resource="notes" id={row.id} tabIndex={hasFocus ? 0 : -1}>
+            {row.body}
+          </RecordLink>
+        ),
+      },
+      {
+        ...text('author_name', 'Author', 200),
+        renderCell: ({ row, hasFocus }) => (
+          <PersonLink
+            id={row.author_id!}
+            name={row.author_name || 'Employee'}
+            tabIndex={hasFocus ? 0 : -1}
+          />
+        ),
+      },
       {
         ...text('created_at', 'Posted', 200),
         type: 'dateTime',

@@ -7,7 +7,14 @@ export function incidentQuery(
   sorting: GridSortModel,
   filters: GridFilterModel,
   search: string,
-  scope: { reporter_id?: number; assignee_id?: number; unassigned?: boolean } = {},
+  scope: {
+    reporter_id?: number
+    assignee_id?: number
+    building_id?: number
+    floor_id?: number
+    seat_id?: number
+    unassigned?: boolean
+  } = {},
 ): string {
   const sort = sorting[0]
   const params = new URLSearchParams({

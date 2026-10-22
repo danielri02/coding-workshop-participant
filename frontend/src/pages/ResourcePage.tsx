@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Box,
@@ -23,7 +23,7 @@ import { useOutletContext, useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import type { AdminOutlet } from '../components/AdminLayout'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { RecordDetailsDialog } from '../components/RecordDetailsDialog'
+import { useRecordDialogs } from '../dialogs/context'
 import { RecordFormDialog } from '../components/RecordFormDialog'
 import { ResourceGrid } from '../components/ResourceGrid'
 import { useApiQuery, useDebouncedValue } from '../hooks/useApiQuery'
@@ -43,6 +43,7 @@ import type { ApiRecord, Incident, IncidentPage } from '../types'
 /** Compose reusable admin controls around the selected resource's query and actions. */
 export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   const { changed } = useOutletContext<AdminOutlet>()
+  const { openRecord } = useRecordDialogs()
   const [searchParams, setSearchParams] = useSearchParams()
   const scope = Number(searchParams.get('incident')) || 0
   const [search, setSearch] = useState('')
@@ -72,8 +73,6 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     user,
     editor,
     setEditor,
-    viewing,
-    setViewing,
     confirmation,
     setConfirmation,
     busy,
@@ -86,16 +85,18 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     formTitle,
   } = useResourceActions(resource, scope, changed)
   const detailId = Number(searchParams.get('record'))
-  const detailRow =
-    viewing ?? (Number.isSafeInteger(detailId) && detailId > 0 ? { id: detailId } : null)
-  const closeDetails = () => {
-    setViewing(null)
-    if (searchParams.has('record')) {
-      const next = new URLSearchParams(searchParams)
-      next.delete('record')
-      setSearchParams(next, { replace: true })
-    }
-  }
+  useEffect(() => {
+    if (!Number.isSafeInteger(detailId) || detailId <= 0 || detailId > 2147483647) return
+    openRecord(resource.key, detailId)
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        next.delete('record')
+        return next
+      },
+      { replace: true },
+    )
+  }, [detailId, openRecord, resource.key, setSearchParams])
   const lookups = useLookups(resource)
   const incidents = useApiQuery<Incident[]>(resource.key === 'notes' ? '/incidents' : null, [])
   const selectedIncident = incidents.data.find((row) => row.id === scope)
@@ -326,18 +327,6 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
                 ? 'You will be recorded as the reporter. The incident starts Open and unassigned.'
                 : undefined
           }
-        />
-      )}
-      {detailRow && (
-        <RecordDetailsDialog
-          resource={resource}
-          row={detailRow}
-          lookups={lookups.data}
-          onClose={closeDetails}
-          onIncidentAction={(command, record) => {
-            closeDetails()
-            action(command, record)
-          }}
         />
       )}
       {confirmation && (

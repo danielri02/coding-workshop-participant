@@ -4,7 +4,7 @@ import Add from '@mui/icons-material/Add'
 import Refresh from '@mui/icons-material/Refresh'
 import { useQueryClient } from '@tanstack/react-query'
 import type { GridFilterModel, GridPaginationModel, GridSortModel } from '@mui/x-data-grid'
-import { useNavigate } from 'react-router-dom'
+import { useRecordDialogs } from '../dialogs/context'
 import { useAuth } from '../auth/context'
 import { DataTable } from '../components/DataTable'
 import { RecordFormDialog } from '../components/RecordFormDialog'
@@ -24,7 +24,7 @@ import { IncidentSummary } from './IncidentSummary'
 export function IncidentListPage({ scope }: { scope: IncidentScope }) {
   const view = incidentViews[scope]
   const { user } = useAuth()
-  const navigate = useNavigate()
+  const { openRecord } = useRecordDialogs()
   const client = useQueryClient()
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
@@ -41,7 +41,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
     scope === 'assigned' ? { assignee_id: user!.id } : { reporter_id: user!.id },
   )
   const query = useApiQuery<IncidentPage>(path, { rows: [], row_count: 0, page: 0, page_size: 25 })
-  const columns = useMemo(() => incidentColumns(lookups.data, view.path), [lookups.data, view.path])
+  const columns = useMemo(() => incidentColumns(lookups.data, scope), [lookups.data, scope])
   const refresh = () =>
     void invalidateResourceQueries(client, 'incidents', ['buildings', 'floors', 'seats'])
   const resetPage = () => setPagination((previous) => ({ ...previous, page: 0 }))
@@ -52,7 +52,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
     })
     await invalidateResourceQueries(client, 'incidents')
     setCreating(false)
-    navigate(`${view.path}/${incident.id}`)
+    openRecord('incidents', incident.id, { scope })
   }
   const failure = query.error || lookups.error
   return (
@@ -129,7 +129,6 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
             setFilters(model)
             resetPage()
           }}
-          onRowDoubleClick={({ row }) => navigate(`${view.path}/${row.id}`)}
         />
       </Paper>
       {creating && scope === 'reported' && (

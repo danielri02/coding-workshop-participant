@@ -28,6 +28,7 @@ import type { ResourceKey } from '../types'
 import { resources } from '../resources/definitions'
 import { reports } from '../reports/definitions'
 import { SidebarNavigation } from './SidebarNavigation'
+import { RecordDialogProvider } from '../dialogs/RecordDialogProvider'
 
 export interface AdminOutlet {
   changed: (message: string, resource?: ResourceKey) => void
@@ -237,7 +238,9 @@ export function AdminLayout() {
             mx: 'auto',
           }}
         >
-          <Outlet context={{ changed } satisfies AdminOutlet} />
+          <RecordDialogProvider>
+            <Outlet context={{ changed } satisfies AdminOutlet} />
+          </RecordDialogProvider>
         </Box>
       </Box>
       <Snackbar open={Boolean(message)} autoHideDuration={4000} onClose={() => setMessage('')}>

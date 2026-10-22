@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -26,6 +27,8 @@ interface FormProps {
   row?: FormRow | null
   subtitle?: string
   submitLabel?: string
+  embedded?: boolean
+  onBusyChange?: (busy: boolean) => void
   onSave: (payload: Record<string, unknown>) => Promise<void>
   onClose: () => void
 }
@@ -54,6 +57,8 @@ export function RecordFormDialog({
   row = null,
   subtitle,
   submitLabel = 'Save',
+  embedded = false,
+  onBusyChange,
   onSave,
   onClose,
 }: FormProps) {
@@ -77,6 +82,10 @@ export function RecordFormDialog({
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  useEffect(() => {
+    onBusyChange?.(submitting)
+    return () => onBusyChange?.(false)
+  }, [submitting, onBusyChange])
   const payload = formPayload(visible, values, row)
   const invalid = visible.some((field) => validate(field, values))
   const change = (field: Field, value: string | number | boolean) => {
@@ -99,14 +108,8 @@ export function RecordFormDialog({
       setSubmitting(false)
     }
   }
-  return (
-    <Dialog
-      open
-      onClose={submitting ? undefined : onClose}
-      maxWidth="sm"
-      fullWidth
-      aria-labelledby="record-form-title"
-    >
+  const content = (
+    <>
       <DialogTitle id="record-form-title">{title}</DialogTitle>
       <DialogContent>
         <Stack
@@ -196,6 +199,19 @@ export function RecordFormDialog({
           {submitting ? 'Saving…' : submitLabel}
         </Button>
       </DialogActions>
+    </>
+  )
+  return embedded ? (
+    <Box>{content}</Box>
+  ) : (
+    <Dialog
+      open
+      onClose={submitting ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+      aria-labelledby="record-form-title"
+    >
+      {content}
     </Dialog>
   )
 }
@@ -207,6 +223,8 @@ RecordFormDialog.propTypes = {
   row: PropTypes.object,
   subtitle: PropTypes.string,
   submitLabel: PropTypes.string,
+  embedded: PropTypes.bool,
+  onBusyChange: PropTypes.func,
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 }

@@ -13,6 +13,7 @@ import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined'
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/context'
+import { RecordDialogProvider } from '../dialogs/RecordDialogProvider'
 
 /** Share responsive account controls and navigation for employees and engineers. */
 export function MemberLayout() {
@@ -113,7 +114,9 @@ export function MemberLayout() {
         component="main"
         sx={{ p: { xs: 2, sm: 3, lg: 4 }, maxWidth: 1500, mx: 'auto', minWidth: 0 }}
       >
-        <Outlet />
+        <RecordDialogProvider>
+          <Outlet />
+        </RecordDialogProvider>
       </Box>
     </Box>
   )

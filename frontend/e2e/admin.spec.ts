@@ -74,7 +74,9 @@ async function save(page: Page, path: string, method = 'POST') {
   const row = await response.json()
   if (method === 'POST')
     cleanup.unshift(`${path.startsWith('/incidents/') ? '/notes' : path}/${row.id ?? row.user_id}`)
-  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }),
+  ).toBeHidden()
   return row
 }
 
@@ -88,7 +90,12 @@ async function remove(page: Page, resource: string, id: number) {
     page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }).click(),
   ])
   expect(response.status()).toBe(204)
-  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }),
+  ).toBeHidden()
+  await expect(
+    page.getByRole('button', { name: `Delete ${resource} ${id}`, exact: true }),
+  ).toBeHidden()
 }
 
 test('desktop navigation collapses without losing accessible resource links', async ({ page }) => {
@@ -271,7 +278,7 @@ test('admin CRUD across all seven business tables with persisted browser data', 
   await save(page, `/incidents/${incident.id}/status`, 'PATCH')
   await page.getByRole('button', { name: `More actions for incidents ${incident.id}` }).click()
   await page.getByRole('menuitem', { name: 'View notes', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Notes', exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Notes for incident #${incident.id}`)
   await page.getByRole('button', { name: 'New note', exact: true }).click()
   await page
     .getByRole('dialog')
@@ -285,10 +292,17 @@ test('admin CRUD across all seven business tables with persisted browser data', 
     .fill('Engineer is working on the printer.')
   await save(page, `/notes/${note.id}`, 'PATCH')
   await page.reload()
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await page.getByRole('button', { name: `More actions for incidents ${incident.id}` }).click()
+  await page.getByRole('menuitem', { name: 'View notes', exact: true }).click()
   await expect(
-    page.getByRole('gridcell', { name: 'Engineer is working on the printer.', exact: true }),
+    page.getByRole('dialog').getByRole('gridcell', {
+      name: 'Engineer is working on the printer.',
+      exact: true,
+    }),
   ).toBeVisible()
   await remove(page, 'notes', note.id)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
   await navigate(page, 'Incidents')
   await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
   await remove(page, 'incidents', incident.id)
@@ -444,6 +458,7 @@ test('new employees register on mobile, sign in and add follow-up notes after re
   const note = await save(page, `/incidents/${incident.id}/notes`)
   expect(note.author_id).toBe(account.id)
   await page.reload()
+  await page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }).click()
   await expect(
     page.getByText('Thanks, this is working after resolution.', { exact: true }),
   ).toBeVisible()
@@ -547,6 +562,7 @@ test('incident actions validate blocked reasons and preserve note editing after 
   await page.getByRole('button', { name: `Edit notes ${note.id}`, exact: true }).click()
   await page.getByRole('dialog').getByLabel('Note', { exact: false }).fill('Resolved and verified')
   await save(page, `/notes/${note.id}`, 'PATCH')
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
   await navigate(page, 'Floors')
   const floors = await (await request.get(`${apiUrl}/floors`, { headers })).json()
   const duplicate = floors.find(
@@ -830,6 +846,15 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   await page.getByRole('option', { name: 'Seat', exact: true }).click()
   await expect(page.getByRole('columnheader', { name: 'Seat', exact: true })).toBeVisible()
   await expect(page.getByRole('gridcell', { name: seat.label, exact: true }).first()).toBeVisible()
+  const reportOrigin = page.url()
+  await page
+    .getByRole('grid')
+    .locator(`[role="row"][data-id="seat:${seat.id}"]`)
+    .getByRole('link', { name: seat.label, exact: true })
+    .click()
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Seat #${seat.id}`)
+  expect(page.url()).toBe(reportOrigin)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('combobox', { name: 'Category', exact: true }).click()
   await page.getByRole('option', { name: 'Other', exact: true }).click()
   await expect(page).toHaveURL(/category=Other/)
@@ -892,13 +917,7 @@ test('reports provide aggregate grids and backend timing search, paging and sort
   })
   await page.getByRole('columnheader', { name: /^Incident/ }).click()
   expect((await sorted).status()).toBe(200)
-  await page
-    .getByRole('grid')
-    .locator('.MuiDataGrid-virtualScroller')
-    .evaluate((element) => {
-      element.scrollLeft = element.scrollWidth
-    })
-  await page.getByRole('button', { name: `View incident ${ids[0]}`, exact: true }).click()
+  await page.getByRole('link', { name: `${suffix} 00`, exact: true }).click()
   await expect(page.getByRole('dialog').getByText(`${suffix} 00`, { exact: true })).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Incident scope' })).toBeHidden()
@@ -969,13 +988,19 @@ test('reports menu remains reachable and collapsible in a short mobile sidebar',
   await expect.poll(() => scrollbar.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
 })
 
-test('incident details expose admin controls and links to notes and engineer profiles', async ({
+test('one dialog follows records and related grids without changing the incident page', async ({
   request,
   page,
 }) => {
-  test.setTimeout(90000)
+  test.setTimeout(120000)
   const suffix = `incidentlinks${Date.now()}`
   const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const floor = (await (await request.get(`${apiUrl}/floors`, { headers })).json()).find(
+    (item: { building_id: number }) => item.building_id === building.id,
+  )
+  const seat = (await (await request.get(`${apiUrl}/seats`, { headers })).json()).find(
+    (item: { floor_id: number }) => item.floor_id === floor.id,
+  )
   const engineer = (await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json())[0]
   const engineerUser = await (
     await request.get(`${apiUrl}/users/${engineer.user_id}`, { headers })
@@ -984,90 +1009,210 @@ test('incident details expose admin controls and links to notes and engineer pro
     headers,
     data: {
       title: suffix,
-      description: 'Verify incident navigation and admin controls.',
+      description: 'Verify record and relationship dialogs.',
       category: 'Equipment',
       building_id: building.id,
+      floor_id: floor.id,
+      seat_id: seat.id,
     },
   })
-  expect(response.ok(), await response.text()).toBeTruthy()
+  expect(response.ok()).toBeTruthy()
   const incident = await response.json()
   cleanup.unshift(`/incidents/${incident.id}`)
   await page.goto('/admin/incidents')
   await signIn(page)
   await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
-  const incidentRow = page.getByRole('grid').locator(`[role="row"][data-id="${incident.id}"]`)
-  const openIncident = async () => {
-    await page.getByRole('grid').getByRole('link', { name: suffix, exact: true }).click()
-    await expect(page.getByRole('dialog')).toHaveAccessibleName(`Incident #${incident.id}`)
+  const origin = page.url()
+  const dialog = page.getByRole('dialog')
+  const one = async (title: string) => {
+    await expect(dialog).toHaveCount(1)
+    await expect(page.locator('[role="dialog"]')).toHaveCount(1)
+    await expect(dialog).toHaveAccessibleName(title)
+    expect(page.url()).toBe(origin)
   }
-  await openIncident()
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Assign engineer', exact: true })
-    .click()
+  const back = () => dialog.getByRole('button', { name: 'Back', exact: true }).click()
+  const row = page.getByRole('grid').locator(`[role="row"][data-id="${incident.id}"]`)
+  await row.getByRole('gridcell', { name: 'Open', exact: true }).dblclick()
+  await expect(dialog).toBeHidden()
+  await row.getByRole('link', { name: suffix, exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await one(`Incident #${incident.id}`)
+  await dialog.getByRole('button', { name: 'Assign engineer', exact: true }).click()
+  await expect(dialog).toHaveCount(1)
   await select(page, 'Assigned engineer', engineerUser.name)
   const assignment = await save(page, `/incidents/${incident.id}/assignment`, 'PATCH')
   expect(assignment.status).toBe('Assigned')
-  await openIncident()
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Priority and escalation', exact: true })
-    .click()
+  await one(`Incident #${incident.id}`)
+  await dialog.getByRole('button', { name: 'Priority and escalation', exact: true }).click()
   await select(page, 'Priority', 'High')
   await save(page, `/incidents/${incident.id}/priority`, 'PATCH')
-  await openIncident()
-  await page.getByRole('dialog').getByRole('button', { name: 'Change status', exact: true }).click()
-  await select(page, 'Next status', 'Closed')
-  await save(page, `/incidents/${incident.id}/status`, 'PATCH')
-  await openIncident()
-  await page.getByRole('dialog').getByRole('button', { name: 'Change status', exact: true }).click()
-  await select(page, 'Next status', 'In Progress')
-  await save(page, `/incidents/${incident.id}/status`, 'PATCH')
-  await expect(incidentRow.getByRole('gridcell', { name: 'High', exact: true })).toBeVisible()
-  await expect(
-    incidentRow.getByRole('gridcell', { name: 'In Progress', exact: true }),
-  ).toBeVisible()
-  await openIncident()
-  await page.getByRole('dialog').getByRole('link', { name: engineerUser.name, exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/admin/engineers\\?record=${engineer.user_id}$`))
-  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
-  await expect(
-    page.getByRole('dialog').getByText(engineerUser.email, { exact: true }),
-  ).toBeVisible()
-  await page.reload()
-  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
-  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await expect(page).toHaveURL(/\/admin\/engineers$/)
-  await navigate(page, 'Incidents')
-  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await one(`Incident #${incident.id}`)
+  await dialog.getByRole('link', { name: engineerUser.name, exact: true }).click()
+  await one(`Engineer #${engineer.user_id}`)
+  await expect(dialog.getByText(engineerUser.email, { exact: true })).toBeVisible()
+  await dialog.getByRole('link', { name: 'Assigned incidents', exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(/Incidents assigned to/)
+  await dialog.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  await dialog.getByRole('link', { name: suffix, exact: true }).click()
+  await one(`Incident #${incident.id}`)
+  await back()
+  await expect(dialog.getByRole('textbox', { name: 'Search incidents' })).toHaveValue(suffix)
+  await back()
+  await one(`Engineer #${engineer.user_id}`)
+  await back()
+  await one(`Incident #${incident.id}`)
+  await dialog.getByRole('link', { name: building.name, exact: true }).click()
+  await one(`Building #${building.id}`)
+  await dialog.getByRole('link', { name: 'View floors', exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(`Floors in ${building.name}`)
+  await dialog.getByRole('link', { name: floor.label, exact: true }).click()
+  await one(`Floor #${floor.id}`)
+  await dialog.getByRole('link', { name: 'View seats', exact: true }).click()
+  await dialog.getByRole('textbox', { name: 'Search seats' }).fill(seat.label)
+  await dialog.getByRole('link', { name: seat.label, exact: true }).click()
+  await one(`Seat #${seat.id}`)
+  await back()
+  await expect(dialog.getByRole('textbox', { name: 'Search seats' })).toHaveValue(seat.label)
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Search incidents' })).toHaveValue(suffix)
+  await expect(row.getByRole('gridcell', { name: 'High', exact: true })).toBeVisible()
   const scroller = page.getByRole('grid').locator('.MuiDataGrid-virtualScroller')
-  await scroller.evaluate((element) => {
-    element.scrollLeft = 500
-  })
-  await incidentRow.getByRole('link', { name: engineerUser.name, exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
-  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await navigate(page, 'Incidents')
-  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
   await scroller.evaluate((element) => {
     element.scrollLeft = element.scrollWidth
   })
-  await incidentRow.getByRole('link', { name: 'View notes', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/admin/notes\\?incident=${incident.id}$`))
-  await expect(page.getByRole('combobox', { name: 'Incident', exact: true })).toContainText(suffix)
-  await page.getByRole('button', { name: 'New note', exact: true }).click()
-  await page
-    .getByRole('dialog')
-    .getByLabel('Note', { exact: false })
-    .fill('Navigation works for this incident.')
+  const scroll = await scroller.evaluate((element) => element.scrollLeft)
+  await row.getByRole('link', { name: 'View notes', exact: true }).click()
+  await one(`Notes for incident #${incident.id}`)
+  await dialog.getByRole('button', { name: 'New note', exact: true }).click()
+  await dialog.getByLabel('Note', { exact: false }).fill('Navigation works for this incident.')
+  const note = await save(page, `/incidents/${incident.id}/notes`)
+  await one(`Notes for incident #${incident.id}`)
+  await dialog
+    .getByRole('link', { name: 'Navigation works for this incident.', exact: true })
+    .click()
+  await one(`Note #${note.id}`)
+  await dialog.getByRole('link', { name: String(incident.id), exact: true }).click()
+  await one(`Incident #${incident.id}`)
+  await back()
+  await one(`Note #${note.id}`)
+  await back()
+  await one(`Notes for incident #${incident.id}`)
+  await page.setViewportSize({ width: 320, height: 640 })
+  await expect
+    .poll(() => dialog.evaluate((element) => element.scrollWidth - element.clientWidth))
+    .toBeLessThanOrEqual(1)
+  await dialog.screenshot({ path: test.info().outputPath('related-notes-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('textbox', { name: 'Search incidents' })).toHaveValue(suffix)
+  await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBe(scroll)
+})
+
+test('employee dialog relationships keep account privacy and incident permissions', async ({
+  request,
+  page,
+}) => {
+  test.setTimeout(90000)
+  const suffix = `memberdialogs${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const engineer = (await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json())[0]
+  const engineerUser = await (
+    await request.get(`${apiUrl}/users/${engineer.user_id}`, { headers })
+  ).json()
+  const employeeLogin = await request.post(`${apiUrl}/auth/login`, {
+    data: { email: 'employee@acme.inc', password: 'employee' },
+  })
+  const tokens = await employeeLogin.json()
+  const employeeHeaders = { Authorization: `Bearer ${tokens.access_token}` }
+  const employee = await (
+    await request.get(`${apiUrl}/auth/me`, { headers: employeeHeaders })
+  ).json()
+  const response = await request.post(`${apiUrl}/incidents`, {
+    headers: employeeHeaders,
+    data: {
+      title: suffix,
+      description: 'Employee relationship navigation',
+      category: 'Other',
+      building_id: building.id,
+    },
+  })
+  const incident = await response.json()
+  cleanup.unshift(`/incidents/${incident.id}`)
+  await request.patch(`${apiUrl}/incidents/${incident.id}/assignment`, {
+    headers,
+    data: { assignee_id: engineer.user_id },
+  })
+  const adminNote = await (
+    await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+      headers,
+      data: { body: 'An admin has assigned this incident.' },
+    })
+  ).json()
+  cleanup.unshift(`/notes/${adminNote.id}`)
+  const privateResult = await request.post(`${apiUrl}/incidents`, {
+    headers,
+    data: {
+      title: `${suffix} private`,
+      description: 'Must remain hidden from the employee.',
+      category: 'Other',
+      building_id: building.id,
+    },
+  })
+  const privateIncident = await privateResult.json()
+  cleanup.unshift(`/incidents/${privateIncident.id}`)
+  await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: tokens.refresh_token } })
+  const reads: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'GET' && request.url().startsWith(browserApiUrl))
+      reads.push(browserPath(new URL(request.url())))
+  })
+  await page.goto('/employee/incidents')
+  await signIn(page, 'employee@acme.inc', 'employee')
+  await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
+  const origin = page.url()
+  await page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog.getByRole('link', { name: adminNote.author_name, exact: true })).toBeHidden()
+  await dialog.getByRole('link', { name: engineerUser.name, exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(`Engineer #${engineer.user_id}`)
+  await expect(dialog.getByText(engineerUser.email, { exact: true })).toBeHidden()
+  await expect(dialog.getByRole('link', { name: 'Assigned incidents', exact: true })).toBeHidden()
+  await expect(dialog.getByRole('button', { name: 'Edit engineer', exact: true })).toBeHidden()
+  await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+  await dialog.getByRole('link', { name: building.name, exact: true }).click()
+  await dialog.getByRole('link', { name: 'View incidents', exact: true }).click()
+  const searched = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/incidents/grid' &&
+      url.searchParams.get('building_id') === String(building.id) &&
+      url.searchParams.get('search') === suffix
+    )
+  })
+  await dialog.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
+  expect((await (await searched).json()).row_count).toBe(1)
+  await expect(dialog.getByRole('link', { name: `${suffix} private`, exact: true })).toBeHidden()
+  await dialog.getByRole('link', { name: suffix, exact: true }).click()
+  await dialog.getByRole('link', { name: employee.name, exact: true }).click()
+  await expect(dialog).toHaveAccessibleName(`User #${employee.id}`)
+  await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Add note', exact: true }).click()
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1)
+  await dialog.getByLabel('Note', { exact: false }).fill('A follow-up through the record dialog.')
   await save(page, `/incidents/${incident.id}/notes`)
-  await navigate(page, 'Incidents')
-  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
-  await openIncident()
-  await page.getByRole('dialog').getByRole('link', { name: 'View notes', exact: true }).click()
   await expect(
-    page.getByRole('gridcell', { name: 'Navigation works for this incident.', exact: true }),
+    dialog.getByText('A follow-up through the record dialog.', { exact: true }),
   ).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  expect(page.url()).toBe(origin)
+  await expect(page.getByRole('textbox', { name: 'Search my incidents' })).toHaveValue(suffix)
+  expect([...new Set(reads.filter((path) => /^\/users(\/|$)/.test(path)))]).toEqual([
+    `/users/${employee.id}`,
+  ])
+  expect(reads).not.toContain('/engineer-profiles')
+  expect(reads).not.toContain(`/incidents/${privateIncident.id}`)
 })
 
 test('demo employee submits incidents, tracks progress and shares notes on mobile', async ({
@@ -1132,9 +1277,12 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   await expect(page.getByRole('dialog').getByLabel('Escalation reason')).toBeHidden()
   const incident = await save(page, '/incidents')
   expect(incident.priority).toBe('Low')
-  await expect(page).toHaveURL(new RegExp(`/employee/incidents/${incident.id}$`))
+  await expect(page).toHaveURL(/\/employee\/incidents$/)
+  await expect(page.getByRole('dialog')).toHaveAccessibleName(`Incident #${incident.id}`)
   await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
-  await expect(page.getByText('Awaiting assignment', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('dialog').getByText('Awaiting assignment', { exact: true }),
+  ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Assign engineer', exact: true })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
   await expect(
@@ -1163,6 +1311,8 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   })
   await page.setViewportSize({ width: 320, height: 640 })
   await page.reload()
+  await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
+  await page.getByRole('link', { name: `#${incident.id} · ${suffix}`, exact: true }).click()
   await expect(page.getByRole('heading', { name: suffix, exact: true })).toBeVisible()
   await expect(
     page.getByText('The connection also drops after restarting.', { exact: true }),
@@ -1170,17 +1320,9 @@ test('demo employee submits incidents, tracks progress and shares notes on mobil
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
     .toBeLessThanOrEqual(1)
-  await page.getByRole('link', { name: 'My incidents', exact: true }).first().click()
-  const searched = page.waitForResponse((response) => {
-    const url = new URL(response.url())
-    return (
-      browserPath(url) === '/incidents/grid' &&
-      url.searchParams.get('search') === suffix &&
-      url.searchParams.has('reporter_id')
-    )
-  })
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search my incidents' }).fill('')
   await page.getByRole('textbox', { name: 'Search my incidents' }).fill(suffix)
-  expect((await searched).status()).toBe(200)
   await expect(
     summary
       .getByRole('article', { name: 'Active', exact: true })
@@ -1457,6 +1599,7 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
     }
   }
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
   await expectSummary(page, 'assigned', {
     'Awaiting acceptance': 11,
@@ -1484,11 +1627,14 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeHidden()
   await page.reload()
+  await page.getByRole('textbox', { name: 'Search assigned incidents' }).fill(incident.title)
+  await page.getByRole('link', { name: `#${incident.id} · ${incident.title}`, exact: true }).click()
   await expect(
     page.getByText('I have ordered the replacement and will update you when it arrives.', {
       exact: true,
     }),
   ).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('tab', { name: 'My incidents', exact: true }).click()
   await expectSummary(page, 'personal', { Active: 1, Resolved: 0, Closed: 0 })
   await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()

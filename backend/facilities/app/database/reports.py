@@ -35,6 +35,7 @@ TICKET_COLUMNS = (
     Incident.status,
     Incident.priority,
     Incident.category,
+    Incident.assignee_id,
     User.name.label("assignee_name"),
     Incident.created_at,
 )
@@ -208,6 +209,9 @@ async def locations(session: AsyncSession, user: User, query: LocationQuery) -> 
         rows.append(
             {
                 "id": f"{level}:{row[f'{level}_id']}",
+                "building_id": row["building_id"],
+                "floor_id": row.get("floor_id"),
+                "seat_id": row.get("seat_id"),
                 "building_name": row["building_name"],
                 "floor_label": row.get("floor_label"),
                 "seat_label": row.get("seat_label"),

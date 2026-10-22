@@ -108,13 +108,15 @@ the report Open with Low priority.
 
 Incident pages show location, assigned engineer name, workflow progress,
 blocked/escalation reasons and the shared notes conversation. Employees can add
-notes while their own incident is active. Priority starts Low and only admins can
-change it or escalate an incident. Resolved and closed reports remain readable.
-Assignment, status changes, edits/deletes,
-people-management links and admin navigation are absent. The employee workspace
-uses incident and note display names without requesting user directories or
-engineer profiles. Direct admin URLs return employees to their incident grid;
-backend authorization also protects direct API calls and other employees' records.
+notes while their own incident is active or resolved. Priority starts Low and only
+admins can change it or escalate an incident. Resolved and closed reports remain
+readable. Assignment, status changes, edits/deletes, people-management links and
+admin navigation are absent. The employee workspace
+uses incident and note display names without requesting user directories. Assigned
+engineer profiles can be opened on demand; other employees’ account details and
+assignment lists remain unavailable. Direct admin URLs return employees to their
+incident grid; backend authorization also protects direct API calls and other
+employees' records.
 
 Engineers retain this submission/tracking view under the My incidents tab. It
 filters by reporter independently of the Assigned to me tab.
@@ -133,11 +135,13 @@ page verifies the matching scope; an incident owned by the engineer but assigned
 to someone else does not appear as assigned work.
 
 Assigned incident details show the reporter, location, workflow and shared notes.
-Assignment starts work automatically. Engineers may move In Progress to Blocked
-or Resolved, and return Blocked or Resolved to In Progress. Only admins can close
-or choose arbitrary statuses. Blocked requires a reason. Engineers can post notes on active assignments; resolved/closed notes
-remain readable. Current assignment is checked by the backend on every operation,
-so reassignment removes workflow access. Refresh reloads the incident and its
+Assignment sets the incident to Assigned; the assigned engineer accepts it to
+start work. Engineers may move In Progress to Blocked or Resolved, and return
+Blocked or Resolved to In Progress. Only admins can close or choose arbitrary
+statuses. Blocked requires a reason. Engineers can post notes
+on active or resolved assignments; closed notes remain readable. Current
+assignment is checked by the backend on every operation, so reassignment removes
+workflow access. Refresh reloads the incident and its
 notes. Priority changes remain admin-only, and engineer pages
 provide no assignment, deletion or people-management controls.
 
@@ -163,9 +167,9 @@ horizontal scrolling.
 Report calculations come from dedicated `/reports/*` endpoints (documented in
 `../backend/README.md`). Response times supports backend search, paging and
 sorting, with all matching incidents included in its averages and sample counts.
-Double-click a timing row or use View to inspect the incident. Other reports
-paginate and filter their complete aggregate rows in MUI Data Grid. Report caches
-are invalidated after CRUD changes; Refresh reloads the current report.
+Select a timing row’s incident title or ID to inspect it in the shared record
+dialog. Other reports paginate and filter their complete aggregate rows in MUI
+Data Grid. Report caches are invalidated after CRUD changes; Refresh reloads the current report.
 
 Open incidents, blocked/escalated incidents and ticket notes stay in the existing
 CRUD pages. Reports focus on calculations across records. This is the admin UI;
@@ -200,10 +204,23 @@ associations stay fixed during label edits, matching the API.
 Incident details expose Assign engineer, Priority and escalation, and Change
 status; the three-dot row menu provides the same controls. Admins can choose any
 other status, including reopening Closed tickets, with a reason required for
-Blocked. Assigning a new engineer starts In Progress automatically. Click an incident title
-to open its details. Assigned engineer names link to the engineer profile, and View
-notes opens the incident's notes grid from either the grid or details dialog.
-Record links use `?record=<id>` and reopen the details dialog after a reload.
+Blocked. Assigning a new engineer sets the status to Assigned.
+
+Select an entity’s ID, name or title to open its details; double-clicking rows has
+no navigation behavior. `src/dialogs/` owns one shared dialog and its Back history.
+Related links replace its contents with another record or a scoped grid:
+incident → notes/engineer/location, engineer → assignments, building → floors,
+floor → seats, and note → incident/author. Editing and confirmations opened there
+also use the same dialog. Back restores the previous grid’s search, filters,
+paging and sorting. Close returns to the original page with its grid state and
+scroll position preserved. Mutations refresh affected grids and reports.
+
+Related grids use the existing authorized endpoints. Incident relationships keep
+their parent filter fixed while using server pagination/search/sorting. Facility
+and note lists filter their existing authorized results locally. Non-admins can
+open only their own account details, and the backend continues enforcing incident
+visibility and workflow permissions. Older admin `?record=<id>` links still open
+the dialog, but browsing records no longer changes the URL.
 
 The incident grid defaults to most recently reported first (`created_at desc`).
 Its Assignment selector filters All incidents, Unassigned or Assigned, combining

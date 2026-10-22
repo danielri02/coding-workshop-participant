@@ -1,5 +1,6 @@
 import {
   Alert,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -16,6 +17,7 @@ interface ConfirmProps {
   error: string
   onConfirm: () => void
   onClose: () => void
+  embedded?: boolean
 }
 
 /** Confirm a concrete deletion or capability change and preserve failures for retry. */
@@ -26,15 +28,10 @@ export function ConfirmDialog({
   error,
   onConfirm,
   onClose,
+  embedded = false,
 }: ConfirmProps) {
-  return (
-    <Dialog
-      open
-      onClose={busy ? undefined : onClose}
-      maxWidth="xs"
-      fullWidth
-      aria-labelledby="confirm-title"
-    >
+  const content = (
+    <>
       <DialogTitle id="confirm-title">{title}</DialogTitle>
       <DialogContent>
         {error && (
@@ -52,6 +49,19 @@ export function ConfirmDialog({
           {busy ? 'Working…' : 'Confirm'}
         </Button>
       </DialogActions>
+    </>
+  )
+  return embedded ? (
+    <Box>{content}</Box>
+  ) : (
+    <Dialog
+      open
+      onClose={busy ? undefined : onClose}
+      maxWidth="xs"
+      fullWidth
+      aria-labelledby="confirm-title"
+    >
+      {content}
     </Dialog>
   )
 }
@@ -63,4 +73,5 @@ ConfirmDialog.propTypes = {
   error: PropTypes.string.isRequired,
   onConfirm: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
+  embedded: PropTypes.bool,
 }

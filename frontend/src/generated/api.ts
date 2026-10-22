@@ -371,14 +371,20 @@ export interface components {
     LocationRow: {
       /** Active Count */
       active_count: number
+      /** Building Id */
+      building_id: number
       /** Building Name */
       building_name: string
+      /** Floor Id */
+      floor_id: number | null
       /** Floor Label */
       floor_label: string | null
       /** Id */
       id: string
       /** Incident Count */
       incident_count: number
+      /** Seat Id */
+      seat_id: number | null
       /** Seat Label */
       seat_label: string | null
     }
@@ -533,6 +539,8 @@ export interface components {
       acknowledged_minutes: number | null
       /** Assigned Minutes */
       assigned_minutes: number | null
+      /** Assignee Id */
+      assignee_id: number | null
       /** Assignee Name */
       assignee_name: string | null
       category: components['schemas']['IncidentCategory']

@@ -132,6 +132,19 @@ test('employee grid scope cannot be replaced by an incidental reporter filter', 
   assert.equal(new URL(path, 'http://localhost').searchParams.get('reporter_id'), '12')
 })
 
+test('related incident grids keep their parent relationship when grid filters change', () => {
+  const path = incidentQuery(
+    { page: 0, pageSize: 25 },
+    [],
+    { items: [{ field: 'building_id', operator: 'is', value: 99 }] },
+    '',
+    { building_id: 12, floor_id: 34 },
+  )
+  const params = new URL(path, 'http://localhost').searchParams
+  assert.equal(params.get('building_id'), '12')
+  assert.equal(params.get('floor_id'), '34')
+})
+
 test('assigned grid scope is fixed to the current engineer without requiring own reports', () => {
   const path = incidentQuery(
     { page: 1, pageSize: 10 },

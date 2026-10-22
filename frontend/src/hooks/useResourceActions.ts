@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useRecordDialogs } from '../dialogs/context'
 import { useAuth } from '../auth/context'
 import type { AdminOutlet } from '../components/AdminLayout'
 import type { RowAction } from '../components/ResourceGrid'
@@ -16,10 +16,9 @@ export function useResourceActions(
   changed: AdminOutlet['changed'],
 ) {
   const { user, setAccount, logout } = useAuth()
-  const navigate = useNavigate()
+  const { openRecord, openCollection } = useRecordDialogs()
   const title = resource.singular[0].toUpperCase() + resource.singular.slice(1)
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [viewing, setViewing] = useState<AdminRow | null>(null)
   const [confirmation, setConfirmation] = useState<{
     action: 'delete' | 'admin'
     row: AdminRow
@@ -29,13 +28,14 @@ export function useResourceActions(
   const action = useCallback(
     (command: RowAction, row: AdminRow) => {
       setError('')
-      if (command === 'notes') navigate(`/admin/notes?incident=${row.id}`)
-      else if (command === 'view') setViewing(row)
+      if (command === 'notes')
+        openCollection('notes', { incident_id: row.id }, `Notes for incident #${row.id}`)
+      else if (command === 'view') openRecord(resource.key, row.id)
       else if (command === 'delete' || command === 'admin')
         setConfirmation({ action: command, row })
       else setEditor({ action: command, row })
     },
-    [navigate],
+    [openCollection, openRecord, resource.key],
   )
 
   const save = async (payload: Record<string, unknown>) => {
@@ -97,8 +97,6 @@ export function useResourceActions(
     user,
     editor,
     setEditor,
-    viewing,
-    setViewing,
     confirmation,
     setConfirmation,
     busy,

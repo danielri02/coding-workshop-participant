@@ -1,13 +1,13 @@
-import { Link } from '@mui/material'
-import { Link as RouterLink } from 'react-router-dom'
+import { RecordLink } from '../components/RecordLink'
 import { getGridSingleSelectOperators, type GridColDef } from '@mui/x-data-grid'
 import { ValueChip } from '../components/ValueChip'
 import { categories, priorities, statuses } from '../generated/domain'
 import { recordLabel } from '../resources/rows'
 import type { Incident, Lookups } from '../types'
+import type { IncidentScope } from './scope'
 
 /** Display names supplied with incidents; members never need a user directory. */
-export function incidentColumns(lookups: Lookups, path: string): GridColDef<Incident>[] {
+export function incidentColumns(lookups: Lookups, scope: IncidentScope): GridColDef<Incident>[] {
   const columns: GridColDef<Incident>[] = [
     {
       field: 'title',
@@ -16,9 +16,9 @@ export function incidentColumns(lookups: Lookups, path: string): GridColDef<Inci
       minWidth: 230,
       flex: 1,
       renderCell: ({ row, hasFocus }) => (
-        <Link component={RouterLink} to={`${path}/${row.id}`} tabIndex={hasFocus ? 0 : -1}>
+        <RecordLink resource="incidents" id={row.id} scope={scope} tabIndex={hasFocus ? 0 : -1}>
           #{row.id} · {row.title}
-        </Link>
+        </RecordLink>
       ),
     },
     {
@@ -49,6 +49,14 @@ export function incidentColumns(lookups: Lookups, path: string): GridColDef<Inci
       headerName: 'Assigned engineer',
       width: 190,
       valueFormatter: (value: string | null) => value || 'Awaiting assignment',
+      renderCell: ({ row, hasFocus }) =>
+        row.assignee_id ? (
+          <RecordLink resource="engineers" id={row.assignee_id} tabIndex={hasFocus ? 0 : -1}>
+            {row.assignee_name || `#${row.assignee_id}`}
+          </RecordLink>
+        ) : (
+          'Awaiting assignment'
+        ),
     },
     {
       field: 'building_id',
@@ -57,6 +65,11 @@ export function incidentColumns(lookups: Lookups, path: string): GridColDef<Inci
       type: 'singleSelect',
       valueOptions: lookups.buildings.map((row) => ({ value: row.id, label: row.name })),
       valueFormatter: (value: number) => recordLabel(lookups.buildings, value),
+      renderCell: ({ row, formattedValue, hasFocus }) => (
+        <RecordLink resource="buildings" id={row.building_id} tabIndex={hasFocus ? 0 : -1}>
+          {String(formattedValue)}
+        </RecordLink>
+      ),
     },
     {
       field: 'created_at',

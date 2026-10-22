@@ -13,6 +13,7 @@ import {
 } from '@mui/x-data-grid'
 import PropTypes from 'prop-types'
 import { DataTable } from './DataTable'
+import { RecordLink } from './RecordLink'
 import type { AdminRow, ResourceKey } from '../types'
 import { incidentCommands } from '../resources/incidentActions'
 import { defaultIncidentColumns } from '../resources/incidentViews'
@@ -132,7 +133,19 @@ export function ResourceGrid({
 }: GridProps) {
   const server = resource === 'incidents'
   const allColumns: GridColDef<AdminRow>[] = [
-    { field: 'id', headerName: 'ID', width: 85, filterable: false },
+    {
+      field: 'id',
+      headerName: 'ID',
+      width: 85,
+      filterable: false,
+      renderCell: ({ row, hasFocus }) => (
+        <RecordLink
+          resource={resource}
+          id={row.id}
+          tabIndex={hasFocus ? 0 : -1}
+        >{`#${row.id}`}</RecordLink>
+      ),
+    },
     ...columns,
     {
       field: 'actions',
@@ -168,9 +181,6 @@ export function ResourceGrid({
       onFilterModelChange={onFilters}
       columnVisibilityModel={server ? visibility : undefined}
       onColumnVisibilityModelChange={server ? onVisibility : undefined}
-      onRowDoubleClick={({ row }) => {
-        if (!disabled) onAction('view', row)
-      }}
     />
   )
 }

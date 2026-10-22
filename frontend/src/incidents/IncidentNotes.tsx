@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Alert, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
 import { RecordFormDialog } from '../components/RecordFormDialog'
+import { PersonLink } from '../components/PersonLink'
+import { useRecordDialogs } from '../dialogs/context'
 import { noteStatuses } from '../generated/domain'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { noteFields } from '../resources/incidentFields'
@@ -12,7 +14,14 @@ import type { Incident, Lookups, Note } from '../types'
 const emptyLookups: Lookups = { users: [], buildings: [], floors: [], seats: [] }
 
 /** Share progress updates without exposing note editing or people-management controls. */
-export function IncidentNotes({ incident }: { incident: Incident }) {
+export function IncidentNotes({
+  incident,
+  embedded = false,
+}: {
+  incident: Incident
+  embedded?: boolean
+}) {
+  const { setBusy } = useRecordDialogs()
   const [adding, setAdding] = useState(false)
   const client = useQueryClient()
   const path = `/incidents/${incident.id}/notes`
@@ -24,6 +33,19 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
     setAdding(false)
     await invalidateResourceQueries(client, 'notes')
   }
+  const form = adding && canAddNotes && (
+    <RecordFormDialog
+      embedded={embedded}
+      title="Add note"
+      fields={noteFields}
+      lookups={emptyLookups}
+      onSave={save}
+      onClose={() => setAdding(false)}
+      onBusyChange={embedded ? setBusy : undefined}
+      subtitle="Your note will be shared with the reporter and facilities team."
+    />
+  )
+  if (embedded && form) return form
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
       <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -67,7 +89,9 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
       >
         {query.data.map((note) => (
           <Box component="li" key={note.id}>
-            <Typography variant="subtitle2">{note.author_name || 'Facilities team'}</Typography>
+            <Typography variant="subtitle2">
+              <PersonLink id={note.author_id} name={note.author_name || 'Facilities team'} />
+            </Typography>
             <Typography variant="caption" color="text.secondary">
               {new Date(note.created_at).toLocaleString()}
             </Typography>
@@ -80,16 +104,7 @@ export function IncidentNotes({ incident }: { incident: Incident }) {
           </Box>
         ))}
       </Stack>
-      {adding && canAddNotes && (
-        <RecordFormDialog
-          title="Add note"
-          fields={noteFields}
-          lookups={emptyLookups}
-          onSave={save}
-          onClose={() => setAdding(false)}
-          subtitle="Your note will be shared with the reporter and facilities team."
-        />
-      )}
+      {!embedded && form}
     </Paper>
   )
 }
