@@ -2159,3 +2159,64 @@ test('employee details show building/category expectations and newest notes with
     ).status(),
   ).toBe(403)
 })
+
+test('reference grids search, sort, filter and fetch subsequent pages on the backend', async ({
+  page,
+  request,
+}) => {
+  const suffix = `paging${Date.now()}`
+  for (let index = 0; index < 12; index++) {
+    const response = await request.post(`${apiUrl}/buildings`, {
+      headers,
+      data: { name: `${suffix} office ${String(index).padStart(2, '0')}` },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    cleanup.unshift(`/buildings/${(await response.json()).id}`)
+  }
+  await page.goto('/admin/buildings')
+  await signIn(page)
+  await page.getByRole('textbox', { name: 'Search buildings' }).fill(suffix)
+  await page.getByRole('combobox', { name: 'Rows per page:' }).click()
+  await page.getByRole('option', { name: '10', exact: true }).click()
+  await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  const next = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/buildings/grid' &&
+      url.searchParams.get('page') === '1' &&
+      url.searchParams.get('search') === suffix
+    )
+  })
+  await page.getByRole('button', { name: 'Go to next page' }).click()
+  const data = await (await next).json()
+  expect(data.rows).toHaveLength(2)
+  expect(data.row_count).toBe(12)
+  await expect(page.getByText('11–12 of 12', { exact: true })).toBeVisible()
+  const sorted = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/buildings/grid' &&
+      url.searchParams.get('sort_by') === 'name' &&
+      url.searchParams.get('page') === '0'
+    )
+  })
+  await page.getByRole('columnheader', { name: /^Building name/ }).click()
+  expect((await sorted).ok()).toBeTruthy()
+  await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Show filters' }).click()
+  const filtered = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      browserPath(url) === '/buildings/grid' && url.searchParams.get('filter_value') === 'office 00'
+    )
+  })
+  await page
+    .getByRole('dialog', { name: 'Show filters' })
+    .getByRole('textbox', { name: 'Value', exact: true })
+    .fill('office 00')
+  const narrowed = await (await filtered).json()
+  expect(narrowed.row_count).toBe(1)
+  expect(narrowed.rows[0].name).toBe(`${suffix} office 00`)
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('1–1 of 1', { exact: true })).toBeVisible()
+})

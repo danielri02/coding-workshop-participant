@@ -1,4 +1,5 @@
 import type { ResourceKey } from '../types'
+import { defaultGridSort } from '../resources/gridQuery'
 import type { IncidentScope } from '../incidents/scope'
 import type { GridFilterModel } from '@mui/x-data-grid'
 
@@ -46,8 +47,8 @@ export function dialogEntry(target: DialogTarget): DialogEntry {
       search: '',
       page: 0,
       pageSize: 25,
-      sortField: ['incidents', 'notes'].includes(target.resource) ? 'created_at' : 'id',
-      sortDirection: ['incidents', 'notes'].includes(target.resource) ? 'desc' : 'asc',
+      sortField: defaultGridSort(target.resource).field,
+      sortDirection: defaultGridSort(target.resource).sort,
       filters: { items: [] },
     },
   }

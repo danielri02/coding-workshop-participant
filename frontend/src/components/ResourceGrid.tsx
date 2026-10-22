@@ -105,7 +105,7 @@ interface GridProps {
   onAction: (action: RowAction, row: AdminRow) => void
 }
 
-/** Share grid presentation/actions while incidents use backend paging, sorting and filters. */
+/** Every CRUD collection uses backend paging, sorting and filtering. */
 export function ResourceGrid({
   resource,
   rows,
@@ -123,7 +123,7 @@ export function ResourceGrid({
   onFilters,
   onAction,
 }: GridProps) {
-  const server = resource === 'incidents'
+  const isIncident = resource === 'incidents'
   const allColumns: GridColDef<AdminRow>[] = [
     {
       field: 'id',
@@ -158,21 +158,21 @@ export function ResourceGrid({
       loading={loading}
       initialState={{
         columns: {
-          columnVisibilityModel: server ? defaultIncidentColumns : {},
+          columnVisibilityModel: isIncident ? defaultIncidentColumns : {},
         },
       }}
-      rowCount={server ? rowCount : undefined}
-      paginationMode={server ? 'server' : 'client'}
-      sortingMode={server ? 'server' : 'client'}
-      filterMode={server ? 'server' : 'client'}
+      rowCount={rowCount}
+      paginationMode="server"
+      sortingMode="server"
+      filterMode="server"
       paginationModel={pagination}
       onPaginationModelChange={onPagination}
       sortModel={sorting}
       onSortModelChange={onSorting}
       filterModel={filters}
       onFilterModelChange={onFilters}
-      columnVisibilityModel={server ? visibility : undefined}
-      onColumnVisibilityModelChange={server ? onVisibility : undefined}
+      columnVisibilityModel={isIncident ? visibility : undefined}
+      onColumnVisibilityModelChange={isIncident ? onVisibility : undefined}
     />
   )
 }

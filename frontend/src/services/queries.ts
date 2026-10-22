@@ -35,7 +35,8 @@ export function invalidateResourceQueries(
       const [namespace, path] = query.queryKey
       if (namespace !== 'api' || typeof path !== 'string') return false
       const route = path.split('?')[0]
-      const domain = route.endsWith('/notes') ? 'notes' : route.split('/')[1]
+      const domain =
+        route.endsWith('/notes') || route.endsWith('/notes/grid') ? 'notes' : route.split('/')[1]
       return affected.includes(domain)
     },
   })

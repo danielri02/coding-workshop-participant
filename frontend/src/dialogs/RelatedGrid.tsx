@@ -10,9 +10,9 @@ import { ResourceGrid, type RowAction } from '../components/ResourceGrid'
 import { useApiQuery, useDebouncedValue } from '../hooks/useApiQuery'
 import { useLookups } from '../hooks/useLookups'
 import { resources } from '../resources/definitions'
-import { incidentQuery } from '../resources/incidentQuery'
+import { defaultGridSort, gridQuery } from '../resources/gridQuery'
 import { decorateRow } from '../resources/rows'
-import type { AdminRow, ApiRecord, Incident, IncidentPage } from '../types'
+import type { AdminRow, Incident, ResourcePageData } from '../types'
 import { noteStatuses } from '../generated/domain'
 import { invalidateResourceQueries } from '../services/queries'
 import { useRecordDialogs } from './context'
@@ -43,34 +43,23 @@ export function RelatedGrid({
     target.resource === 'notes' ? `/incidents/${target.filters.incident_id}` : null,
     null,
   )
-  const server = resource.key === 'incidents'
-  const path = server
-    ? incidentQuery(pagination, sorting, state.filters, search, {
-        ...target.filters,
-        ...(!adminView && user
-          ? workspace?.id === 'assigned'
-            ? { assignee_id: user.id }
-            : { reporter_id: user.id }
-          : {}),
-      })
-    : target.resource === 'notes'
-      ? `/incidents/${target.filters.incident_id}/notes`
-      : resource.endpoint
-  const query = useApiQuery<ApiRecord[] | IncidentPage>(path, [])
+  const path = gridQuery(resource, pagination, sorting, state.filters, search, {
+    ...target.filters,
+    ...(!adminView && user && resource.key === 'incidents'
+      ? workspace?.id === 'assigned'
+        ? { assignee_id: user.id }
+        : { reporter_id: user.id }
+      : {}),
+  })
+  const query = useApiQuery<ResourcePageData>(path, {
+    rows: [],
+    row_count: 0,
+    page: 0,
+    page_size: 25,
+  })
   const columns = useMemo(() => resource.columns(lookups.data), [resource, lookups.data])
-  const rows = (Array.isArray(query.data) ? query.data : query.data.rows)
-    .filter(
-      (row) =>
-        server ||
-        Object.entries(target.filters).every(
-          ([field, value]) => row[field as keyof typeof row] === value,
-        ),
-    )
-    .map((row) => decorateRow(resource.key, row, lookups.data))
+  const rows = query.data.rows.map((row) => decorateRow(resource.key, row, lookups.data))
   const loading = query.loading || lookups.loading || search !== state.search
-  const filters = server
-    ? state.filters
-    : { ...state.filters, quickFilterValues: search.trim() ? search.trim().split(/\s+/) : [] }
   const error = query.error || lookups.error || parent.error
   const canAddNote = parent.data && noteStatuses.some((status) => status === parent.data?.status)
   const readColumns: GridColDef<AdminRow>[] = [
@@ -78,6 +67,7 @@ export function RelatedGrid({
       field: 'id',
       headerName: 'ID',
       width: 85,
+      filterable: false,
       renderCell: ({ row, hasFocus }) => (
         <RecordLink
           resource={resource.key}
@@ -136,15 +126,15 @@ export function RelatedGrid({
           columns={columns}
           loading={loading}
           disabled={loading}
-          rowCount={Array.isArray(query.data) ? 0 : query.data.row_count}
+          rowCount={query.data.row_count}
           pagination={pagination}
           sorting={sorting}
-          filters={filters}
+          filters={state.filters}
           onPagination={(model) => setState({ page: model.page, pageSize: model.pageSize })}
           onSorting={(model) =>
             setState({
-              sortField: model[0]?.field || 'id',
-              sortDirection: model[0]?.sort || 'asc',
+              sortField: model[0]?.field || defaultGridSort(resource.key).field,
+              sortDirection: model[0]?.sort || defaultGridSort(resource.key).sort,
               page: 0,
             })
           }
@@ -156,10 +146,10 @@ export function RelatedGrid({
           rows={rows}
           columns={readColumns}
           loading={loading}
-          rowCount={server && !Array.isArray(query.data) ? query.data.row_count : undefined}
-          paginationMode={server ? 'server' : 'client'}
-          sortingMode={server ? 'server' : 'client'}
-          filterMode={server ? 'server' : 'client'}
+          rowCount={query.data.row_count}
+          paginationMode="server"
+          sortingMode="server"
+          filterMode="server"
           paginationModel={pagination}
           onPaginationModelChange={(model) =>
             setState({ page: model.page, pageSize: model.pageSize })
@@ -167,12 +157,12 @@ export function RelatedGrid({
           sortModel={sorting}
           onSortModelChange={(model) =>
             setState({
-              sortField: model[0]?.field || 'id',
-              sortDirection: model[0]?.sort || 'asc',
+              sortField: model[0]?.field || defaultGridSort(resource.key).field,
+              sortDirection: model[0]?.sort || defaultGridSort(resource.key).sort,
               page: 0,
             })
           }
-          filterModel={filters}
+          filterModel={state.filters}
           onFilterModelChange={(model) => setState({ filters: model, page: 0 })}
         />
       )}

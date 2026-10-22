@@ -26,6 +26,7 @@ export interface ResourceRecords {
 }
 export type ResourceKey = keyof ResourceRecords
 export type ApiRecord = ResourceRecords[ResourceKey]
+export type ResourcePageData = Omit<IncidentPage, 'rows'> & { rows: ApiRecord[] }
 
 /** Common presentation adapter with explicit known fields and a normalized grid ID. */
 export interface AdminRow {

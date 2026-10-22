@@ -1,39 +1,63 @@
 """Engineer capability and manual availability CRUD endpoints."""
 
-from fastapi import APIRouter, Depends, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Response, status
+from sqlalchemy import select
 
 from ..database import crud
+from ..database.grids import grid_records
 from ..models import EngineerProfile, User
 from ..schemas import (
     EngineerProfileCreate,
     EngineerProfileRead,
     EngineerProfileUpdate,
 )
-from ..security.dependencies import current_user, require_admin
+from ..schemas.grid import GridQuery, Page
+from ..security.dependencies import AdminUser, CurrentUser
 from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(
     prefix="/engineer-profiles",
     tags=[EngineerProfile.__name__],
-    dependencies=[Depends(current_user)],
 )
 
 
 @router.get("", response_model=list[EngineerProfileRead])
-async def list_engineer_profiles(session: DatabaseSession) -> list[EngineerProfile]:
+async def list_engineer_profiles(
+    session: DatabaseSession, _user: CurrentUser
+) -> list[EngineerProfile]:
     """List all engineer profiles."""
 
     return await crud.list_records(session, EngineerProfile)
+
+
+@router.get("/grid", response_model=Page[EngineerProfileRead])
+async def grid_engineer_profiles(
+    session: DatabaseSession,
+    _admin: AdminUser,
+    query: Annotated[GridQuery, Query()],
+) -> dict:
+    """Page the admin directory, including searches on account names and emails."""
+
+    statement = select(EngineerProfile).join(User)
+    return await grid_records(
+        session,
+        statement,
+        query,
+        primary_key=EngineerProfile.user_id,
+        text_columns={"user_name": User.name, "user_email": User.email},
+        boolean_columns={"is_available": EngineerProfile.is_available},
+    )
 
 
 @router.post(
     "",
     response_model=EngineerProfileRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
 )
 async def create_engineer_profile(
-    payload: EngineerProfileCreate, session: DatabaseSession
+    payload: EngineerProfileCreate, session: DatabaseSession, _admin: AdminUser
 ) -> EngineerProfile:
     """Grant Engineer capability to an existing employee."""
 
@@ -43,7 +67,7 @@ async def create_engineer_profile(
 
 @router.get("/{user_id}", response_model=EngineerProfileRead)
 async def get_engineer_profile(
-    user_id: RecordID, session: DatabaseSession
+    user_id: RecordID, session: DatabaseSession, _user: CurrentUser
 ) -> EngineerProfile:
     """Read a profile by its employee ID."""
 
@@ -53,10 +77,12 @@ async def get_engineer_profile(
 @router.patch(
     "/{user_id}",
     response_model=EngineerProfileRead,
-    dependencies=[Depends(require_admin)],
 )
 async def update_engineer_profile(
-    user_id: RecordID, payload: EngineerProfileUpdate, session: DatabaseSession
+    user_id: RecordID,
+    payload: EngineerProfileUpdate,
+    session: DatabaseSession,
+    _admin: AdminUser,
 ) -> EngineerProfile:
     """Update manually managed availability."""
 
@@ -69,11 +95,11 @@ async def update_engineer_profile(
 @router.delete(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_admin)],
 )
 async def delete_engineer_profile(
     user_id: RecordID,
     session: DatabaseSession,
+    _admin: AdminUser,
     confirmation: DeletionConfirmation = None,
 ) -> Response:
     """Remove Engineer capability, preserving and unassigning its incident work."""

@@ -196,3 +196,17 @@ test('queries reuse reads and invalidate affected resources without refetching e
     client.clear()
   }
 })
+
+test('note mutations refresh both conversation lists and paged note grids', async () => {
+  const client = createQueryClient()
+  try {
+    const paths = ['/incidents/7/notes', '/incidents/7/notes/grid?page=2', '/notes/9']
+    for (const path of paths) client.setQueryData(['api', path], [])
+    client.setQueryData(['api', '/buildings/grid?page=0'], [])
+    await invalidateResourceQueries(client, 'notes')
+    for (const path of paths) assert.equal(client.getQueryState(['api', path])?.isInvalidated, true)
+    assert.equal(client.getQueryState(['api', '/buildings/grid?page=0'])?.isInvalidated, false)
+  } finally {
+    client.clear()
+  }
+})

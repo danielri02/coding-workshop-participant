@@ -1,33 +1,55 @@
 """Building CRUD endpoints."""
 
-from fastapi import APIRouter, Depends, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Response, status
+from sqlalchemy import select
 
 from ..database import crud
+from ..database.grids import grid_records
 from ..models import Building
 from ..schemas import BuildingCreate, BuildingRead, BuildingUpdate
-from ..security.dependencies import current_user, require_admin
+from ..schemas.grid import GridQuery, Page
+from ..security.dependencies import AdminUser, CurrentUser
 from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
-router = APIRouter(
-    prefix="/buildings", tags=[Building.__name__], dependencies=[Depends(current_user)]
-)
+router = APIRouter(prefix="/buildings", tags=[Building.__name__])
 
 
 @router.get("", response_model=list[BuildingRead])
-async def list_buildings(session: DatabaseSession) -> list[Building]:
+async def list_buildings(
+    session: DatabaseSession, _user: CurrentUser
+) -> list[Building]:
     """List all buildings without pagination."""
 
     return await crud.list_records(session, Building)
+
+
+@router.get("/grid", response_model=Page[BuildingRead])
+async def grid_buildings(
+    session: DatabaseSession,
+    _user: CurrentUser,
+    query: Annotated[GridQuery, Query()],
+) -> dict:
+    """Search, filter and page buildings for collection grids."""
+
+    statement = select(Building)
+    return await grid_records(
+        session,
+        statement,
+        query,
+        primary_key=Building.id,
+        text_columns={"name": Building.name},
+    )
 
 
 @router.post(
     "",
     response_model=BuildingRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
 )
 async def create_building(
-    payload: BuildingCreate, session: DatabaseSession
+    payload: BuildingCreate, session: DatabaseSession, _admin: AdminUser
 ) -> Building:
     """Create a building."""
 
@@ -35,17 +57,20 @@ async def create_building(
 
 
 @router.get("/{building_id}", response_model=BuildingRead)
-async def get_building(building_id: RecordID, session: DatabaseSession) -> Building:
+async def get_building(
+    building_id: RecordID, session: DatabaseSession, _user: CurrentUser
+) -> Building:
     """Read one building."""
 
     return await crud.get_record(session, Building, building_id)
 
 
-@router.patch(
-    "/{building_id}", response_model=BuildingRead, dependencies=[Depends(require_admin)]
-)
+@router.patch("/{building_id}", response_model=BuildingRead)
 async def update_building(
-    building_id: RecordID, payload: BuildingUpdate, session: DatabaseSession
+    building_id: RecordID,
+    payload: BuildingUpdate,
+    session: DatabaseSession,
+    _admin: AdminUser,
 ) -> Building:
     """Rename a building."""
 
@@ -58,11 +83,11 @@ async def update_building(
 @router.delete(
     "/{building_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_admin)],
 )
 async def delete_building(
     building_id: RecordID,
     session: DatabaseSession,
+    _admin: AdminUser,
     confirmation: DeletionConfirmation = None,
 ) -> Response:
     """Delete a building and its contained floors, seats, incidents and notes."""

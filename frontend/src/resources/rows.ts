@@ -15,7 +15,7 @@ export function floorLabel(lookups: Lookups, id: unknown): string {
     : '—'
 }
 
-/** Normalize API rows and add display-only relationship labels for local grids. */
+/** Normalize API rows and add display-only relationship labels for grids. */
 export function decorateRow(
   key: ResourceKey,
   row: ApiRecord | AdminRow,

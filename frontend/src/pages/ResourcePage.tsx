@@ -31,14 +31,14 @@ import { useLookups } from '../hooks/useLookups'
 import { useResourceActions } from '../hooks/useResourceActions'
 import { noteStatuses, incidentGrid } from '../generated/domain'
 import type { ResourceDefinition } from '../resources/definitions'
-import { incidentQuery } from '../resources/incidentQuery'
+import { defaultGridSort, gridQuery } from '../resources/gridQuery'
 import {
   defaultIncidentColumns,
   incidentViews,
   incidentViewState,
 } from '../resources/incidentViews'
 import { decorateRow } from '../resources/rows'
-import type { ApiRecord, Incident, IncidentPage } from '../types'
+import type { Incident, ResourcePageData } from '../types'
 
 /** Compose reusable admin controls around the selected resource's query and actions. */
 export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
@@ -49,13 +49,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
   const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 25 })
-  const [sorting, setSorting] = useState<GridSortModel>([
-    resource.key === 'incidents'
-      ? incidentGrid.defaultSort
-      : resource.key === 'notes'
-        ? { field: 'created_at', sort: 'desc' }
-        : { field: 'id', sort: 'asc' },
-  ])
+  const [sorting, setSorting] = useState<GridSortModel>([defaultGridSort(resource.key)])
   const [assignment, setAssignment] = useState('all')
   const [filters, setFilters] = useState<GridFilterModel>({ items: [] })
   const [quickView, setQuickView] = useState('all')
@@ -109,22 +103,20 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     null,
   )
   const selectedIncident = incident.data
-  const server = resource.key === 'incidents'
-  let path: string | null = resource.endpoint
-  if (server) {
-    path = incidentQuery(pagination, sorting, filters, debouncedSearch, {
-      unassigned: assignment === 'all' ? undefined : assignment === 'unassigned',
-    })
-  } else if (resource.key === 'notes') {
-    path = scope ? `/incidents/${scope}/notes` : null
-  }
-  const query = useApiQuery<ApiRecord[] | IncidentPage>(path, [])
-  const rows = (Array.isArray(query.data) ? query.data : query.data.rows).map((row) =>
-    decorateRow(resource.key, row, lookups.data),
-  )
-  const rowCount = Array.isArray(query.data) ? 0 : query.data.row_count
-  const loading =
-    query.loading || lookups.loading || incident.loading || (server && search !== debouncedSearch)
+  const isIncident = resource.key === 'incidents'
+  const path = gridQuery(resource, pagination, sorting, filters, debouncedSearch, {
+    incident_id: scope || undefined,
+    unassigned: assignment === 'all' ? undefined : assignment === 'unassigned',
+  })
+  const query = useApiQuery<ResourcePageData>(path, {
+    rows: [],
+    row_count: 0,
+    page: 0,
+    page_size: 25,
+  })
+  const rows = query.data.rows.map((row) => decorateRow(resource.key, row, lookups.data))
+  const rowCount = query.data.row_count
+  const loading = query.loading || lookups.loading || incident.loading || search !== debouncedSearch
   const failure = query.error || lookups.error || incident.error
   const columns = useMemo(() => resource.columns(lookups.data), [resource, lookups.data])
   const canAddNotes = noteStatuses.some((status) => status === selectedIncident?.status)
@@ -195,7 +187,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
           <TextField
             size="small"
             label={`Search ${resource.title.toLowerCase()}`}
-            placeholder={server ? 'Search titles and descriptions' : 'Search records'}
+            placeholder={isIncident ? 'Search titles and descriptions' : 'Search records'}
             value={search}
             disabled={resource.key === 'notes' && !scope}
             onChange={(event) => {
@@ -211,11 +203,11 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
                   </InputAdornment>
                 ),
               },
-              htmlInput: { maxLength: server ? incidentGrid.searchMaxLength : undefined },
+              htmlInput: { maxLength: incidentGrid.searchMaxLength },
             }}
             sx={{ width: { xs: '100%', sm: 360 }, minWidth: 0 }}
           />
-          {server && (
+          {isIncident && (
             <TextField
               select
               label="Quick view"
@@ -267,16 +259,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
               setVisibility(model)
               customize()
             }}
-            filters={
-              server
-                ? filters
-                : {
-                    ...filters,
-                    quickFilterValues: debouncedSearch.trim()
-                      ? debouncedSearch.trim().split(/\s+/)
-                      : [],
-                  }
-            }
+            filters={filters}
             onPagination={setPagination}
             onSorting={(model) => {
               customize()

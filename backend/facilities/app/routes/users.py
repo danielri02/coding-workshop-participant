@@ -1,13 +1,17 @@
 """Public employee registration and authorized account/capability operations."""
 
 import asyncio
+from typing import Annotated
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from ..database import crud
+from ..database.grids import grid_records
 from ..models import User
 from ..schemas import UserAdminUpdate, UserCreate, UserRead, UserUpdate
+from ..schemas.grid import GridQuery, Page
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.passwords import hash_password
 from ..security.permissions import require_account_access
@@ -22,6 +26,29 @@ async def list_users(session: DatabaseSession, _admin: AdminUser) -> list[User]:
     """List all employees without exposing password hashes."""
 
     return await crud.list_records(session, User, options=USER_OPTIONS)
+
+
+@router.get("/grid", response_model=Page[UserRead])
+async def grid_users(
+    session: DatabaseSession,
+    _admin: AdminUser,
+    query: Annotated[GridQuery, Query()],
+) -> dict:
+    """Search, filter and page users for collection grids."""
+
+    statement = select(User)
+    return await grid_records(
+        session,
+        statement,
+        query,
+        primary_key=User.id,
+        text_columns={"name": User.name, "email": User.email},
+        boolean_columns={
+            "is_admin": User.is_admin,
+            "is_engineer": User.engineer_profile.has(),
+        },
+        options=USER_OPTIONS,
+    )
 
 
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)

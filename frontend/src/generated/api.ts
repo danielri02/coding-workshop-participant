@@ -470,6 +470,72 @@ export interface components {
       /** Body */
       body: string | null
     }
+    /** Page[BuildingRead] */
+    Page_BuildingRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['BuildingRead'][]
+    }
+    /** Page[EngineerProfileRead] */
+    Page_EngineerProfileRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['EngineerProfileRead'][]
+    }
+    /** Page[FloorRead] */
+    Page_FloorRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['FloorRead'][]
+    }
+    /** Page[NoteRead] */
+    Page_NoteRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['NoteRead'][]
+    }
+    /** Page[SeatRead] */
+    Page_SeatRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['SeatRead'][]
+    }
+    /** Page[UserRead] */
+    Page_UserRead_: {
+      /** Page */
+      page: number
+      /** Page Size */
+      page_size: number
+      /** Row Count */
+      row_count: number
+      /** Rows */
+      rows: components['schemas']['UserRead'][]
+    }
     /**
      * RefreshRequest
      * @description Keep refresh credentials out of URL parameters and model representations.

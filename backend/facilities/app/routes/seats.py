@@ -1,11 +1,16 @@
 """Seat CRUD endpoints."""
 
-from fastapi import APIRouter, Depends, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Response, status
+from sqlalchemy import select
 
 from ..database import crud
-from ..models import Floor, Seat
+from ..database.grids import grid_records
+from ..models import Building, Floor, Seat
 from ..schemas import SeatCreate, SeatRead, SeatUpdate
-from ..security.dependencies import current_user, require_admin
+from ..schemas.grid import Page, SeatGridQuery
+from ..security.dependencies import AdminUser, CurrentUser
 from .dependencies import (
     DatabaseSession,
     DeletionConfirmation,
@@ -13,14 +18,12 @@ from .dependencies import (
     RecordID,
 )
 
-router = APIRouter(
-    prefix="/seats", tags=[Seat.__name__], dependencies=[Depends(current_user)]
-)
+router = APIRouter(prefix="/seats", tags=[Seat.__name__])
 
 
 @router.get("", response_model=list[SeatRead])
 async def list_seats(
-    session: DatabaseSession, floor_id: OptionalQueryID = None
+    session: DatabaseSession, _user: CurrentUser, floor_id: OptionalQueryID = None
 ) -> list[Seat]:
     """List all seats, optionally within one floor."""
 
@@ -28,13 +31,37 @@ async def list_seats(
     return await crud.list_records(session, Seat, filters=filters)
 
 
+@router.get("/grid", response_model=Page[SeatRead])
+async def grid_seats(
+    session: DatabaseSession,
+    _user: CurrentUser,
+    query: Annotated[SeatGridQuery, Query()],
+) -> dict:
+    """Search, filter and page seats for collection grids."""
+
+    statement = select(Seat).join(Floor).join(Building)
+    if query.floor_id is not None:
+        statement = statement.where(Seat.floor_id == query.floor_id)
+    return await grid_records(
+        session,
+        statement,
+        query,
+        primary_key=Seat.id,
+        text_columns={
+            "label": Seat.label,
+            "floor_name": Building.name + " · Floor " + Floor.label,
+        },
+    )
+
+
 @router.post(
     "",
     response_model=SeatRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
 )
-async def create_seat(payload: SeatCreate, session: DatabaseSession) -> Seat:
+async def create_seat(
+    payload: SeatCreate, session: DatabaseSession, _admin: AdminUser
+) -> Seat:
     """Create a labeled seat on an existing floor."""
 
     await crud.get_record(session, Floor, payload.floor_id)
@@ -42,17 +69,17 @@ async def create_seat(payload: SeatCreate, session: DatabaseSession) -> Seat:
 
 
 @router.get("/{seat_id}", response_model=SeatRead)
-async def get_seat(seat_id: RecordID, session: DatabaseSession) -> Seat:
+async def get_seat(
+    seat_id: RecordID, session: DatabaseSession, _user: CurrentUser
+) -> Seat:
     """Read one seat."""
 
     return await crud.get_record(session, Seat, seat_id)
 
 
-@router.patch(
-    "/{seat_id}", response_model=SeatRead, dependencies=[Depends(require_admin)]
-)
+@router.patch("/{seat_id}", response_model=SeatRead)
 async def update_seat(
-    seat_id: RecordID, payload: SeatUpdate, session: DatabaseSession
+    seat_id: RecordID, payload: SeatUpdate, session: DatabaseSession, _admin: AdminUser
 ) -> Seat:
     """Relabel a seat without changing its parent floor."""
 
@@ -65,11 +92,11 @@ async def update_seat(
 @router.delete(
     "/{seat_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_admin)],
 )
 async def delete_seat(
     seat_id: RecordID,
     session: DatabaseSession,
+    _admin: AdminUser,
     confirmation: DeletionConfirmation = None,
 ) -> Response:
     """Delete a seat and its incidents and notes."""

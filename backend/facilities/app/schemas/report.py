@@ -7,6 +7,7 @@ from pydantic import Field
 
 from ..models import IncidentCategory, IncidentPriority, IncidentStatus
 from .base import Schema, UTCDateTime
+from .grid import Page, PaginationQuery
 from .incident import FilterID
 
 Count = Annotated[int, Field(ge=0)]
@@ -44,12 +45,10 @@ class CategoryQuery(ReportFilters):
     seat_id: FilterID | None = None
 
 
-class ReportQuery(ReportFilters):
+class ReportQuery(ReportFilters, PaginationQuery):
     category: IncidentCategory | None = None
     assignee_id: FilterID | None = None
     search: Annotated[str, Field(max_length=200)] = ""
-    page: Count = 0
-    page_size: Annotated[int, Field(ge=1, le=100)] = 25
     sort_by: Literal[
         "id",
         "title",
@@ -79,11 +78,8 @@ class IncidentSummary(Schema):
     closed_count: Count
 
 
-class ReportPage(Schema, Generic[Row]):
-    rows: list[Row]
-    row_count: Count
-    page: Count
-    page_size: Annotated[int, Field(ge=1, le=100)]
+class ReportPage(Page[Row], Generic[Row]):
+    """Use the same paging envelope as CRUD grids."""
 
 
 class ReportWindow(Schema):

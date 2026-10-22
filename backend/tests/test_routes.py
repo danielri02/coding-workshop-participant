@@ -1150,6 +1150,241 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertTrue({"get", "post"}.issubset(paths[path]))
 
+    async def test_reference_grids_page_sort_count_and_keep_lookup_lists(self) -> None:
+        """Every reference grid counts its full result and returns bounded stable pages."""
+
+        async with self.factory.begin() as session:
+            session.add(EngineerProfile(user_id=self.reporter_id, is_available=False))
+        for resource in ("buildings", "floors", "seats", "users", "engineer-profiles"):
+            with self.subTest(resource=resource):
+                expected = (await self.client.get(f"/{resource}")).json()
+                key = "user_id" if resource == "engineer-profiles" else "id"
+                ordered = sorted(expected, key=lambda row: row[key], reverse=True)
+                for page in range(len(ordered) + 1):
+                    response = await self.client.get(
+                        f"/{resource}/grid",
+                        params={
+                            "page": page,
+                            "page_size": 1,
+                            "sort_direction": "desc",
+                        },
+                    )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    data = response.json()
+                    self.assertEqual(data["rows"], ordered[page : page + 1])
+                    self.assertEqual(data["row_count"], len(expected))
+                    self.assertEqual(data["page"], page)
+                    self.assertEqual(data["page_size"], 1)
+                    self.assertNotIn("password_hash", response.text)
+
+    async def test_grid_search_includes_relation_labels_and_escapes_wildcards(
+        self,
+    ) -> None:
+        """Search the displayed names, with the same literal phrase semantics as incidents."""
+
+        for path, search, key, expected in (
+            ("/floors/grid", "HEADQUARTERS", "id", self.floor_id),
+            ("/seats/grid", "Headquarters · Floor 1", "id", self.seat_id),
+            (
+                "/engineer-profiles/grid",
+                "engineer@acme.inc",
+                "user_id",
+                self.engineer_id,
+            ),
+            ("/users/grid", "REPORTER", "id", self.reporter_id),
+        ):
+            response = await self.client.get(path, params={"search": search})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["row_count"], 1)
+            self.assertEqual(response.json()["rows"][0][key], expected)
+        await self.client.post("/buildings", json={"name": "100%_ literal office"})
+        response = await self.client.get("/buildings/grid", params={"search": "%_"})
+        self.assertEqual(response.json()["row_count"], 1)
+        self.assertEqual(response.json()["rows"][0]["name"], "100%_ literal office")
+
+    async def test_grid_column_filters_match_text_and_false_capabilities(self) -> None:
+        """Filters run in SQL before counting, including false and valueless filters."""
+
+        for operator, value, expected in (
+            ("contains", "quarter", [self.building_id]),
+            ("doesNotContain", "quarter", [self.other_building_id]),
+            ("equals", "HEADQUARTERS", [self.building_id]),
+            ("doesNotEqual", "HEADQUARTERS", [self.other_building_id]),
+            ("startsWith", "Head", [self.building_id]),
+            ("endsWith", "ters", [self.building_id]),
+            ("isEmpty", None, []),
+            ("isNotEmpty", None, [self.building_id, self.other_building_id]),
+            ("contains", None, [self.building_id, self.other_building_id]),
+        ):
+            params = {"filter_field": "name", "filter_operator": operator}
+            if value is not None:
+                params["filter_value"] = value
+            response = await self.client.get("/buildings/grid", params=params)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual([row["id"] for row in response.json()["rows"]], expected)
+            self.assertEqual(response.json()["row_count"], len(expected))
+        response = await self.client.get(
+            "/buildings/grid",
+            params=[
+                ("filter_field", "name"),
+                ("filter_operator", "isAnyOf"),
+                ("filter_values", "HEADQUARTERS"),
+                ("filter_values", "branch"),
+            ],
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["row_count"], 2)
+        for field in ("is_admin", "is_engineer"):
+            for value in (True, False):
+                response = await self.client.get(
+                    "/users/grid",
+                    params={
+                        "filter_field": field,
+                        "filter_operator": "is",
+                        "filter_value": str(value).lower(),
+                    },
+                )
+                expected = (
+                    self.reporter_id
+                    if (field == "is_admin") == value
+                    else self.engineer_id
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(
+                    [row["id"] for row in response.json()["rows"]], [expected]
+                )
+
+    async def test_related_grid_parent_scope_survives_search_and_filters(self) -> None:
+        """Matching labels from sibling locations cannot leak into related pages/counts."""
+
+        for path, parent, parent_id, field, value, expected_id in (
+            (
+                "/floors/grid",
+                "building_id",
+                self.building_id,
+                "label",
+                "1",
+                self.floor_id,
+            ),
+            ("/seats/grid", "floor_id", self.floor_id, "label", "A1", self.seat_id),
+        ):
+            response = await self.client.get(
+                path,
+                params={
+                    parent: parent_id,
+                    "filter_field": field,
+                    "filter_operator": "equals",
+                    "filter_value": value,
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["row_count"], 1)
+            self.assertEqual(response.json()["rows"][0]["id"], expected_id)
+            response = await self.client.get(
+                path, params={parent: parent_id, "search": "Branch"}
+            )
+            self.assertEqual(response.json()["row_count"], 0)
+
+    async def test_note_grid_pages_searches_and_filters_utc_timestamps(self) -> None:
+        """Notes stay within their conversation and date/time equality uses minute precision."""
+
+        incident = await self.create_report()
+        other = await self.create_report(title="Separate conversation")
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=123456)
+        async with self.factory.begin() as session:
+            session.add_all(
+                [
+                    Note(
+                        incident_id=incident["id"],
+                        author_id=self.reporter_id,
+                        body="Older note",
+                        created_at=now - timedelta(days=1),
+                    ),
+                    Note(
+                        incident_id=incident["id"],
+                        author_id=self.engineer_id,
+                        body="Latest note",
+                        created_at=now,
+                    ),
+                    Note(
+                        incident_id=other["id"],
+                        author_id=self.engineer_id,
+                        body="Private other note",
+                        created_at=now,
+                    ),
+                ]
+            )
+        path = f"/incidents/{incident['id']}/notes/grid"
+        params = {"sort_by": "created_at", "sort_direction": "desc", "page_size": 1}
+        response = await self.client.get(path, params=params)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["row_count"], 2)
+        self.assertEqual(response.json()["rows"][0]["body"], "Latest note")
+        response = await self.client.get(path, params={**params, "page": 1})
+        self.assertEqual(response.json()["rows"][0]["body"], "Older note")
+        response = await self.client.get(path, params={"search": "Engineer"})
+        self.assertEqual(response.json()["row_count"], 1)
+        for operator, value, count in (
+            ("is", now.replace(microsecond=0).isoformat(), 1),
+            ("not", now.replace(microsecond=0).isoformat(), 1),
+            ("before", now.replace(microsecond=0).isoformat(), 1),
+            ("after", now.replace(microsecond=0).isoformat(), 1),
+            ("onOrBefore", now.isoformat(), 2),
+            ("onOrAfter", now.isoformat(), 1),
+        ):
+            response = await self.client.get(
+                path,
+                params={
+                    "filter_field": "created_at",
+                    "filter_operator": operator,
+                    "filter_value": value,
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["row_count"], count)
+
+    async def test_grid_rejects_unbounded_pages_and_unknown_sql_fields(self) -> None:
+        """Invalid inputs return 422 and never become dynamic SQL identifiers."""
+
+        for params in (
+            {"page": -1},
+            {"page_size": 0},
+            {"page_size": 101},
+            {"search": "x" * 201},
+            {"sort_by": "password_hash"},
+            {"sort_by": "name; DROP TABLE buildings"},
+            {"filter_field": "password_hash"},
+            {"filter_field": "name", "filter_operator": "unsupported"},
+            {
+                "filter_field": "name",
+                "filter_operator": "after",
+                "filter_value": "2026-01-01",
+            },
+            {"unknown": "value"},
+        ):
+            response = await self.client.get("/buildings/grid", params=params)
+            self.assertEqual(response.status_code, 422, response.text)
+        response = await self.client.get(
+            "/users/grid",
+            params={
+                "filter_field": "is_admin",
+                "filter_operator": "is",
+                "filter_value": "maybe",
+            },
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+        incident = await self.create_report()
+        for value in ("yesterday", "2026-01-01T10:00:00"):
+            response = await self.client.get(
+                f"/incidents/{incident['id']}/notes/grid",
+                params={
+                    "filter_field": "created_at",
+                    "filter_operator": "is",
+                    "filter_value": value,
+                },
+            )
+            self.assertEqual(response.status_code, 422, response.text)
+
 
 if __name__ == "__main__":
     unittest.main()

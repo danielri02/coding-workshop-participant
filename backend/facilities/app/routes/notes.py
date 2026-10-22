@@ -1,11 +1,16 @@
 """Shared incident-note CRUD endpoints."""
 
-from fastapi import APIRouter, HTTPException, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Response, status
+from sqlalchemy import select
 
 from ..database import crud
+from ..database.grids import grid_records
 from ..domain.incidents import NOTE_STATUSES
-from ..models import Note
+from ..models import Note, User
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
+from ..schemas.grid import NoteGridQuery, Page
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import accessible_incident
 from .dependencies import (
@@ -30,6 +35,32 @@ async def list_notes(
         Note,
         filters={"incident_id": incident_id},
         order_by=(Note.created_at.desc(), Note.id.desc()),
+        options=NOTE_READ_OPTIONS,
+    )
+
+
+@router.get("/incidents/{incident_id}/notes/grid", response_model=Page[NoteRead])
+async def grid_notes(
+    incident_id: RecordID,
+    session: DatabaseSession,
+    user: CurrentUser,
+    query: Annotated[NoteGridQuery, Query()],
+) -> dict:
+    """Page the conversation only after checking access to its parent incident."""
+
+    await accessible_incident(session, incident_id, user)
+    statement = (
+        select(Note)
+        .join(User, Note.author_id == User.id)
+        .where(Note.incident_id == incident_id)
+    )
+    return await grid_records(
+        session,
+        statement,
+        query,
+        primary_key=Note.id,
+        text_columns={"body": Note.body, "author_name": User.name},
+        date_columns={"created_at": Note.created_at},
         options=NOTE_READ_OPTIONS,
     )
 

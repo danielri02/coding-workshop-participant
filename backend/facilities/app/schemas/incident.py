@@ -15,6 +15,7 @@ from .base import (
     Title,
     UTCDateTime,
 )
+from .grid import Page, PaginationQuery
 
 
 class IncidentCreate(Schema):
@@ -138,11 +139,9 @@ class IncidentFilters(Schema):
     unassigned: bool | None = None
 
 
-class IncidentGridQuery(IncidentFilters):
+class IncidentGridQuery(IncidentFilters, PaginationQuery):
     """Zero-based paging and a single validated sort, matching MUI Data Grid."""
 
-    page: Annotated[int, Field(ge=0)] = 0
-    page_size: Annotated[int, Field(ge=1, le=100)] = 25
     sort_by: Literal[
         "id",
         "title",
@@ -163,10 +162,5 @@ class IncidentGridQuery(IncidentFilters):
     sort_direction: Literal["asc", "desc"] = "desc"
 
 
-class IncidentPage(Schema):
+class IncidentPage(Page[IncidentRead]):
     """Filtered rows and their total count for server-side grid pagination."""
-
-    rows: list[IncidentRead]
-    row_count: Annotated[int, Field(ge=0)]
-    page: Annotated[int, Field(ge=0)]
-    page_size: Annotated[int, Field(ge=1, le=100)]

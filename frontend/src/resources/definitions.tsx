@@ -1,5 +1,10 @@
 import type { GridColDef } from '@mui/x-data-grid'
-import { getGridBooleanOperators, getGridSingleSelectOperators } from '@mui/x-data-grid'
+import {
+  getGridBooleanOperators,
+  getGridSingleSelectOperators,
+  getGridStringOperators,
+  getGridDateOperators,
+} from '@mui/x-data-grid'
 import { RecordLink } from '../components/RecordLink'
 import { RelatedLink } from '../components/RelatedLink'
 import { PersonLink } from '../components/PersonLink'
@@ -28,12 +33,14 @@ const text = (field: keyof AdminRow, headerName: string, width = 180): GridColDe
   headerName,
   width,
   minWidth: Math.min(width, 220),
+  filterOperators: getGridStringOperators(),
 })
 const flag = (field: keyof AdminRow, headerName: string): GridColDef<AdminRow> => ({
   field,
   headerName,
   width: 130,
   type: 'boolean',
+  filterOperators: getGridBooleanOperators(),
   renderCell: ({ value }) => <ValueChip value={Boolean(value)} />,
 })
 const tag = (
@@ -334,6 +341,7 @@ export const resources: ResourceDefinition[] = [
       {
         ...text('created_at', 'Posted', 200),
         type: 'dateTime',
+        filterOperators: getGridDateOperators(true),
         valueGetter: (value) => new Date(String(value)),
       },
     ],

@@ -774,3 +774,34 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
             {"is_admin": True},
         )
         await self.request("combined", "GET", path, 200)
+
+    async def test_reference_and_note_grids_keep_directory_privacy_and_parent_access(
+        self,
+    ) -> None:
+        """Paged account directories require admin access; notes check their parent."""
+
+        for actor in ("employee", "engineer", "admin"):
+            await self.request(
+                actor, "GET", "/users/grid", 200 if actor == "admin" else 403
+            )
+            await self.request(
+                actor,
+                "GET",
+                "/engineer-profiles/grid",
+                200 if actor == "admin" else 403,
+            )
+            for path in (
+                "/buildings/grid",
+                "/floors/grid",
+                "/seats/grid",
+            ):
+                await self.request(actor, "GET", path, 200)
+            await self.request(
+                actor, "GET", f"/incidents/{self.reports['assigned']}/notes/grid", 200
+            )
+            await self.request(
+                actor,
+                "GET",
+                f"/incidents/{self.reports['other']}/notes/grid",
+                200 if actor == "admin" else 403,
+            )
