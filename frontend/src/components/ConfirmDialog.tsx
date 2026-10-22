@@ -18,6 +18,7 @@ interface ConfirmProps {
   onConfirm: () => void
   onClose: () => void
   embedded?: boolean
+  confirmDisabled?: boolean
 }
 
 /** Confirm a concrete deletion or capability change and preserve failures for retry. */
@@ -29,6 +30,7 @@ export function ConfirmDialog({
   onConfirm,
   onClose,
   embedded = false,
+  confirmDisabled = false,
 }: ConfirmProps) {
   const content = (
     <>
@@ -39,13 +41,18 @@ export function ConfirmDialog({
             {error}
           </Alert>
         )}
-        <DialogContentText>{description}</DialogContentText>
+        <DialogContentText sx={{ whiteSpace: 'pre-line' }}>{description}</DialogContentText>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="contained" color="error" onClick={onConfirm} disabled={busy}>
+        <Button
+          variant="contained"
+          color="error"
+          onClick={onConfirm}
+          disabled={busy || confirmDisabled}
+        >
           {busy ? 'Working…' : 'Confirm'}
         </Button>
       </DialogActions>
@@ -74,4 +81,5 @@ ConfirmDialog.propTypes = {
   onConfirm: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
   embedded: PropTypes.bool,
+  confirmDisabled: PropTypes.bool,
 }

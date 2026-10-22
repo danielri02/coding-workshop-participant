@@ -59,7 +59,8 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
               ? 'Remove admin access?'
               : 'Grant admin access?'
         }
-        description={`Confirm this change to ${resource.singular} #${actions.confirmation.row.id}.`}
+        description={actions.confirmationDescription}
+        confirmDisabled={!actions.confirmationReady}
         busy={actions.busy}
         error={actions.error}
         onClose={() => actions.setConfirmation(null)}

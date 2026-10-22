@@ -1,4 +1,7 @@
 import { useCallback, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useApiQuery } from './useApiQuery'
+import { deletionWarning } from '../resources/deletion'
 import { useRecordDialogs } from '../dialogs/context'
 import { useAuth } from '../auth/context'
 import type { AdminOutlet } from '../components/AdminLayout'
@@ -7,7 +10,7 @@ import type { ResourceDefinition } from '../resources/definitions'
 import { editorForm, type Editor } from '../resources/incidentActions'
 import { api, errorMessage } from '../services/client'
 import { isUser } from '../services/authContracts'
-import type { AdminRow, ApiRecord, User } from '../types'
+import type { AdminRow, ApiRecord, DeletionPreview, User } from '../types'
 
 /** Own mutations and dialog state without coupling them to grid presentation. */
 export function useResourceActions(
@@ -15,7 +18,8 @@ export function useResourceActions(
   scope: number,
   changed: AdminOutlet['changed'],
 ) {
-  const { user, setAccount, logout } = useAuth()
+  const { user, setAccount, logout, refreshUser } = useAuth()
+  const client = useQueryClient()
   const { openRecord, openCollection } = useRecordDialogs()
   const title = resource.singular[0].toUpperCase() + resource.singular.slice(1)
   const [editor, setEditor] = useState<Editor | null>(null)
@@ -25,6 +29,27 @@ export function useResourceActions(
   } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const previewPath =
+    confirmation?.action === 'delete'
+      ? `/deletions${resource.endpoint}/${confirmation.row.id}`
+      : null
+  const preview = useApiQuery<DeletionPreview | null>(previewPath, null)
+  const confirmationReady =
+    confirmation?.action !== 'delete' ||
+    Boolean(
+      !preview.loading &&
+      !preview.error &&
+      preview.data &&
+      preview.data.resource === resource.endpoint.slice(1) &&
+      preview.data.record_id === confirmation.row.id,
+    )
+  const confirmationDescription =
+    confirmation?.action === 'delete'
+      ? confirmationReady && preview.data
+        ? deletionWarning(preview.data)
+        : 'Loading the records affected by this deletion…'
+      : `Change administrator access for ${String(confirmation?.row.name)}?${confirmation?.row.id === user?.id && confirmation?.row.is_admin ? ' Your account will leave the admin workspace.' : ''}`
+
   const action = useCallback(
     (command: RowAction, row: AdminRow) => {
       setError('')
@@ -62,13 +87,16 @@ export function useResourceActions(
   }
 
   const confirm = async () => {
-    if (!confirmation) return
+    if (!confirmation || !confirmationReady) return
     setBusy(true)
     setError('')
     try {
       const { row, action: command } = confirmation
       if (command === 'delete')
-        await api<void>(`${resource.endpoint}/${row.id}`, { method: 'DELETE' })
+        await api<void>(
+          `${resource.endpoint}/${row.id}?confirmation=${preview.data!.confirmation_token}`,
+          { method: 'DELETE' },
+        )
       else {
         const saved = await api<User>(
           `/users/${row.id}/admin`,
@@ -86,8 +114,11 @@ export function useResourceActions(
       if (resource.key === 'users' && row.id === user?.id) {
         if (command === 'delete') await logout()
       }
+      if (command === 'delete' && resource.key === 'engineers' && row.id === user?.id)
+        await refreshUser()
     } catch (failure) {
       setError(errorMessage(failure))
+      if (previewPath) void client.invalidateQueries({ queryKey: ['api', previewPath] })
     } finally {
       setBusy(false)
     }
@@ -100,7 +131,9 @@ export function useResourceActions(
     confirmation,
     setConfirmation,
     busy,
-    error,
+    error: error || (confirmation?.action === 'delete' ? preview.error : ''),
+    confirmationReady,
+    confirmationDescription,
     action,
     save,
     confirm,

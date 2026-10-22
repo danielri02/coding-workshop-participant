@@ -21,7 +21,16 @@ test.beforeEach(async ({ request }) => {
 })
 
 test.afterEach(async ({ request }) => {
-  for (const path of cleanup) await request.delete(`${apiUrl}${path}`, { headers })
+  for (const path of cleanup) {
+    const preview = await request.get(`${apiUrl}/deletions${path}`, { headers })
+    if (preview.status() === 404) continue
+    expect(preview.ok(), await preview.text()).toBeTruthy()
+    const deleted = await request.delete(`${apiUrl}${path}`, {
+      headers,
+      params: { confirmation: (await preview.json()).confirmation_token },
+    })
+    expect(deleted.status(), await deleted.text()).toBe(204)
+  }
   await request.post(`${apiUrl}/auth/logout`, { data: { refresh_token: refreshToken } })
 })
 
@@ -91,7 +100,8 @@ async function remove(page: Page, resource: string, id: number) {
   await expect(page.getByRole('dialog')).toBeVisible()
   const [response] = await Promise.all([
     page.waitForResponse(
-      (result) => result.request().method() === 'DELETE' && result.url().endsWith(`/${id}`),
+      (result) =>
+        result.request().method() === 'DELETE' && new URL(result.url()).pathname.endsWith(`/${id}`),
     ),
     page.getByRole('dialog').getByRole('button', { name: 'Confirm', exact: true }).click(),
   ])
@@ -636,11 +646,13 @@ test('incident grid defaults to newest first and filters assignment with server 
       return (
         browserPath(url) === '/incidents/grid' &&
         url.searchParams.get('unassigned') === String(unassigned) &&
+        url.searchParams.get('search') === suffix &&
         url.searchParams.get('page') === '0'
       )
     })
-    await page.getByRole('combobox', { name: 'Assignment', exact: true }).click()
+    await page.getByRole('combobox', { name: 'Quick view', exact: true }).click()
     await page.getByRole('option', { name: option, exact: true }).click()
+    await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
     const response = await filtered
     expect(response.ok()).toBeTruthy()
     const data = await response.json()
@@ -652,8 +664,9 @@ test('incident grid defaults to newest first and filters assignment with server 
     ).toBeTruthy()
     await expect(page.getByText('1–6 of 6', { exact: true })).toBeVisible()
   }
-  await page.getByRole('combobox', { name: 'Assignment', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Quick view', exact: true }).click()
   await page.getByRole('option', { name: 'All incidents', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search incidents' }).fill(suffix)
   await expect(page.getByText('1–10 of 12', { exact: true })).toBeVisible()
   const sorted = page.waitForResponse((response) => {
     const url = new URL(response.url())
@@ -730,7 +743,7 @@ test('admin incident quick views reset stale filters and expose workflow reasons
     ['Escalated', 'escalated', 'true', 'Escalation reason'],
     ['Ready to close', 'status', 'Resolved', ''],
     ['Awaiting acceptance', 'status', 'Assigned', ''],
-    ['Needs assignment', 'unassigned', 'true', ''],
+    ['Unassigned', 'unassigned', 'true', ''],
   ]) {
     const loaded = page.waitForResponse((response) => {
       const url = new URL(response.url())
@@ -1928,4 +1941,110 @@ test('an admin without an engineer profile can switch to employee view and canno
   await expect(page.getByRole('combobox', { name: 'Workspace', exact: true })).toBeHidden()
   await page.goto('/admin/incidents')
   await expect(page).toHaveURL(/\/employee\/incidents$/)
+})
+
+test('notes incident picker searches server results by title, description and exact ID', async ({
+  request,
+  page,
+}) => {
+  const suffix = `picker${Date.now()}`
+  const building = (await (await request.get(`${apiUrl}/buildings`, { headers })).json())[0]
+  const created = await request.post(`${apiUrl}/incidents`, {
+    headers,
+    data: {
+      title: `${suffix} older ticket`,
+      description: `Description ${suffix}needle`,
+      building_id: building.id,
+      category: 'Other',
+    },
+  })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const incident = await created.json()
+  cleanup.unshift(`/incidents/${incident.id}`)
+  const noteResponse = await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+    headers,
+    data: { body: `${suffix} conversation` },
+  })
+  expect(noteResponse.ok()).toBeTruthy()
+  const reads: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'GET') reads.push(browserPath(new URL(request.url())))
+  })
+  await page.goto('/admin/notes')
+  await signIn(page)
+  const picker = page.getByRole('combobox', { name: 'Incident', exact: true })
+  for (const term of [suffix, `${suffix}needle`, `#${incident.id}`]) {
+    await picker.fill(term)
+    await page.getByRole('option', { name: new RegExp(`#${incident.id} · ${suffix}`) }).click()
+    await expect(page).toHaveURL(new RegExp(`incident=${incident.id}`))
+    await expect(
+      page.getByRole('grid').getByText(`${suffix} conversation`, { exact: true }),
+    ).toBeVisible()
+    await picker.focus()
+    await page.getByRole('button', { name: 'Clear', exact: true }).click()
+    await expect(page).not.toHaveURL(/incident=/)
+  }
+  expect(reads).not.toContain('/incidents')
+  await page.goto(`/admin/notes?incident=${incident.id}`)
+  await expect(picker).toHaveValue(new RegExp(`#${incident.id} · ${suffix}`))
+  await expect(
+    page.getByRole('grid').getByText(`${suffix} conversation`, { exact: true }),
+  ).toBeVisible()
+})
+
+test('admin cascade deletion warns, cancels and rejects a stale confirmation before deleting', async ({
+  request,
+  page,
+}) => {
+  const suffix = `cascade${Date.now()}`
+  const create = async (path: string, data: Record<string, unknown>) => {
+    const response = await request.post(`${apiUrl}${path}`, { headers, data })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    return response.json()
+  }
+  const building = await create('/buildings', { name: suffix })
+  cleanup.unshift(`/buildings/${building.id}`)
+  const floor = await create('/floors', { building_id: building.id, label: '1' })
+  const seat = await create('/seats', { floor_id: floor.id, label: 'A' })
+  const incident = await create('/incidents', {
+    title: suffix,
+    description: 'Cascade confirmation',
+    category: 'Other',
+    building_id: building.id,
+    floor_id: floor.id,
+    seat_id: seat.id,
+  })
+  await create(`/incidents/${incident.id}/notes`, { body: 'First note' })
+  await page.goto('/admin/buildings')
+  await signIn(page)
+  await page.getByRole('textbox', { name: 'Search buildings' }).fill(suffix)
+  const start = page.getByRole('button', { name: `Delete buildings ${building.id}`, exact: true })
+  await start.click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('1 building, 1 floor, 1 seat, 1 incident, 1 note')
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect((await request.get(`${apiUrl}/incidents/${incident.id}`, { headers })).status()).toBe(200)
+  await start.click()
+  await expect(dialog.getByRole('button', { name: 'Confirm', exact: true })).toBeEnabled()
+  await create(`/incidents/${incident.id}/notes`, { body: 'Arrived after preview' })
+  await dialog.getByRole('button', { name: 'Confirm', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Review the current deletion preview')
+  await expect(dialog).toContainText('1 building, 1 floor, 1 seat, 1 incident, 2 notes')
+  expect((await request.get(`${apiUrl}/incidents/${incident.id}`, { headers })).status()).toBe(200)
+  const deleted = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'DELETE' &&
+      new URL(response.url()).pathname.endsWith(`/buildings/${building.id}`),
+  )
+  await dialog.getByRole('button', { name: 'Confirm', exact: true }).click()
+  expect((await deleted).status()).toBe(204)
+  await expect(dialog).toBeHidden()
+  await expect(start).toBeHidden()
+  for (const path of [
+    `/buildings/${building.id}`,
+    `/floors/${floor.id}`,
+    `/seats/${seat.id}`,
+    `/incidents/${incident.id}`,
+  ])
+    expect((await request.get(`${apiUrl}${path}`, { headers })).status()).toBe(404)
 })

@@ -342,6 +342,27 @@ access token. Incident list filters cannot expand the caller's read scope.
 Missing/invalid credentials return 401; denied actions return 403. Updates use
 PATCH, validation errors use 422, and conflicting operations use 409.
 
+### Confirmed cascade deletion
+
+Admins can request `GET /deletions/{resource}/{id}` for `users`,
+`engineer-profiles`, `buildings`, `floors`, `seats`, `incidents` or `notes`.
+The preview includes affected business-record counts, the number of retained
+incidents that will be unassigned, and a `confirmation_token`. Pass that token as
+`?confirmation=...` to the resource's existing DELETE endpoint. A deletion with
+dependents or assignments requires confirmation; an unreferenced leaf may still
+be deleted directly. A missing or stale confirmation returns 409 without deleting
+anything. Reload the preview, review the changed impact and confirm again.
+
+Buildings/floors/seats cascade contained facilities, incidents and notes. Users
+cascade their reported incidents, authored notes, engineer profiles and refresh
+sessions. Engineer profile removal preserves other reporters' incidents and notes,
+unassigns their work and resets active incidents to Open; Resolved and Closed keep
+their status. First assignment, acknowledgment and resolution timestamps remain.
+
+Cascades lock affected parents and delete children before parents in one database
+transaction. Existing restrictive foreign keys remain in place as integrity
+checks; this change requires no schema migration, table reset or reseeding.
+
 A new engineer assignment or reassignment sets Assigned and clears an obsolete
 blocked reason. The assigned engineer clicks **Accept and start work** to enter
 In Progress; Assigned cannot transition directly to Blocked or Resolved for an

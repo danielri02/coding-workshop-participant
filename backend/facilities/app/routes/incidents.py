@@ -27,7 +27,12 @@ from ..security.permissions import (
     accessible_incident,
     require_incident_worker,
 )
-from .dependencies import INCIDENT_READ_OPTIONS, DatabaseSession, RecordID
+from .dependencies import (
+    INCIDENT_READ_OPTIONS,
+    DatabaseSession,
+    DeletionConfirmation,
+    RecordID,
+)
 
 router = APIRouter(prefix="/incidents", tags=[Incident.__name__])
 
@@ -235,11 +240,16 @@ async def update_incident_status(
 
 @router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_incident(
-    incident_id: RecordID, session: DatabaseSession, _admin: AdminUser
+    incident_id: RecordID,
+    session: DatabaseSession,
+    _admin: AdminUser,
+    confirmation: DeletionConfirmation = None,
 ) -> Response:
     """Delete an incident and cascade its notes."""
 
     await crud.delete_record(
-        session, await crud.get_record(session, Incident, incident_id, for_update=True)
+        session,
+        await crud.get_record(session, Incident, incident_id, for_update=True),
+        confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

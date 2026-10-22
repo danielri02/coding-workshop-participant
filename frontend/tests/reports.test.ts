@@ -53,7 +53,7 @@ test('reports send only relevant dimensions and apply periods to both summaries 
   assert.equal(params('timings').get('category'), 'HVAC')
   assert.equal(params('timings').get('period'), 'year')
   assert.equal(params('timings').has('building_id'), false)
-  assert.equal(params('locations').get('repeated_only'), 'true')
+  assert.equal(params('locations').has('repeated_only'), false)
   assert.equal(params('locations').has('assignee_id'), false)
   assert.equal(params('categories').get('seat_id'), '7')
   assert.equal(params('categories').has('category'), false)

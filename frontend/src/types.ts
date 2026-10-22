@@ -10,6 +10,7 @@ export type Seat = ApiSchemas['SeatRead']
 export type Incident = ApiSchemas['IncidentRead']
 export type Note = ApiSchemas['NoteRead']
 export type TokenPair = ApiSchemas['TokenPair']
+export type DeletionPreview = ApiSchemas['DeletionPreview']
 export type IncidentPage = ApiSchemas['IncidentPage']
 export type IncidentStatus = ApiSchemas['IncidentStatus']
 

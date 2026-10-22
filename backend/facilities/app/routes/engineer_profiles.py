@@ -10,7 +10,7 @@ from ..schemas import (
     EngineerProfileUpdate,
 )
 from ..security.dependencies import current_user, require_admin
-from .dependencies import DatabaseSession, RecordID
+from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(
     prefix="/engineer-profiles",
@@ -72,12 +72,15 @@ async def update_engineer_profile(
     dependencies=[Depends(require_admin)],
 )
 async def delete_engineer_profile(
-    user_id: RecordID, session: DatabaseSession
+    user_id: RecordID,
+    session: DatabaseSession,
+    confirmation: DeletionConfirmation = None,
 ) -> Response:
-    """Remove Engineer capability only when no incidents reference the profile."""
+    """Remove Engineer capability, preserving and unassigning its incident work."""
 
     await crud.delete_record(
         session,
         await crud.get_record(session, EngineerProfile, user_id, for_update=True),
+        confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

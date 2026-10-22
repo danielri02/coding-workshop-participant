@@ -8,7 +8,12 @@ from ..models import Note
 from ..schemas import NoteCreate, NoteRead, NoteUpdate
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import accessible_incident
-from .dependencies import NOTE_READ_OPTIONS, DatabaseSession, RecordID
+from .dependencies import (
+    NOTE_READ_OPTIONS,
+    DatabaseSession,
+    DeletionConfirmation,
+    RecordID,
+)
 
 router = APIRouter(tags=[Note.__name__])
 
@@ -83,11 +88,16 @@ async def update_note(
 
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_note(
-    note_id: RecordID, session: DatabaseSession, _admin: AdminUser
+    note_id: RecordID,
+    session: DatabaseSession,
+    _admin: AdminUser,
+    confirmation: DeletionConfirmation = None,
 ) -> Response:
     """Delete an existing note without deleting its incident."""
 
     await crud.delete_record(
-        session, await crud.get_record(session, Note, note_id, for_update=True)
+        session,
+        await crud.get_record(session, Note, note_id, for_update=True),
+        confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -19,3 +19,5 @@ INCIDENT_READ_OPTIONS = (
     selectinload(Incident.assignee).selectinload(EngineerProfile.user),
 )
 NOTE_READ_OPTIONS = (selectinload(Note.author),)
+
+DeletionConfirmation = Annotated[str | None, Query(min_length=64, max_length=64)]

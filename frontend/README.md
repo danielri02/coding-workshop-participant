@@ -237,7 +237,7 @@ ignored by Git.
 
 Grids provide view/edit/delete actions; the row's extra-actions menu handles admin
 access and incident assignment, priority/escalation, status and notes. Notes use an
-incident selector. User creation registers an employee; admin access and Engineer
+searchable incident selector (ID, title or description), with bounded server results. User creation registers an employee; admin access and Engineer
 capability are separate explicit actions. Forms use labeled relationship selects,
 required/length validation, pending states and visible API errors. Parent facility
 associations stay fixed during label edits, matching the API.
@@ -264,8 +264,8 @@ visibility and workflow permissions. Older admin `?record=<id>` links still open
 the dialog, but browsing records no longer changes the URL.
 
 The incident grid defaults to most recently reported first (`created_at desc`).
-Its Assignment selector filters All incidents, Unassigned or Assigned, combining
-with text search and other grid filters. The incident grid API is
+Its Quick view selector includes Unassigned and Assigned alongside workflow views.
+Each preset resets stale filters and search; further search and grid filters refine the view. The incident grid API is
 `GET /incidents/grid`; its pagination, filtering and sort parameters are documented
 in `../backend/README.md`. MUI's zero-based `page` and
 `pageSize` map to `page` and `page_size`, and the response's `row_count` maps to
@@ -386,3 +386,12 @@ To remove all deployed resources (including frontend):
 ```
 
 **Warning**: This removes all infra resources. Cannot be undone.
+
+Admin delete confirmations show affected record counts before enabling Confirm.
+Facilities remove their contained locations, incidents and notes. User deletion
+removes their reports, authored notes, engineer profile and sign-in sessions.
+Deleting an engineer profile preserves assigned incidents and notes, unassigns the
+incidents, and returns active work to Open; Resolved and Closed statuses remain.
+If affected records change after the preview, review the updated counts and confirm
+again. Location reports include all matching locations; the repeated-only switch
+has been removed.

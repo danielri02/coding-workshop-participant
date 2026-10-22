@@ -22,6 +22,7 @@ import type {
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import PropTypes from 'prop-types'
 import type { AdminOutlet } from '../components/AdminLayout'
+import { IncidentPicker } from '../components/IncidentPicker'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useRecordDialogs } from '../dialogs/context'
 import { RecordFormDialog } from '../components/RecordFormDialog'
@@ -70,10 +71,11 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     setPagination((previous) => ({ ...previous, page: 0 }))
   }
   const {
-    user,
     editor,
     setEditor,
     confirmation,
+    confirmationReady,
+    confirmationDescription,
     setConfirmation,
     busy,
     error,
@@ -98,8 +100,11 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     )
   }, [detailId, openRecord, resource.key, setSearchParams])
   const lookups = useLookups(resource)
-  const incidents = useApiQuery<Incident[]>(resource.key === 'notes' ? '/incidents' : null, [])
-  const selectedIncident = incidents.data.find((row) => row.id === scope)
+  const incident = useApiQuery<Incident | null>(
+    resource.key === 'notes' && scope ? `/incidents/${scope}` : null,
+    null,
+  )
+  const selectedIncident = incident.data
   const server = resource.key === 'incidents'
   const path = server
     ? incidentQuery(pagination, sorting, filters, debouncedSearch, {
@@ -116,8 +121,8 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   )
   const rowCount = Array.isArray(query.data) ? 0 : query.data.row_count
   const loading =
-    query.loading || lookups.loading || incidents.loading || (server && search !== debouncedSearch)
-  const failure = query.error || lookups.error || incidents.error
+    query.loading || lookups.loading || incident.loading || (server && search !== debouncedSearch)
+  const failure = query.error || lookups.error || incident.error
   const columns = useMemo(() => resource.columns(lookups.data), [resource, lookups.data])
   const canAddNotes = noteStatuses.some((status) => status === selectedIncident?.status)
   return (
@@ -147,24 +152,15 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
       </Stack>
       {resource.key === 'notes' && (
         <Paper variant="outlined" sx={{ p: 2.5 }}>
-          <TextField
-            select
-            fullWidth
-            label="Incident"
-            value={selectedIncident ? scope : ''}
-            disabled={incidents.loading}
-            onChange={(event) => {
-              setSearchParams({ incident: event.target.value })
+          <IncidentPicker
+            id={scope || null}
+            value={selectedIncident}
+            onChange={(selected) => {
+              setSearchParams(selected ? { incident: String(selected.id) } : {})
+              setSearch('')
               setPagination((previous) => ({ ...previous, page: 0 }))
             }}
-            helperText="Choose the incident whose shared conversation you want to manage."
-          >
-            {incidents.data.map((row) => (
-              <MenuItem key={row.id} value={row.id}>
-                #{row.id} · {String(row.title)} · {String(row.status)}
-              </MenuItem>
-            ))}
-          </TextField>
+          />
         </Paper>
       )}
       {resource.key === 'notes' && selectedIncident && !canAddNotes && (
@@ -235,24 +231,6 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
                   Custom
                 </MenuItem>
               )}
-            </TextField>
-          )}
-          {server && (
-            <TextField
-              select
-              label="Assignment"
-              size="small"
-              value={assignment}
-              sx={{ minWidth: 160 }}
-              onChange={(event) => {
-                customize()
-                setAssignment(event.target.value)
-                setPagination((previous) => ({ ...previous, page: 0 }))
-              }}
-            >
-              <MenuItem value="all">All incidents</MenuItem>
-              <MenuItem value="unassigned">Unassigned</MenuItem>
-              <MenuItem value="assigned">Assigned</MenuItem>
             </TextField>
           )}
           <Button
@@ -338,11 +316,8 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
                 ? 'Remove admin access?'
                 : 'Grant admin access?'
           }
-          description={
-            confirmation.action === 'delete'
-              ? `Delete ${String(confirmation.row.name || confirmation.row.title || confirmation.row.label || `record #${confirmation.row.id}`)}? This cannot be undone.`
-              : `Change administrator access for ${String(confirmation.row.name)}?${confirmation.row.id === user?.id && confirmation.row.is_admin ? ' Your account will leave the admin workspace.' : ''}`
-          }
+          description={confirmationDescription}
+          confirmDisabled={!confirmationReady}
           busy={busy}
           error={error}
           onClose={() => setConfirmation(null)}

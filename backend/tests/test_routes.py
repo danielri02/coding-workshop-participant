@@ -138,6 +138,263 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    async def confirmed_delete(self, path: str):
+        """Explicitly confirm the current impact preview, as the admin UI does."""
+
+        preview = await self.client.get(f"/deletions{path}")
+        self.assertEqual(preview.status_code, 200, preview.text)
+        return await self.client.delete(
+            path, params={"confirmation": preview.json()["confirmation_token"]}
+        )
+
+    async def test_facility_cascades_delete_only_contained_records(self) -> None:
+        """Each location level cascades descendants, preserving siblings and people."""
+
+        untouched = await self.create_report(
+            building_id=self.other_building_id,
+            floor_id=self.other_floor_id,
+            seat_id=self.other_seat_id,
+        )
+        for kind in ("buildings", "floors", "seats"):
+            with self.subTest(resource=kind):
+                building = (
+                    await self.client.post("/buildings", json={"name": kind})
+                ).json()["id"]
+                floor = (
+                    await self.client.post(
+                        "/floors", json={"building_id": building, "label": "1"}
+                    )
+                ).json()["id"]
+                seat = (
+                    await self.client.post(
+                        "/seats", json={"floor_id": floor, "label": "A"}
+                    )
+                ).json()["id"]
+                report = await self.create_report(
+                    building_id=building, floor_id=floor, seat_id=seat
+                )
+                note = (
+                    await self.client.post(
+                        f"/incidents/{report['id']}/notes",
+                        json={"body": "Remove with location"},
+                    )
+                ).json()["id"]
+                root = {"buildings": building, "floors": floor, "seats": seat}[kind]
+                path = f"/{kind}/{root}"
+                preview = (await self.client.get(f"/deletions{path}")).json()
+                expected = {"incidents": 1, "notes": 1, "seats": 1}
+                if kind != "seats":
+                    expected["floors"] = 1
+                if kind == "buildings":
+                    expected["buildings"] = 1
+                self.assertEqual(preview["counts"], expected)
+                self.assertEqual((await self.client.delete(path)).status_code, 409)
+                self.assertEqual(
+                    (await self.client.get(f"/notes/{note}")).status_code, 200
+                )
+                deleted = await self.client.delete(
+                    path, params={"confirmation": preview["confirmation_token"]}
+                )
+                self.assertEqual(deleted.status_code, 204, deleted.text)
+                for removed in (
+                    path,
+                    f"/seats/{seat}",
+                    f"/incidents/{report['id']}",
+                    f"/notes/{note}",
+                ):
+                    self.assertEqual((await self.client.get(removed)).status_code, 404)
+                if kind != "buildings":
+                    self.assertEqual(
+                        (await self.client.get(f"/buildings/{building}")).status_code,
+                        200,
+                    )
+                if kind == "seats":
+                    self.assertEqual(
+                        (await self.client.get(f"/floors/{floor}")).status_code, 200
+                    )
+                self.assertEqual(
+                    (
+                        await self.client.get(f"/incidents/{untouched['id']}")
+                    ).status_code,
+                    200,
+                )
+                self.assertEqual(
+                    (await self.client.get(f"/users/{self.reporter_id}")).status_code,
+                    200,
+                )
+
+    async def test_cascade_rejects_changed_preview_without_partial_deletion(
+        self,
+    ) -> None:
+        """New dependent records require a new explicit confirmation."""
+
+        report = await self.create_report()
+        path = f"/incidents/{report['id']}"
+        preview = (await self.client.get(f"/deletions{path}")).json()
+        self.assertEqual(preview["counts"], {"incidents": 1})
+        note = (
+            await self.client.post(
+                f"{path}/notes", json={"body": "Added after preview"}
+            )
+        ).json()["id"]
+        response = await self.client.delete(
+            path, params={"confirmation": preview["confirmation_token"]}
+        )
+        self.assertEqual(response.status_code, 409)
+        for retained in (path, f"/notes/{note}"):
+            self.assertEqual((await self.client.get(retained)).status_code, 200)
+        self.assertEqual((await self.confirmed_delete(path)).status_code, 204)
+
+    async def test_engineer_deletion_unassigns_work_and_preserves_history(self) -> None:
+        """Profile removal keeps incidents, notes and milestones across every status."""
+
+        reports = []
+        for status in (
+            "Open",
+            "Assigned",
+            "In Progress",
+            "Blocked",
+            "Resolved",
+            "Closed",
+        ):
+            report = await self.create_report()
+            path = f"/incidents/{report['id']}"
+            response = await self.client.patch(
+                f"{path}/assignment", json={"assignee_id": self.engineer_id}
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            response = await self.client.patch(
+                f"{path}/status",
+                json={
+                    "status": status,
+                    **(
+                        {"blocked_reason": "Awaiting parts"}
+                        if status == "Blocked"
+                        else {}
+                    ),
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            reports.append(response.json())
+        note = (
+            await self.client.post(
+                f"/incidents/{reports[0]['id']}/notes",
+                headers={
+                    "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+                },
+                json={"body": "Engineer note"},
+            )
+        ).json()["id"]
+        path = f"/engineer-profiles/{self.engineer_id}"
+        preview = (await self.client.get(f"/deletions{path}")).json()
+        self.assertEqual(preview["counts"], {"engineers": 1})
+        self.assertEqual(preview["unassigned_incidents"], 6)
+        self.assertEqual((await self.confirmed_delete(path)).status_code, 204)
+        for report in reports:
+            saved = (await self.client.get(f"/incidents/{report['id']}")).json()
+            self.assertIsNone(saved["assignee_id"])
+            self.assertIsNone(saved["blocked_reason"])
+            self.assertEqual(
+                saved["status"],
+                report["status"]
+                if report["status"] in {"Resolved", "Closed"}
+                else "Open",
+            )
+            for field in ("assigned_at", "acknowledged_at", "resolved_at"):
+                self.assertEqual(saved[field], report[field])
+        self.assertEqual((await self.client.get(f"/notes/{note}")).status_code, 200)
+        account = (await self.client.get(f"/users/{self.engineer_id}")).json()
+        self.assertIsNone(account["engineer_profile"])
+
+    async def test_user_deletion_cascades_own_reports_notes_and_profile_only(
+        self,
+    ) -> None:
+        """An account cascade removes its content while retaining others' assigned work."""
+
+        own_response = await self.client.post(
+            "/incidents",
+            json=self.report_data(),
+            headers={
+                "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+            },
+        )
+        self.assertEqual(own_response.status_code, 201, own_response.text)
+        own = own_response.json()
+        other = await self.create_report()
+        path = f"/incidents/{other['id']}"
+        await self.client.patch(
+            f"{path}/assignment", json={"assignee_id": self.engineer_id}
+        )
+        removed_notes = []
+        for incident_id, author_id in (
+            (own["id"], self.reporter_id),
+            (own["id"], self.engineer_id),
+            (other["id"], self.engineer_id),
+        ):
+            response = await self.client.post(
+                f"/incidents/{incident_id}/notes",
+                headers={
+                    "Authorization": f"Bearer {create_access_token(author_id, self.settings)}"
+                },
+                json={"body": "Dependent note"},
+            )
+            self.assertEqual(response.status_code, 201, response.text)
+            removed_notes.append(response.json()["id"])
+        kept_note = (
+            await self.client.post(f"{path}/notes", json={"body": "Keep me"})
+        ).json()["id"]
+        user_path = f"/users/{self.engineer_id}"
+        preview = (await self.client.get(f"/deletions{user_path}")).json()
+        self.assertEqual(
+            preview["counts"], {"users": 1, "engineers": 1, "incidents": 1, "notes": 3}
+        )
+        self.assertEqual(preview["unassigned_incidents"], 1)
+        self.assertEqual((await self.confirmed_delete(user_path)).status_code, 204)
+        for removed in (
+            user_path,
+            f"/engineer-profiles/{self.engineer_id}",
+            f"/incidents/{own['id']}",
+            *(f"/notes/{note}" for note in removed_notes),
+        ):
+            self.assertEqual((await self.client.get(removed)).status_code, 404)
+        saved = (await self.client.get(path)).json()
+        self.assertIsNone(saved["assignee_id"])
+        self.assertEqual(saved["status"], "Open")
+        self.assertEqual(
+            (await self.client.get(f"/notes/{kept_note}")).status_code, 200
+        )
+
+    async def test_deletion_preview_is_admin_only_and_validates_targets(self) -> None:
+        """Confirmation tokens do not grant deletion rights to ordinary accounts."""
+
+        path = f"/buildings/{self.building_id}"
+        preview = (await self.client.get(f"/deletions{path}")).json()
+        engineer_headers = {
+            "Authorization": f"Bearer {create_access_token(self.engineer_id, self.settings)}"
+        }
+        self.assertEqual(
+            (
+                await self.client.get(f"/deletions{path}", headers=engineer_headers)
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            (
+                await self.client.delete(
+                    path,
+                    headers=engineer_headers,
+                    params={"confirmation": preview["confirmation_token"]},
+                )
+            ).status_code,
+            403,
+        )
+        for path, status in (
+            ("/deletions/invalid/1", 422),
+            ("/deletions/buildings/0", 422),
+            ("/deletions/buildings/2147483647", 404),
+        ):
+            self.assertEqual((await self.client.get(path)).status_code, status)
+
     async def test_unexpected_read_failure_is_sanitized_json_with_cors(self) -> None:
         """Database outages remain visible to browsers without exposing SQL data."""
 
@@ -709,7 +966,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             )
         notes = (await self.client.get(path)).json()
         self.assertEqual(
-            (await self.client.delete(f"/incidents/{report['id']}")).status_code, 204
+            (await self.confirmed_delete(f"/incidents/{report['id']}")).status_code, 204
         )
         for note in notes:
             self.assertEqual(

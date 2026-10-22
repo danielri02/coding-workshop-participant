@@ -16,7 +16,6 @@ export interface ReportFilters {
   building_id?: string
   floor_id?: string
   seat_id?: string
-  repeated_only?: string
 }
 
 export type Scope = ApiSchemas['ReportScope']
@@ -46,7 +45,7 @@ export function reportQuery(
     key === 'categories'
       ? ['building_id', 'floor_id', 'seat_id']
       : key === 'locations'
-        ? ['category', 'repeated_only']
+        ? ['category']
         : key === 'timings'
           ? ['category', 'assignee_id']
           : []

@@ -11,7 +11,7 @@ from ..schemas import UserAdminUpdate, UserCreate, UserRead, UserUpdate
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.passwords import hash_password
 from ..security.permissions import require_account_access
-from .dependencies import DatabaseSession, RecordID
+from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(prefix="/users", tags=[User.__name__])
 USER_OPTIONS = (selectinload(User.engineer_profile),)
@@ -79,11 +79,16 @@ async def update_user_admin(
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
-    user_id: RecordID, session: DatabaseSession, _admin: AdminUser
+    user_id: RecordID,
+    session: DatabaseSession,
+    _admin: AdminUser,
+    confirmation: DeletionConfirmation = None,
 ) -> Response:
-    """Delete an employee only when no profiles, reports, or notes reference them."""
+    """Delete a confirmed employee cascade, preserving other reporters’ assigned work."""
 
     await crud.delete_record(
-        session, await crud.get_record(session, User, user_id, for_update=True)
+        session,
+        await crud.get_record(session, User, user_id, for_update=True),
+        confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

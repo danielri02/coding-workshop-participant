@@ -109,6 +109,21 @@ export interface components {
        */
       upgraded: boolean
     }
+    /** DeletionPreview */
+    DeletionPreview: {
+      /** Confirmation Token */
+      confirmation_token: string
+      /** Counts */
+      counts: {
+        [key: string]: number
+      }
+      /** Record Id */
+      record_id: number
+      /** Resource */
+      resource: string
+      /** Unassigned Incidents */
+      unassigned_incidents: number
+    }
     /**
      * EngineerProfileCreate
      * @description Admin-only promotion of an existing employee to an engineer.

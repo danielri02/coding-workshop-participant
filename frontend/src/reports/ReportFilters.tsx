@@ -1,4 +1,4 @@
-import { Alert, FormControlLabel, MenuItem, Stack, Switch, TextField } from '@mui/material'
+import { Alert, MenuItem, Stack, TextField } from '@mui/material'
 import { useAuth } from '../auth/context'
 import { categories } from '../generated/domain'
 import { useLookups } from '../hooks/useLookups'
@@ -115,17 +115,6 @@ export function ReportFilters({ report, level, filters, onChange }: Props) {
                 'All seats',
               )}
           </>
-        )}
-        {report === 'locations' && (
-          <FormControlLabel
-            control={
-              <Switch
-                checked={filters.repeated_only === 'true'}
-                onChange={(_, checked) => onChange({ repeated_only: checked ? 'true' : '' })}
-              />
-            }
-            label="Repeated locations only (2+)"
-          />
         )}
       </Stack>
     </>

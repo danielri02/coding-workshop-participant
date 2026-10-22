@@ -6,7 +6,7 @@ from ..database import crud
 from ..models import Building
 from ..schemas import BuildingCreate, BuildingRead, BuildingUpdate
 from ..security.dependencies import current_user, require_admin
-from .dependencies import DatabaseSession, RecordID
+from .dependencies import DatabaseSession, DeletionConfirmation, RecordID
 
 router = APIRouter(
     prefix="/buildings", tags=[Building.__name__], dependencies=[Depends(current_user)]
@@ -60,10 +60,16 @@ async def update_building(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_admin)],
 )
-async def delete_building(building_id: RecordID, session: DatabaseSession) -> Response:
-    """Delete an unreferenced building."""
+async def delete_building(
+    building_id: RecordID,
+    session: DatabaseSession,
+    confirmation: DeletionConfirmation = None,
+) -> Response:
+    """Delete a building and its contained floors, seats, incidents and notes."""
 
     await crud.delete_record(
-        session, await crud.get_record(session, Building, building_id, for_update=True)
+        session,
+        await crud.get_record(session, Building, building_id, for_update=True),
+        confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

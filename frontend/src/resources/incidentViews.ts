@@ -12,7 +12,7 @@ export const defaultIncidentColumns: GridColumnVisibilityModel = {
 interface IncidentView {
   id: string
   label: string
-  assignment?: 'unassigned'
+  assignment?: 'unassigned' | 'assigned'
   filter?: GridFilterModel['items'][number]
   show?: 'blocked_reason' | 'escalation_reason'
 }
@@ -21,10 +21,10 @@ export const incidentViews: IncidentView[] = [
   { id: 'all', label: 'All incidents' },
   {
     id: 'unassigned',
-    label: 'Needs assignment',
+    label: 'Unassigned',
     assignment: 'unassigned',
-    filter: { field: 'status', operator: 'is', value: 'Open' },
   },
+  { id: 'with-assignee', label: 'Assigned', assignment: 'assigned' },
   {
     id: 'assigned',
     label: 'Awaiting acceptance',

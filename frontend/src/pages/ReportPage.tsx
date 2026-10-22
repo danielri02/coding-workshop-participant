@@ -22,11 +22,12 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
   const [params, setParams] = useSearchParams()
   const client = useQueryClient()
   useEffect(() => {
-    if (!params.has('scope')) return
+    if (!params.has('scope') && !params.has('repeated_only')) return
     setParams(
       (previous) => {
         const next = new URLSearchParams(previous)
         next.delete('scope')
+        next.delete('repeated_only')
         return next
       },
       { replace: true },
@@ -37,9 +38,10 @@ export function ReportPage({ definition }: { definition: ReportDefinition }) {
   const filters: FilterValues = {
     period: periods.find((item) => item.value === params.get('period'))?.value || 'month',
     ...Object.fromEntries(
-      ['category', 'assignee_id', 'building_id', 'floor_id', 'seat_id', 'repeated_only'].map(
-        (name) => [name, params.get(name) || ''],
-      ),
+      ['category', 'assignee_id', 'building_id', 'floor_id', 'seat_id'].map((name) => [
+        name,
+        params.get(name) || '',
+      ]),
     ),
   }
   const search = params.get('search') || ''

@@ -6,7 +6,12 @@ from ..database import crud
 from ..models import Floor, Seat
 from ..schemas import SeatCreate, SeatRead, SeatUpdate
 from ..security.dependencies import current_user, require_admin
-from .dependencies import DatabaseSession, OptionalQueryID, RecordID
+from .dependencies import (
+    DatabaseSession,
+    DeletionConfirmation,
+    OptionalQueryID,
+    RecordID,
+)
 
 router = APIRouter(
     prefix="/seats", tags=[Seat.__name__], dependencies=[Depends(current_user)]
@@ -62,10 +67,16 @@ async def update_seat(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_admin)],
 )
-async def delete_seat(seat_id: RecordID, session: DatabaseSession) -> Response:
-    """Delete an unreferenced seat."""
+async def delete_seat(
+    seat_id: RecordID,
+    session: DatabaseSession,
+    confirmation: DeletionConfirmation = None,
+) -> Response:
+    """Delete a seat and its incidents and notes."""
 
     await crud.delete_record(
-        session, await crud.get_record(session, Seat, seat_id, for_update=True)
+        session,
+        await crud.get_record(session, Seat, seat_id, for_update=True),
+        confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

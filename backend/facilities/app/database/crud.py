@@ -11,6 +11,7 @@ from sqlalchemy.orm.interfaces import ORMOption
 from sqlalchemy.sql import SQLColumnExpression
 
 from ..models import Base, Building, Floor, Seat
+from .deletion import delete_with_dependents
 
 Model = TypeVar("Model", bound=Base)
 
@@ -135,11 +136,12 @@ async def update_record(
     return await get_record(session, type(record), record_id, options=options)
 
 
-async def delete_record(session: AsyncSession, record: Base) -> None:
-    """Delete one record, honoring database cascades and reference restrictions."""
+async def delete_record(
+    session: AsyncSession, record: Base, *, confirmation: str | None = None
+) -> None:
+    """Apply the confirmed application cascade without altering database constraints."""
 
-    await session.delete(record)
-    await commit(session)
+    await delete_with_dependents(session, record, confirmation)
 
 
 async def validate_location(
