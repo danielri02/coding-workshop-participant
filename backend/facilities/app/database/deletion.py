@@ -63,55 +63,59 @@ async def plan_deletion(
             statement = statement.with_for_update()
         return list(await session.scalars(statement))
 
-    records["users"] = [record_id] if model is User else []
-    records["engineers"] = (
-        await ids(EngineerProfile, EngineerProfile.user_id == record_id)
-        if model in {User, EngineerProfile}
-        else []
-    )
-    records["buildings"] = [record_id] if model is Building else []
-    records["floors"] = (
-        await ids(Floor, Floor.building_id == record_id)
-        if model is Building
-        else [record_id]
-        if model is Floor
-        else []
-    )
-    records["seats"] = (
-        await ids(Seat, Seat.floor_id.in_(records["floors"]))
-        if records["floors"]
-        else [record_id]
-        if model is Seat
-        else []
-    )
-    incident_condition = {
-        Building: Incident.building_id == record_id,
-        Floor: Incident.floor_id == record_id,
-        Seat: Incident.seat_id == record_id,
-        User: Incident.reporter_id == record_id,
-        Incident: Incident.id == record_id,
-    }.get(model, false())
+    # Start with the selected record, then collect children from parent to child.
+    if model is User:
+        records["users"] = [record_id]
+        records["engineers"] = await ids(
+            EngineerProfile, EngineerProfile.user_id == record_id
+        )
+    elif model is EngineerProfile:
+        records["engineers"] = await ids(
+            EngineerProfile, EngineerProfile.user_id == record_id
+        )
+    elif model is Building:
+        records["buildings"] = [record_id]
+        records["floors"] = await ids(Floor, Floor.building_id == record_id)
+    elif model is Floor:
+        records["floors"] = [record_id]
+    elif model is Seat:
+        records["seats"] = [record_id]
+
+    if records["floors"]:
+        records["seats"] = await ids(Seat, Seat.floor_id.in_(records["floors"]))
+
+    # A deleted account owns its reports. A removed engineer profile only
+    # unassigns work, so it deliberately has no incident-deletion condition.
+    incident_condition = false()
+    if model is Building:
+        incident_condition = Incident.building_id == record_id
+    elif model is Floor:
+        incident_condition = Incident.floor_id == record_id
+    elif model is Seat:
+        incident_condition = Incident.seat_id == record_id
+    elif model is User:
+        incident_condition = Incident.reporter_id == record_id
+    elif model is Incident:
+        incident_condition = Incident.id == record_id
+
     assignment_condition = Incident.assignee_id.in_(records["engineers"])
     # Lock all incident parents in ID order, whether deleted or merely unassigned.
     affected = await ids(Incident, or_(incident_condition, assignment_condition))
-    records["incidents"] = (
-        list(
+    if affected:
+        records["incidents"] = list(
             await session.scalars(
                 select(Incident.id).where(Incident.id.in_(affected), incident_condition)
             )
         )
-        if affected
-        else []
-    )
     unassign = sorted(set(affected) - set(records["incidents"]))
-    records["notes"] = await ids(
-        Note,
-        or_(
-            Note.incident_id.in_(records["incidents"]),
-            Note.author_id.in_(records["users"]),
-            Note.id == record_id if model is Note else false(),
-        ),
-    )
+
+    note_conditions = [
+        Note.incident_id.in_(records["incidents"]),
+        Note.author_id.in_(records["users"]),
+    ]
+    if model is Note:
+        note_conditions.append(Note.id == record_id)
+    records["notes"] = await ids(Note, or_(*note_conditions))
     payload = {
         "resource": resource,
         "record_id": record_id,

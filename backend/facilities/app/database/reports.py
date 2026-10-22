@@ -39,13 +39,23 @@ TICKET_COLUMNS = (
     User.name.label("assignee_name"),
     Incident.created_at,
 )
+
+
+def minutes_since_reported(timestamp):
+    """PostgreSQL extracts elapsed seconds; divide by 60 for the API's minutes."""
+
+    return func.extract("epoch", timestamp - Incident.created_at) / 60
+
+
 DURATIONS = {
-    f"{name}_minutes": func.extract("epoch", column - Incident.created_at) / 60
-    for name, column in (
-        ("assigned", Incident.assigned_at),
-        ("acknowledged", Incident.acknowledged_at),
-        ("resolved", Incident.resolved_at),
-    )
+    "assigned_minutes": minutes_since_reported(Incident.assigned_at),
+    "acknowledged_minutes": minutes_since_reported(Incident.acknowledged_at),
+    "resolved_minutes": minutes_since_reported(Incident.resolved_at),
+}
+TIMING_LABELS = {
+    "assigned_minutes": "First assignment",
+    "acknowledged_minutes": "Acknowledgment",
+    "resolved_minutes": "Resolution",
 }
 SORT_COLUMNS = {
     "id": Incident.id,
@@ -116,26 +126,16 @@ def criteria(user: User, query: ReportQuery, window: dict) -> list:
 async def summary(session: AsyncSession, user: User, scope: ReportScope) -> dict:
     """Count statuses in SQL without loading rows or including another user's work."""
 
-    counts = (
-        (
-            await session.execute(
-                select(
-                    func.count().label("total_count"),
-                    func.count().filter(ACTIVE).label("active_count"),
-                    *[
-                        func.count()
-                        .filter(Incident.status == state)
-                        .label(f"{state.name.lower()}_count")
-                        for state in IncidentStatus
-                    ],
-                )
-                .select_from(Incident)
-                .where(visibility(user, scope))
-            )
-        )
-        .mappings()
-        .one()
-    )
+    columns = [
+        func.count().label("total_count"),
+        func.count().filter(ACTIVE).label("active_count"),
+    ]
+    for state in IncidentStatus:
+        status_count = func.count().filter(Incident.status == state)
+        columns.append(status_count.label(f"{state.name.lower()}_count"))
+    statement = select(*columns).select_from(Incident).where(visibility(user, scope))
+    result = await session.execute(statement)
+    counts = result.mappings().one()
     return {"scope": scope, **counts}
 
 
@@ -228,27 +228,29 @@ async def categories(session: AsyncSession, user: User, query: CategoryQuery) ->
     for field in ("building_id", "floor_id", "seat_id"):
         if (value := getattr(query, field)) is not None:
             conditions.append(getattr(Incident, field) == value)
-    records = (
-        await session.execute(
-            select(Incident.category, func.count(), func.count().filter(ACTIVE))
-            .where(*conditions)
-            .group_by(Incident.category)
+    statement = (
+        select(Incident.category, func.count(), func.count().filter(ACTIVE))
+        .where(*conditions)
+        .group_by(Incident.category)
+    )
+    result = await session.execute(statement)
+    counts = {category: (total, active) for category, total, active in result.all()}
+    total = sum(count[0] for count in counts.values())
+    rows = []
+    for category in IncidentCategory:
+        incident_count, active_count = counts.get(category, (0, 0))
+        percentage = 0
+        if total:
+            percentage = round(incident_count * 100 / total, 2)
+        rows.append(
+            {
+                "id": category.value,
+                "category": category,
+                "incident_count": incident_count,
+                "active_count": active_count,
+                "percentage": percentage,
+            }
         )
-    ).all()
-    counts = {category: (total, active) for category, total, active in records}
-    total = sum(value[0] for value in counts.values())
-    rows = [
-        {
-            "id": category.value,
-            "category": category,
-            "incident_count": counts.get(category, (0, 0))[0],
-            "active_count": counts.get(category, (0, 0))[1],
-            "percentage": round(counts.get(category, (0, 0))[0] * 100 / total, 2)
-            if total
-            else 0,
-        }
-        for category in IncidentCategory
-    ]
     return {
         **window,
         "rows": sorted(rows, key=lambda row: (-row["incident_count"], row["id"])),
@@ -258,41 +260,25 @@ async def categories(session: AsyncSession, user: User, query: CategoryQuery) ->
 async def timing_aggregate(session: AsyncSession, conditions: list) -> dict:
     """Average each reached milestone independently; missing samples remain absent."""
 
-    aggregate = (
-        (
-            await session.execute(
-                select(
-                    func.count().label("total_count"),
-                    *[
-                        expression
-                        for name, duration in DURATIONS.items()
-                        for expression in (
-                            func.count(duration).label(f"{name}_count"),
-                            func.avg(duration).label(name),
-                        )
-                    ],
-                ).where(*conditions)
-            )
-        )
-        .mappings()
-        .one()
-    )
-    return {
-        "total_count": aggregate["total_count"],
-        "milestones": [
+    columns = [func.count().label("total_count")]
+    for name, duration in DURATIONS.items():
+        columns.append(func.count(duration).label(f"{name}_count"))
+        columns.append(func.avg(duration).label(name))
+    statement = select(*columns).where(*conditions)
+    result = await session.execute(statement)
+    aggregate = result.mappings().one()
+
+    milestones = []
+    for name, label in TIMING_LABELS.items():
+        milestones.append(
             {
                 "id": name.removesuffix("_minutes"),
                 "label": label,
                 "sample_count": aggregate[f"{name}_count"],
                 "average_minutes": aggregate[name],
             }
-            for name, label in (
-                ("assigned_minutes", "First assignment"),
-                ("acknowledged_minutes", "Acknowledgment"),
-                ("resolved_minutes", "Resolution"),
-            )
-        ],
-    }
+        )
+    return {"total_count": aggregate["total_count"], "milestones": milestones}
 
 
 async def response_time_summary(session: AsyncSession, conditions: list) -> dict:

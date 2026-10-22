@@ -28,16 +28,44 @@ export type ResourceKey = keyof ResourceRecords
 export type ApiRecord = ResourceRecords[ResourceKey]
 
 /** Common presentation adapter with explicit known fields and a normalized grid ID. */
-export type AdminRow = { id: number } & Partial<
-  User & EngineerProfile & Incident & Floor & Omit<Seat, 'floor_id'> & Note
-> & {
-    is_engineer?: boolean
-    user_name?: string
-    user_email?: string
-    building_name?: string
-    floor_name?: string
-    escalated?: boolean
-  }
+export interface AdminRow {
+  id: number
+  name?: string
+  email?: string
+  is_admin?: boolean
+  engineer_profile?: User['engineer_profile']
+  user_id?: number
+  is_available?: boolean
+  title?: string
+  description?: string
+  status?: IncidentStatus
+  priority?: Incident['priority']
+  category?: Incident['category']
+  reporter_id?: number
+  reporter_name?: string | null
+  assignee_id?: number | null
+  assignee_name?: string | null
+  building_id?: number
+  floor_id?: number | null
+  seat_id?: number | null
+  label?: string
+  created_at?: string
+  assigned_at?: string | null
+  acknowledged_at?: string | null
+  resolved_at?: string | null
+  blocked_reason?: string | null
+  escalation_reason?: string | null
+  incident_id?: number
+  author_id?: number
+  author_name?: string
+  body?: string
+  is_engineer?: boolean
+  user_name?: string
+  user_email?: string
+  building_name?: string
+  floor_name?: string
+  escalated?: boolean
+}
 export type FormFieldName = keyof AdminRow | 'password'
 export type FormRow = Partial<Record<FormFieldName, unknown>>
 export type FormValue = string | number | boolean

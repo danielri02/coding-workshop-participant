@@ -81,16 +81,14 @@ export function editorForm(resource: ResourceDefinition, editor: Editor | null) 
     fields = editor.row?.status ? statusFields(editor.row.status, true) : []
     formRow = editor.row ? { ...editor.row, status: '', blocked_reason: '' } : null
   }
-  const formTitle =
-    editor?.action === 'create'
-      ? `New ${resource.singular}`
-      : editor?.action === 'edit'
-        ? `Edit ${resource.singular}`
-        : editor?.action === 'assignment'
-          ? 'Assign engineer'
-          : editor?.action === 'priority'
-            ? 'Priority and escalation'
-            : 'Change status'
+  const titles = {
+    create: `New ${resource.singular}`,
+    edit: `Edit ${resource.singular}`,
+    assignment: 'Assign engineer',
+    priority: 'Priority and escalation',
+    status: 'Change status',
+  }
+  const formTitle = titles[editor?.action || 'status']
 
   return { fields, formRow, formTitle }
 }

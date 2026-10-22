@@ -20,7 +20,6 @@ import type {
   GridSortModel,
 } from '@mui/x-data-grid'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
-import PropTypes from 'prop-types'
 import type { AdminOutlet } from '../components/AdminLayout'
 import { IncidentPicker } from '../components/IncidentPicker'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -79,6 +78,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     setEditor,
     confirmation,
     confirmationReady,
+    confirmationTitle,
     confirmationDescription,
     setConfirmation,
     busy,
@@ -110,15 +110,14 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   )
   const selectedIncident = incident.data
   const server = resource.key === 'incidents'
-  const path = server
-    ? incidentQuery(pagination, sorting, filters, debouncedSearch, {
-        unassigned: assignment === 'all' ? undefined : assignment === 'unassigned',
-      })
-    : resource.key === 'notes'
-      ? scope
-        ? `/incidents/${scope}/notes`
-        : null
-      : resource.endpoint
+  let path: string | null = resource.endpoint
+  if (server) {
+    path = incidentQuery(pagination, sorting, filters, debouncedSearch, {
+      unassigned: assignment === 'all' ? undefined : assignment === 'unassigned',
+    })
+  } else if (resource.key === 'notes') {
+    path = scope ? `/incidents/${scope}/notes` : null
+  }
   const query = useApiQuery<ApiRecord[] | IncidentPage>(path, [])
   const rows = (Array.isArray(query.data) ? query.data : query.data.rows).map((row) =>
     decorateRow(resource.key, row, lookups.data),
@@ -313,13 +312,7 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
       )}
       {confirmation && (
         <ConfirmDialog
-          title={
-            confirmation.action === 'delete'
-              ? `Delete ${resource.singular}?`
-              : confirmation.row.is_admin
-                ? 'Remove admin access?'
-                : 'Grant admin access?'
-          }
+          title={confirmationTitle}
           description={confirmationDescription}
           confirmDisabled={!confirmationReady}
           busy={busy}
@@ -331,5 +324,3 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
     </Stack>
   )
 }
-
-ResourcePage.propTypes = { resource: PropTypes.object.isRequired }

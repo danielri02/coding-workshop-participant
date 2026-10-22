@@ -255,5 +255,3 @@ export function AdminLayout() {
     </Box>
   )
 }
-
-AdminLayout.propTypes = {}

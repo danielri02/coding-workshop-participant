@@ -22,19 +22,17 @@ export function decorateRow(
   lookups: Lookups,
 ): AdminRow {
   const record: AdminRow = { ...row, id: 'id' in row ? row.id : row.user_id }
-  return {
-    ...record,
-    ...(key === 'users' ? { is_engineer: Boolean(record.engineer_profile) } : {}),
-    ...(key === 'engineers'
-      ? {
-          user_name: recordLabel(lookups.users, record.user_id),
-          user_email: recordLabel(lookups.users, record.user_id, 'email'),
-        }
-      : {}),
-    ...(key === 'floors'
-      ? { building_name: recordLabel(lookups.buildings, record.building_id) }
-      : {}),
-    ...(key === 'seats' ? { floor_name: floorLabel(lookups, record.floor_id) } : {}),
-    ...(key === 'incidents' ? { escalated: Boolean(record.escalation_reason) } : {}),
+  if (key === 'users') {
+    record.is_engineer = Boolean(record.engineer_profile)
+  } else if (key === 'engineers') {
+    record.user_name = recordLabel(lookups.users, record.user_id)
+    record.user_email = recordLabel(lookups.users, record.user_id, 'email')
+  } else if (key === 'floors') {
+    record.building_name = recordLabel(lookups.buildings, record.building_id)
+  } else if (key === 'seats') {
+    record.floor_name = floorLabel(lookups, record.floor_id)
+  } else if (key === 'incidents') {
+    record.escalated = Boolean(record.escalation_reason)
   }
+  return record
 }

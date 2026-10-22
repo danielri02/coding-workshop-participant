@@ -11,7 +11,6 @@ import {
   type GridPaginationModel,
   type GridSortModel,
 } from '@mui/x-data-grid'
-import PropTypes from 'prop-types'
 import { DataTable } from './DataTable'
 import { RecordLink } from './RecordLink'
 import type { AdminRow, ResourceKey } from '../types'
@@ -86,13 +85,6 @@ function RowActions({ row, resource, disabled, onAction }: ActionsProps) {
       )}
     </Box>
   )
-}
-
-RowActions.propTypes = {
-  row: PropTypes.object.isRequired,
-  resource: PropTypes.string.isRequired,
-  disabled: PropTypes.bool.isRequired,
-  onAction: PropTypes.func.isRequired,
 }
 
 interface GridProps {
@@ -183,22 +175,4 @@ export function ResourceGrid({
       onColumnVisibilityModelChange={server ? onVisibility : undefined}
     />
   )
-}
-
-ResourceGrid.propTypes = {
-  resource: PropTypes.string.isRequired,
-  rows: PropTypes.array.isRequired,
-  columns: PropTypes.array.isRequired,
-  loading: PropTypes.bool.isRequired,
-  disabled: PropTypes.bool.isRequired,
-  rowCount: PropTypes.number,
-  pagination: PropTypes.object.isRequired,
-  sorting: PropTypes.array.isRequired,
-  filters: PropTypes.object.isRequired,
-  visibility: PropTypes.object,
-  onVisibility: PropTypes.func,
-  onPagination: PropTypes.func.isRequired,
-  onSorting: PropTypes.func.isRequired,
-  onFilters: PropTypes.func.isRequired,
-  onAction: PropTypes.func.isRequired,
 }

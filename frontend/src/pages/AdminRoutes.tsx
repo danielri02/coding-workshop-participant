@@ -30,5 +30,3 @@ export default function AdminRoutes() {
     </Routes>
   )
 }
-
-AdminRoutes.propTypes = {}

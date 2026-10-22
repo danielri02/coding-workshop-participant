@@ -8,7 +8,6 @@ import {
   DialogContentText,
   DialogTitle,
 } from '@mui/material'
-import PropTypes from 'prop-types'
 
 interface ConfirmProps {
   title: string
@@ -71,15 +70,4 @@ export function ConfirmDialog({
       {content}
     </Dialog>
   )
-}
-
-ConfirmDialog.propTypes = {
-  title: PropTypes.string.isRequired,
-  description: PropTypes.string.isRequired,
-  busy: PropTypes.bool.isRequired,
-  error: PropTypes.string.isRequired,
-  onConfirm: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
-  embedded: PropTypes.bool,
-  confirmDisabled: PropTypes.bool,
 }

@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import PropTypes from 'prop-types'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError, errorMessage } from '../services/client'
@@ -18,28 +17,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true
-    if (getSession()) {
-      api<User>('/auth/me', {}, true, isUser)
-        .then(
-          (account) => {
-            if (active) setUser(account)
-          },
-          (error: unknown) => {
-            if (active) {
-              if (error instanceof ApiError && error.status === 401) {
-                setSession(null)
-                setNotice('Your session has expired. Please sign in again.')
-              } else
-                setNotice(
-                  `${errorMessage(error)} Refresh this page to retry your existing session.`,
-                )
-            }
-          },
-        )
-        .finally(() => {
-          if (active) setBooting(false)
-        })
+    async function restoreSession() {
+      try {
+        const account = await api<User>('/auth/me', {}, true, isUser)
+        if (active) setUser(account)
+      } catch (error) {
+        if (!active) return
+        if (error instanceof ApiError && error.status === 401) {
+          setSession(null)
+          setNotice('Your session has expired. Please sign in again.')
+        } else {
+          setNotice(`${errorMessage(error)} Refresh this page to retry your existing session.`)
+        }
+      } finally {
+        if (active) setBooting(false)
+      }
     }
+    if (getSession()) void restoreSession()
     const handleSession = () => {
       if (!getSession()) {
         queryClient.clear()
@@ -109,5 +103,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   )
 }
-
-AuthProvider.propTypes = { children: PropTypes.node.isRequired }

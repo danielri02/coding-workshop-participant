@@ -188,5 +188,3 @@ export function LoginPage() {
     </Box>
   )
 }
-
-LoginPage.propTypes = {}

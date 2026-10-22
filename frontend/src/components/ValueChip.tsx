@@ -1,5 +1,4 @@
 import Chip from '@mui/material/Chip'
-import PropTypes from 'prop-types'
 
 /** Render consistent status, priority and availability indicators across grids. */
 export function ValueChip({ value }: { value: string | boolean }) {
@@ -31,5 +30,3 @@ export function ValueChip({ value }: { value: string | boolean }) {
     />
   )
 }
-
-ValueChip.propTypes = { value: PropTypes.oneOfType([PropTypes.string, PropTypes.bool]).isRequired }

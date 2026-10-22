@@ -14,9 +14,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import PropTypes from 'prop-types'
 import type { Field } from '../resources/forms'
-import { formPayload } from '../resources/forms'
+import { formPayload, initialFormValues, validateField } from '../resources/forms'
 import { ApiError, errorMessage } from '../services/client'
 import type { FormRow, FormValues, Lookups } from '../types'
 
@@ -33,22 +32,6 @@ interface FormProps {
   onClose: () => void
 }
 
-function validate(field: Field, values: FormValues): string {
-  if (field.type === 'boolean') return ''
-  const raw = String(values[field.name] ?? '')
-  const value = field.type === 'password' ? raw : raw.trim()
-  if ((field.required || field.requiredWhen?.(values)) && !value.trim())
-    return `${field.label} is required.`
-  if (!value) return ''
-  if (field.minLength && value.length < field.minLength)
-    return `Use at least ${field.minLength} characters.`
-  if (field.maxLength && value.length > field.maxLength)
-    return `Use no more than ${field.maxLength} characters.`
-  if (field.type === 'email' && !/^[^\s@]+@acme\.inc$/i.test(value))
-    return 'Use a valid @acme.inc email address.'
-  return ''
-}
-
 /** Render validated create/edit forms from resource metadata, including dependent selects. */
 export function RecordFormDialog({
   title,
@@ -63,20 +46,7 @@ export function RecordFormDialog({
   onClose,
 }: FormProps) {
   const baseFields = fields.filter((field) => !row || !field.createOnly)
-  const [values, setValues] = useState<FormValues>(() =>
-    Object.fromEntries(
-      baseFields.map((field) => {
-        const value =
-          row?.[field.name] ?? field.defaultValue ?? (field.type === 'boolean' ? false : '')
-        return [
-          field.name,
-          typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-            ? value
-            : '',
-        ]
-      }),
-    ),
-  )
+  const [values, setValues] = useState<FormValues>(() => initialFormValues(baseFields, row))
   const visible = baseFields.filter((field) => !field.when || field.when(values))
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({})
@@ -87,13 +57,13 @@ export function RecordFormDialog({
     return () => onBusyChange?.(false)
   }, [submitting, onBusyChange])
   const payload = formPayload(visible, values, row)
-  const invalid = visible.some((field) => validate(field, values))
+  const invalid = visible.some((field) => validateField(field, values))
   const change = (field: Field, value: string | number | boolean) => {
-    setValues((previous) => ({
-      ...previous,
-      [field.name]: value,
-      ...Object.fromEntries((field.resets || []).map((name) => [name, ''])),
-    }))
+    setValues((previous) => {
+      const next = { ...previous, [field.name]: value }
+      for (const name of field.resets || []) next[name] = ''
+      return next
+    })
     setServerErrors((previous) => ({ ...previous, [field.name]: '' }))
   }
   const save = async () => {
@@ -131,7 +101,7 @@ export function RecordFormDialog({
           {visible.map((field) => {
             const disabled = submitting || Boolean(row && field.immutable)
             const fieldError =
-              serverErrors[field.name] || (touched[field.name] ? validate(field, values) : '')
+              serverErrors[field.name] || (touched[field.name] ? validateField(field, values) : '')
             if (field.type === 'boolean')
               return (
                 <FormControlLabel
@@ -147,6 +117,12 @@ export function RecordFormDialog({
                 />
               )
             const options = field.options?.(lookups, values) || []
+            let helperText = field.helper || ''
+            if (field.type === 'select' && !options.length && !helperText)
+              helperText = 'No matching records. Create the parent record first.'
+            if (row && field.immutable) helperText = 'Parent association cannot be changed.'
+            if (fieldError) helperText = fieldError
+
             return (
               <TextField
                 key={field.name}
@@ -162,15 +138,7 @@ export function RecordFormDialog({
                 disabled={disabled}
                 error={Boolean(fieldError)}
                 autoComplete={field.type === 'password' ? 'new-password' : 'off'}
-                helperText={
-                  fieldError ||
-                  (row && field.immutable
-                    ? 'Parent association cannot be changed.'
-                    : field.helper ||
-                      (field.type === 'select' && !options.length
-                        ? 'No matching records. Create the parent record first.'
-                        : ''))
-                }
+                helperText={helperText}
                 onBlur={() => setTouched((previous) => ({ ...previous, [field.name]: true }))}
                 onChange={(event) => change(field, event.target.value)}
                 slotProps={{ htmlInput: { maxLength: field.maxLength } }}
@@ -214,17 +182,4 @@ export function RecordFormDialog({
       {content}
     </Dialog>
   )
-}
-
-RecordFormDialog.propTypes = {
-  title: PropTypes.string.isRequired,
-  fields: PropTypes.array.isRequired,
-  lookups: PropTypes.object.isRequired,
-  row: PropTypes.object,
-  subtitle: PropTypes.string,
-  submitLabel: PropTypes.string,
-  embedded: PropTypes.bool,
-  onBusyChange: PropTypes.func,
-  onSave: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
 }

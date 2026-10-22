@@ -52,13 +52,7 @@ function DialogScreen({ entry }: { entry: DialogEntry }) {
     return (
       <ConfirmDialog
         embedded
-        title={
-          actions.confirmation.action === 'delete'
-            ? `Delete ${resource.singular}?`
-            : actions.confirmation.row.is_admin
-              ? 'Remove admin access?'
-              : 'Grant admin access?'
-        }
+        title={actions.confirmationTitle}
         description={actions.confirmationDescription}
         confirmDisabled={!actions.confirmationReady}
         busy={actions.busy}

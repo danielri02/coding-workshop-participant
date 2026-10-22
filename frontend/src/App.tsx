@@ -26,8 +26,6 @@ export function Application() {
   return workspace.id === 'admin' ? <AdminRoutes /> : <MemberRoutes />
 }
 
-Application.propTypes = {}
-
 /** Compose the router and shared authentication boundary for the application. */
 function App() {
   const [queryClient] = useState(createQueryClient)
@@ -50,5 +48,4 @@ function App() {
   )
 }
 
-App.propTypes = {}
 export default App

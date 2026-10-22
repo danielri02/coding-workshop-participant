@@ -34,21 +34,26 @@ export function useResourceActions(
       ? `/deletions${resource.endpoint}/${confirmation.row.id}`
       : null
   const preview = useApiQuery<DeletionPreview | null>(previewPath, null)
-  const confirmationReady =
-    confirmation?.action !== 'delete' ||
-    Boolean(
+  let confirmationReady = true
+  let confirmationTitle = ''
+  let confirmationDescription = ''
+  if (confirmation?.action === 'delete') {
+    confirmationTitle = `Delete ${resource.singular}?`
+    confirmationReady = Boolean(
       !preview.loading &&
       !preview.error &&
       preview.data &&
       preview.data.resource === resource.endpoint.slice(1) &&
       preview.data.record_id === confirmation.row.id,
     )
-  const confirmationDescription =
-    confirmation?.action === 'delete'
-      ? confirmationReady && preview.data
-        ? deletionWarning(preview.data)
-        : 'Loading the records affected by this deletion…'
-      : `Change administrator access for ${String(confirmation?.row.name)}?${confirmation?.row.id === user?.id && confirmation?.row.is_admin ? ' Your account will leave the admin workspace.' : ''}`
+    confirmationDescription = 'Loading the records affected by this deletion…'
+    if (confirmationReady && preview.data) confirmationDescription = deletionWarning(preview.data)
+  } else if (confirmation?.action === 'admin') {
+    confirmationTitle = confirmation.row.is_admin ? 'Remove admin access?' : 'Grant admin access?'
+    confirmationDescription = `Change administrator access for ${String(confirmation.row.name)}?`
+    if (confirmation.row.id === user?.id && confirmation.row.is_admin)
+      confirmationDescription += ' Your account will leave the admin workspace.'
+  }
 
   const action = useCallback(
     (command: RowAction, row: AdminRow) => {
@@ -66,14 +71,14 @@ export function useResourceActions(
   const save = async (payload: Record<string, unknown>) => {
     if (!editor) return
     const creating = editor.action === 'create'
-    const suffix = ['assignment', 'priority', 'status'].includes(editor.action)
-      ? `/${editor.action}`
-      : ''
-    const endpoint = creating
-      ? resource.key === 'notes'
-        ? `/incidents/${scope}/notes`
-        : resource.endpoint
-      : `${resource.endpoint}/${editor.row?.id}${suffix}`
+    let endpoint = resource.endpoint
+    if (creating) {
+      if (resource.key === 'notes') endpoint = `/incidents/${scope}/notes`
+    } else {
+      endpoint += `/${editor.row?.id}`
+      if (['assignment', 'priority', 'status'].includes(editor.action))
+        endpoint += `/${editor.action}`
+    }
     const options = {
       method: creating ? 'POST' : 'PATCH',
       body: JSON.stringify(payload),
@@ -133,6 +138,7 @@ export function useResourceActions(
     busy,
     error: error || (confirmation?.action === 'delete' ? preview.error : ''),
     confirmationReady,
+    confirmationTitle,
     confirmationDescription,
     action,
     save,
