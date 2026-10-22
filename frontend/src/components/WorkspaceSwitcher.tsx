@@ -4,13 +4,14 @@ import { useAuth } from '../auth/context'
 import { availableWorkspaces } from '../auth/workspaces'
 import { useWorkspace } from '../hooks/useWorkspace'
 
-/** Admins retain their account while opening their employee or engineer workspace. */
+/** Members retain their account while opening their employee or engineer workspace. */
 export function WorkspaceSwitcher({ dark = false }: { dark?: boolean }) {
   const { user } = useAuth()
   const { workspace } = useWorkspace()
   const navigate = useNavigate()
-  if (!user?.is_admin || !workspace) return null
+  if (!user || !workspace) return null
   const choices = availableWorkspaces(user)
+  if (choices.length < 2) return null
   return (
     <FormControl
       size="small"

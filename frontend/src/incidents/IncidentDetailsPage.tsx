@@ -19,6 +19,7 @@ import { api, errorMessage } from '../services/client'
 import { invalidateResourceQueries } from '../services/queries'
 import type { Incident } from '../types'
 import { IncidentNotes } from './IncidentNotes'
+import { ResponseTimeStats } from './ResponseTimeStats'
 import { IncidentProgress } from './IncidentProgress'
 import { incidentViews, inIncidentScope, type IncidentScope } from './scope'
 
@@ -241,7 +242,10 @@ export function IncidentDetailsPage({
               ))}
             </Box>
           </Paper>
-          <IncidentNotes key={incident.id} incident={incident} embedded={embedded} />
+          {scope !== 'assigned' && incident.reporter_id === user?.id && (
+            <ResponseTimeStats key={`response-times:${incident.id}`} incident={incident} />
+          )}
+          <IncidentNotes key={`notes:${incident.id}`} incident={incident} embedded={embedded} />
           {!embedded && form}
         </>
       )}

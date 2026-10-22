@@ -977,8 +977,8 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             (await self.client.get(f"/users/{self.reporter_id}")).status_code, 200
         )
 
-    async def test_notes_are_chronological_and_editable_after_resolution(self) -> None:
-        """Conversation order uses timestamps, and corrections remain possible."""
+    async def test_notes_are_newest_first_and_editable_after_resolution(self) -> None:
+        """Newest timestamps appear first, regardless of insertion order; corrections remain possible."""
 
         report = await self.create_report()
         now = datetime.now(timezone.utc)
@@ -1000,8 +1000,18 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                     created_at=now - timedelta(minutes=1),
                 )
             )
+            session.add(
+                Note(
+                    incident_id=report["id"],
+                    author_id=self.reporter_id,
+                    body="Newest at same time",
+                    created_at=now,
+                )
+            )
         notes = (await self.client.get(f"/incidents/{report['id']}/notes")).json()
-        self.assertEqual([row["body"] for row in notes], ["Earlier", "Later"])
+        self.assertEqual(
+            [row["body"] for row in notes], ["Newest at same time", "Later", "Earlier"]
+        )
         for target in ("In Progress", "Resolved"):
             await self.client.patch(
                 f"/incidents/{report['id']}/status", json={"status": target}

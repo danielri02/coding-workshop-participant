@@ -74,8 +74,21 @@ test('an admin without an engineer profile has no assigned-work option', async (
   expect(screen.queryByRole('option', { name: 'Assigned to me' })).not.toBeInTheDocument()
 })
 
-test('ordinary members retain their existing navigation rather than an admin switcher', () => {
-  mount({ ...admin, is_admin: false }, '/engineer/incidents')
+test('engineers switch between assigned and employee views without admin access', async () => {
+  const auth = mount({ ...admin, is_admin: false }, '/engineer/incidents')
+  await userEvent.click(screen.getByRole('combobox', { name: 'Workspace' }))
+  expect(screen.getAllByRole('option')).toHaveLength(2)
+  expect(screen.queryByRole('option', { name: 'Administration' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('option', { name: 'My incidents', exact: true }))
+  expect(screen.getByTestId('location')).toHaveTextContent('/employee/incidents')
+  await userEvent.click(screen.getByRole('combobox', { name: 'Workspace' }))
+  await userEvent.click(screen.getByRole('option', { name: 'Assigned to me', exact: true }))
+  expect(screen.getByTestId('location')).toHaveTextContent('/engineer/incidents')
+  expect(auth.login).not.toHaveBeenCalled()
+})
+
+test('employees with only one workspace do not need a switcher', () => {
+  mount({ ...admin, is_admin: false, engineer_profile: null }, '/employee/incidents')
   expect(screen.queryByRole('combobox', { name: 'Workspace' })).not.toBeInTheDocument()
 })
 

@@ -1,17 +1,7 @@
-import {
-  Avatar,
-  Box,
-  Button,
-  IconButton,
-  Tab,
-  Tabs,
-  Toolbar,
-  Tooltip,
-  Typography,
-} from '@mui/material'
+import { Avatar, Box, Button, IconButton, Toolbar, Tooltip, Typography } from '@mui/material'
 import ApartmentOutlined from '@mui/icons-material/ApartmentOutlined'
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined'
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { RecordDialogProvider } from '../dialogs/RecordDialogProvider'
 import { WorkspaceSwitcher } from './WorkspaceSwitcher'
@@ -20,7 +10,6 @@ import { useWorkspace } from '../hooks/useWorkspace'
 /** Share responsive account controls and navigation for employees and engineers. */
 export function MemberLayout() {
   const { user, logout } = useAuth()
-  const location = useLocation()
   const { workspace } = useWorkspace()
   const engineer = Boolean(user?.engineer_profile)
   return (
@@ -96,24 +85,6 @@ export function MemberLayout() {
           Sign out
         </Button>
       </Toolbar>
-      {engineer && !user?.is_admin && (
-        <Tabs
-          component="nav"
-          aria-label="Engineer workspace"
-          value={location.pathname.startsWith('/engineer/') ? 'assigned' : 'reported'}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{
-            bgcolor: 'background.paper',
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            px: { xs: 1, sm: 3 },
-          }}
-        >
-          <Tab component={Link} to="/engineer/incidents" value="assigned" label="Assigned to me" />
-          <Tab component={Link} to="/employee/incidents" value="reported" label="My incidents" />
-        </Tabs>
-      )}
       <Box
         component="main"
         sx={{ p: { xs: 2, sm: 3, lg: 4 }, maxWidth: 1500, mx: 'auto', minWidth: 0 }}

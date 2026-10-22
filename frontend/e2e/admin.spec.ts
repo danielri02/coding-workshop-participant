@@ -1517,6 +1517,16 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   await signIn(page, fixture.user.email, fixture.password)
   await expect(page).toHaveURL(/\/engineer\/incidents$/)
   await expect(page.getByRole('heading', { name: 'Assigned incidents', exact: true })).toBeVisible()
+  await expect(page.getByRole('tablist')).toBeHidden()
+  await expect(
+    page.getByRole('columnheader', { name: 'Assigned engineer', exact: true }),
+  ).toBeHidden()
+  await expect(page.getByRole('combobox', { name: 'Workspace', exact: true })).toHaveText(
+    'Assigned to me',
+  )
+  await expect(
+    page.getByRole('region', { name: 'Your average response times', exact: true }),
+  ).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Administration' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'New incident', exact: true })).toBeHidden()
   await expectSummary(page, 'assigned', {
@@ -1619,13 +1629,20 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
   }
   await expect(page.getByRole('button', { name: 'Change status', exact: true })).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
+  await switchWorkspace(page, 'Assigned to me')
   await expectSummary(page, 'assigned', {
     'Awaiting acceptance': 11,
     'In progress': 0,
     Blocked: 0,
     Resolved: 1,
   })
+  const timings = page.getByRole('region', { name: 'Your average response times', exact: true })
+  await expect(timings.getByRole('article', { name: 'Avg. acknowledgment' })).toContainText(
+    '1 of 12 incidents reached this milestone',
+  )
+  await expect(timings.getByRole('article', { name: 'Avg. resolution' })).toContainText(
+    '1 of 12 incidents reached this milestone',
+  )
   await page.screenshot({
     path: test.info().outputPath('engineer-summary-mobile.png'),
     fullPage: true,
@@ -1654,7 +1671,7 @@ test('engineer manages assigned incidents, notes and workflow while retaining ow
     }),
   ).toBeVisible()
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('tab', { name: 'My incidents', exact: true }).click()
+  await switchWorkspace(page, 'My incidents')
   await expectSummary(page, 'personal', { Active: 1, Resolved: 0, Closed: 0 })
   await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
   await expect(
@@ -1753,14 +1770,14 @@ test('engineer scope and permissions follow current assignment including reassig
       })
     ).status(),
   ).toBe(403)
-  await page.getByRole('tab', { name: 'Assigned to me', exact: true }).click()
+  await page.getByRole('link', { name: 'Assigned incidents', exact: true }).click()
   await expect(page.getByText('No records to show', { exact: true })).toBeVisible()
   await expectSummary(page, 'assigned', { 'In progress': 0, Blocked: 0, Resolved: 0 })
   expect(reads.some((path) => /^\/(users|engineer-profiles)(\/|$)/.test(path))).toBeFalsy()
   expect(
     reads
       .filter((path) => /^\/reports(\/|$)/.test(path))
-      .every((path) => path === '/reports/summary'),
+      .every((path) => ['/reports/summary', '/reports/my-response-times'].includes(path)),
   ).toBeTruthy()
 })
 
@@ -2047,4 +2064,98 @@ test('admin cascade deletion warns, cancels and rejects a stale confirmation bef
     `/incidents/${incident.id}`,
   ])
     expect((await request.get(`${apiUrl}${path}`, { headers })).status()).toBe(404)
+})
+
+test('employee details show building/category expectations and newest notes without revealing peer incidents', async ({
+  request,
+  page,
+}) => {
+  const duplicateKeys: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /same key/i.test(message.text()))
+      duplicateKeys.push(message.text())
+  })
+  const suffix = `expectations${Date.now()}`
+  const created = await request.post(`${apiUrl}/buildings`, { headers, data: { name: suffix } })
+  expect(created.ok()).toBeTruthy()
+  const building = await created.json()
+  cleanup.unshift(`/buildings/${building.id}`)
+  const engineer = (await (await request.get(`${apiUrl}/engineer-profiles`, { headers })).json())[0]
+  const peer = await request.post(`${apiUrl}/incidents`, {
+    headers,
+    data: {
+      title: `Private peer ${suffix}`,
+      description: 'Historical incident',
+      building_id: building.id,
+      category: 'Network',
+    },
+  })
+  expect(peer.ok()).toBeTruthy()
+  const peerIncident = await peer.json()
+  expect(
+    (
+      await request.patch(`${apiUrl}/incidents/${peerIncident.id}/assignment`, {
+        headers,
+        data: { assignee_id: engineer.user_id },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  expect(
+    (
+      await request.patch(`${apiUrl}/incidents/${peerIncident.id}/status`, {
+        headers,
+        data: { status: 'Resolved' },
+      })
+    ).ok(),
+  ).toBeTruthy()
+  await page.goto('/employee/incidents')
+  await signIn(page, 'employee@acme.inc', 'employee')
+  await expect(page.getByRole('heading', { name: 'My incidents', exact: true })).toBeVisible()
+  const employeeHeaders = await page.evaluate(() => ({
+    Authorization: `Bearer ${JSON.parse(sessionStorage.getItem('acme.admin.session')!).access_token}`,
+  }))
+  const own = await request.post(`${apiUrl}/incidents`, {
+    headers: employeeHeaders,
+    data: {
+      title: `My report ${suffix}`,
+      description: 'My current issue',
+      category: 'Network',
+      building_id: building.id,
+    },
+  })
+  expect(own.ok()).toBeTruthy()
+  const incident = await own.json()
+  for (const body of ['Earlier update', 'Most recent update'])
+    expect(
+      (
+        await request.post(`${apiUrl}/incidents/${incident.id}/notes`, {
+          headers: employeeHeaders,
+          data: { body },
+        })
+      ).ok(),
+    ).toBeTruthy()
+  await page.goto(`/employee/incidents/${incident.id}`)
+  const expectations = page.getByRole('region', {
+    name: 'Recent response times for similar incidents',
+    exact: true,
+  })
+  await expect(expectations).toBeVisible()
+  await expect(expectations).toContainText(
+    'Network incidents in this building, reported in the last 30 days',
+  )
+  for (const metric of ['Avg. assignment', 'Avg. acknowledgment', 'Avg. resolution'])
+    await expect(expectations.getByRole('article', { name: metric, exact: true })).toContainText(
+      '1 of 2 incidents reached this milestone',
+    )
+  expect(duplicateKeys).toEqual([])
+  await expect(expectations).toContainText('not a guaranteed completion time')
+  const updates = page.getByRole('list', { name: 'Incident updates' }).getByRole('listitem')
+  await expect(updates.nth(0)).toContainText('Most recent update')
+  await expect(updates.nth(1)).toContainText('Earlier update')
+  await expect(page.getByText(peerIncident.title, { exact: true })).toBeHidden()
+  expect(
+    (
+      await request.get(`${apiUrl}/incidents/${peerIncident.id}`, { headers: employeeHeaders })
+    ).status(),
+  ).toBe(403)
 })

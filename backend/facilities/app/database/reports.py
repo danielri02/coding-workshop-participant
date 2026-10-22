@@ -255,13 +255,14 @@ async def categories(session: AsyncSession, user: User, query: CategoryQuery) ->
     }
 
 
-async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict:
-    window = report_window(query.period)
-    conditions = criteria(user, query, window)
+async def timing_aggregate(session: AsyncSession, conditions: list) -> dict:
+    """Average each reached milestone independently; missing samples remain absent."""
+
     aggregate = (
         (
             await session.execute(
                 select(
+                    func.count().label("total_count"),
                     *[
                         expression
                         for name, duration in DURATIONS.items()
@@ -269,24 +270,15 @@ async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict
                             func.count(duration).label(f"{name}_count"),
                             func.avg(duration).label(name),
                         )
-                    ]
+                    ],
                 ).where(*conditions)
             )
         )
         .mappings()
         .one()
     )
-    rows = await page(
-        session,
-        tickets(*[value.label(name) for name, value in DURATIONS.items()]).where(
-            *conditions
-        ),
-        query,
-        DURATIONS,
-    )
     return {
-        **window,
-        **rows,
+        "total_count": aggregate["total_count"],
         "milestones": [
             {
                 "id": name.removesuffix("_minutes"),
@@ -301,6 +293,56 @@ async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict
             )
         ],
     }
+
+
+async def response_time_summary(session: AsyncSession, conditions: list) -> dict:
+    """A fixed 30-day reported-date cohort shared by member summary panels."""
+
+    window = report_window(ReportPeriod.MONTH)
+    aggregate = await timing_aggregate(
+        session,
+        [
+            *conditions,
+            Incident.created_at >= window["start_at"],
+            Incident.created_at <= window["end_at"],
+        ],
+    )
+    return {**window, **aggregate}
+
+
+async def incident_response_times(session: AsyncSession, incident: Incident) -> dict:
+    """Share cohort averages for an already-authorized incident, never peer rows."""
+
+    return await response_time_summary(
+        session,
+        [
+            Incident.building_id == incident.building_id,
+            Incident.category == incident.category,
+        ],
+    )
+
+
+async def engineer_response_times(session: AsyncSession, user: User) -> dict:
+    """Current engineer assignments only, even when the account also has admin rights."""
+
+    return await response_time_summary(
+        session, [visibility(user, ReportScope.ASSIGNED)]
+    )
+
+
+async def timings(session: AsyncSession, user: User, query: ReportQuery) -> dict:
+    window = report_window(query.period)
+    conditions = criteria(user, query, window)
+    aggregate = await timing_aggregate(session, conditions)
+    rows = await page(
+        session,
+        tickets(*[value.label(name) for name, value in DURATIONS.items()]).where(
+            *conditions
+        ),
+        query,
+        DURATIONS,
+    )
+    return {**window, **rows, "milestones": aggregate["milestones"]}
 
 
 async def workload(session: AsyncSession) -> dict:

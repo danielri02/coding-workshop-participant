@@ -391,7 +391,7 @@ class PermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["author_name"], "engineer")
         response = await self.request("employee", "GET", incident_path + "/notes", 200)
         self.assertEqual(
-            [note["author_name"] for note in response.json()], ["employee", "engineer"]
+            [note["author_name"] for note in response.json()], ["engineer", "employee"]
         )
         for note in response.json():
             self.assertNotIn("email", note)

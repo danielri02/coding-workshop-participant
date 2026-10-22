@@ -46,8 +46,8 @@ export function dialogEntry(target: DialogTarget): DialogEntry {
       search: '',
       page: 0,
       pageSize: 25,
-      sortField: target.resource === 'incidents' ? 'created_at' : 'id',
-      sortDirection: target.resource === 'incidents' ? 'desc' : 'asc',
+      sortField: ['incidents', 'notes'].includes(target.resource) ? 'created_at' : 'id',
+      sortDirection: ['incidents', 'notes'].includes(target.resource) ? 'desc' : 'asc',
       filters: { items: [] },
     },
   }

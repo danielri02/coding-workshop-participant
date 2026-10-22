@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from ..database import crud
+from ..database import crud, reports
 from ..database.incident_queries import incident_criteria, incident_order
 from ..domain.incidents import ACTIVE_STATUSES, ENGINEER_TRANSITIONS
 from ..models import (
@@ -22,6 +22,7 @@ from ..schemas import (
     IncidentStatusUpdate,
 )
 from ..schemas.incident import IncidentFilters, IncidentGridQuery, IncidentPage
+from ..schemas.report import ResponseTimeSummary
 from ..security.dependencies import AdminUser, CurrentUser
 from ..security.permissions import (
     accessible_incident,
@@ -253,3 +254,13 @@ async def delete_incident(
         confirmation=confirmation,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{incident_id}/response-times", response_model=ResponseTimeSummary)
+async def incident_response_times(
+    incident_id: RecordID, session: DatabaseSession, user: CurrentUser
+):
+    """Return only aggregate expectations for an incident the caller can view."""
+
+    incident = await accessible_incident(session, incident_id, user)
+    return await reports.incident_response_times(session, incident)

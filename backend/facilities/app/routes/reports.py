@@ -13,6 +13,7 @@ from ..schemas.report import (
     LocationReport,
     ReportQuery,
     ReportScope,
+    ResponseTimeSummary,
     TimingReport,
     WorkloadReport,
 )
@@ -58,3 +59,8 @@ async def timings(session: DatabaseSession, user: CurrentUser, query: PagedQuery
 @router.get("/workload", response_model=WorkloadReport)
 async def workload(session: DatabaseSession, _admin: AdminUser):
     return await reports.workload(session)
+
+
+@router.get("/my-response-times", response_model=ResponseTimeSummary)
+async def my_response_times(session: DatabaseSession, user: CurrentUser):
+    return await reports.engineer_response_times(session, user)

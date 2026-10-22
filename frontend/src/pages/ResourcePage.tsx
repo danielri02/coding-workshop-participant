@@ -51,7 +51,11 @@ export function ResourcePage({ resource }: { resource: ResourceDefinition }) {
   const debouncedSearch = useDebouncedValue(search)
   const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 25 })
   const [sorting, setSorting] = useState<GridSortModel>([
-    resource.key === 'incidents' ? incidentGrid.defaultSort : { field: 'id', sort: 'asc' },
+    resource.key === 'incidents'
+      ? incidentGrid.defaultSort
+      : resource.key === 'notes'
+        ? { field: 'created_at', sort: 'desc' }
+        : { field: 'id', sort: 'asc' },
   ])
   const [assignment, setAssignment] = useState('all')
   const [filters, setFilters] = useState<GridFilterModel>({ items: [] })

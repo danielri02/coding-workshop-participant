@@ -22,14 +22,14 @@ router = APIRouter(tags=[Note.__name__])
 async def list_notes(
     incident_id: RecordID, session: DatabaseSession, user: CurrentUser
 ) -> list[Note]:
-    """List every note for an incident, in creation/ID order."""
+    """List every note for an incident, newest timestamp/ID first."""
 
     await accessible_incident(session, incident_id, user)
     return await crud.list_records(
         session,
         Note,
         filters={"incident_id": incident_id},
-        order_by=(Note.created_at, Note.id),
+        order_by=(Note.created_at.desc(), Note.id.desc()),
         options=NOTE_READ_OPTIONS,
     )
 

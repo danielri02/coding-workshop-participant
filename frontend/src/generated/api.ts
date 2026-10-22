@@ -492,6 +492,24 @@ export interface components {
      */
     ReportScope: 'visible' | 'personal' | 'assigned'
     /**
+     * ResponseTimeSummary
+     * @description Historical averages only, without exposing another reporter's incident rows.
+     */
+    ResponseTimeSummary: {
+      /**
+       * End At
+       * Format: date-time
+       */
+      end_at: string
+      /** Milestones */
+      milestones: components['schemas']['MilestoneMetric'][]
+      period: components['schemas']['ReportPeriod']
+      /** Start At */
+      start_at: string | null
+      /** Total Count */
+      total_count: number
+    }
+    /**
      * SeatCreate
      * @description Create a seat; label uniqueness is scoped to its floor.
      */

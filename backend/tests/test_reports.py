@@ -479,7 +479,14 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_authentication_privilege_and_query_validation(self) -> None:
-        for endpoint in ("locations", "categories", "timings", "workload", "summary"):
+        for endpoint in (
+            "locations",
+            "categories",
+            "timings",
+            "workload",
+            "summary",
+            "my-response-times",
+        ):
             self.assertEqual(
                 (await self.client.get(f"/reports/{endpoint}")).status_code, 401
             )
@@ -516,6 +523,166 @@ class ReportTests(unittest.IsolatedAsyncioTestCase):
                 ).status_code,
                 422,
             )
+
+    async def test_incident_response_expectations_use_only_the_30_day_building_category_cohort(
+        self,
+    ):
+        """A viewer gets cohort averages across reporters, with no peer incident details."""
+
+        now = datetime(2026, 1, 31, tzinfo=timezone.utc)
+        async with self.factory.begin() as session:
+            original = await session.get(Incident, self.incidents[0])
+            other_building = Building(name="Different building")
+            session.add(other_building)
+            await session.flush()
+            for category, building_id, created, reached in (
+                ("HVAC", original.building_id, now - timedelta(days=5), True),
+                (
+                    "HVAC",
+                    original.building_id,
+                    now - timedelta(days=30, microseconds=1),
+                    True,
+                ),
+                ("HVAC", original.building_id, now + timedelta(microseconds=1), False),
+                ("HVAC", other_building.id, now - timedelta(days=5), True),
+                ("Other", original.building_id, now - timedelta(days=5), True),
+            ):
+                session.add(
+                    Incident(
+                        title="Private peer incident",
+                        description="Private peer details",
+                        category=category,
+                        building_id=building_id,
+                        reporter_id=self.users["other"],
+                        created_at=created,
+                        assigned_at=created + timedelta(minutes=30)
+                        if reached
+                        else None,
+                        acknowledged_at=created + timedelta(minutes=40)
+                        if reached
+                        else None,
+                        resolved_at=created + timedelta(minutes=100)
+                        if reached
+                        else None,
+                    )
+                )
+        path = f"/incidents/{self.incidents[0]}/response-times"
+        with patch("backend.app.database.reports.datetime") as clock:
+            clock.now.return_value = now
+            response = await self.client.get(path, headers=self.headers["employee"])
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(
+            set(data), {"period", "start_at", "end_at", "total_count", "milestones"}
+        )
+        self.assertEqual(data["total_count"], 4)
+        self.assertEqual(data["start_at"], "2026-01-01T00:00:00Z")
+        self.assertEqual(data["end_at"], "2026-01-31T00:00:00Z")
+        self.assertEqual(data["period"], "month")
+        metrics = {metric["id"]: metric for metric in data["milestones"]}
+        self.assertEqual(metrics["assigned"]["sample_count"], 3)
+        self.assertAlmostEqual(metrics["assigned"]["average_minutes"], 50 / 3)
+        self.assertAlmostEqual(metrics["acknowledged"]["average_minutes"], 80 / 3)
+        self.assertEqual(metrics["resolved"]["sample_count"], 1)
+        self.assertEqual(metrics["resolved"]["average_minutes"], 100)
+        self.assertNotIn("Private peer", response.text)
+        self.assertNotIn("reporter", response.text)
+
+    async def test_engineer_response_averages_follow_current_assignments_even_for_admins(
+        self,
+    ):
+        """Summary scope is fixed to identity and cannot expand via report/grid parameters."""
+
+        now = datetime(2026, 1, 31, tzinfo=timezone.utc)
+        with patch("backend.app.database.reports.datetime") as clock:
+            clock.now.return_value = now
+            own = await self.report(
+                "my-response-times",
+                "engineer",
+                scope="visible",
+                assignee_id=self.users["idle"],
+                period="all",
+                search="nonexistent",
+                page_size=1,
+            )
+            self.assertEqual(own["total_count"], 3)
+            self.assertEqual(own["milestones"][1]["sample_count"], 3)
+            self.assertEqual(own["milestones"][1]["average_minutes"], 20)
+            self.assertEqual(own["milestones"][2]["average_minutes"], 100)
+            async with self.factory.begin() as session:
+                session.add(EngineerProfile(user_id=self.users["admin"]))
+                await session.execute(
+                    update(Incident)
+                    .where(Incident.id == self.incidents[0])
+                    .values(assignee_id=self.users["admin"])
+                )
+                await session.execute(
+                    update(Incident)
+                    .where(Incident.id == self.incidents[3])
+                    .values(assignee_id=self.users["idle"])
+                )
+            admin = await self.report("my-response-times", "admin")
+            self.assertEqual(admin["total_count"], 1)
+            self.assertTrue(
+                all(metric["average_minutes"] is None for metric in admin["milestones"])
+            )
+            own = await self.report("my-response-times", "engineer")
+            self.assertEqual(own["total_count"], 2)
+            self.assertIsNone(own["milestones"][2]["average_minutes"])
+            idle = await self.report("my-response-times", "idle")
+            self.assertEqual(idle["total_count"], 1)
+            self.assertEqual(idle["milestones"][2]["average_minutes"], 100)
+            clock.now.return_value = now + timedelta(days=31)
+            empty = await self.report("my-response-times", "engineer")
+            self.assertEqual(empty["total_count"], 0)
+            self.assertTrue(
+                all(
+                    metric["sample_count"] == 0 and metric["average_minutes"] is None
+                    for metric in empty["milestones"]
+                )
+            )
+
+    async def test_response_time_summaries_require_incident_visibility_or_engineer_capability(
+        self,
+    ):
+        path = f"/incidents/{self.incidents[0]}/response-times"
+        self.assertEqual((await self.client.get(path)).status_code, 401)
+        for actor in ("other", "idle", "engineer"):
+            self.assertEqual(
+                (await self.client.get(path, headers=self.headers[actor])).status_code,
+                403,
+            )
+        for actor in ("admin", "employee", "other"):
+            self.assertEqual(
+                (
+                    await self.client.get(
+                        "/reports/my-response-times", headers=self.headers[actor]
+                    )
+                ).status_code,
+                403,
+            )
+        for path, status in (
+            ("/incidents/0/response-times", 422),
+            ("/incidents/2147483647/response-times", 404),
+        ):
+            self.assertEqual(
+                (
+                    await self.client.get(path, headers=self.headers["employee"])
+                ).status_code,
+                status,
+            )
+        response = await self.client.get(
+            f"/incidents/{self.incidents[0]}/response-times",
+            headers=self.headers["employee"],
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["total_count"], 0)
+        self.assertTrue(
+            all(
+                metric["average_minutes"] is None
+                for metric in response.json()["milestones"]
+            )
+        )
 
     async def test_empty_reports_return_zero_counts_and_null_averages(self) -> None:
         async with self.factory.begin() as session:

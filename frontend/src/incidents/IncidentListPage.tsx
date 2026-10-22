@@ -19,6 +19,7 @@ import type { Incident, IncidentPage } from '../types'
 import { incidentColumns } from './columns'
 import { incidentViews, type IncidentScope } from './scope'
 import { IncidentSummary } from './IncidentSummary'
+import { ResponseTimeStats } from './ResponseTimeStats'
 
 /** Share search/paging and creation while enforcing the selected incident scope. */
 export function IncidentListPage({ scope }: { scope: IncidentScope }) {
@@ -82,6 +83,7 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
         )}
       </Stack>
       <IncidentSummary key={scope} scope={scope} onRefresh={refresh} />
+      {scope === 'assigned' && <ResponseTimeStats />}
       {failure && (
         <Alert severity="error" action={<Button onClick={refresh}>Retry</Button>}>
           {failure}
@@ -110,6 +112,9 @@ export function IncidentListPage({ scope }: { scope: IncidentScope }) {
           </Button>
         </Stack>
         <DataTable
+          initialState={{
+            columns: { columnVisibilityModel: { assignee_name: scope !== 'assigned' } },
+          }}
           rows={query.data.rows}
           columns={columns}
           loading={query.loading || lookups.loading || search !== debouncedSearch}

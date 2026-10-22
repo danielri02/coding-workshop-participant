@@ -342,6 +342,28 @@ access token. Incident list filters cannot expand the caller's read scope.
 Missing/invalid credentials return 401; denied actions return 403. Updates use
 PATCH, validation errors use 422, and conflicting operations use 409.
 
+### Member response-time summaries
+
+`GET /incidents/{id}/response-times` first checks incident visibility, then returns
+aggregate response expectations for that incident's category and building across
+all reporters. It never returns peer incident rows, titles, descriptions, author
+names or IDs. `GET /reports/my-response-times` requires Engineer capability and is
+fixed to the signed-in engineer's current assignments, even for admin-engineers.
+Caller-supplied report/grid filters do not change either fixed cohort.
+
+Both use incidents reported within a rolling 30-day UTC window, including its
+boundaries and excluding future reports. Responses contain the window, cohort
+size, and independent averages/sample counts for reporting-to-first-assignment,
+reporting-to-first-acknowledgment and reporting-to-first-resolution. Missing
+milestones are excluded from their own averages; no samples means null, not zero.
+The engineer UI displays acknowledgment and resolution, since assignment is an
+admin action. With no assignment history, current assignee determines membership;
+first milestones remain historical and may predate reassignment. These summaries
+reuse the existing SQL timing calculations without loading incident rows.
+
+`GET /incidents/{id}/notes` returns newest timestamps first, with descending IDs
+for deterministic ties. No schema change or data reset is needed for this batch.
+
 ### Confirmed cascade deletion
 
 Admins can request `GET /deletions/{resource}/{id}` for `users`,

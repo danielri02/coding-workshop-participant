@@ -12,14 +12,15 @@ The backend-verified account determines the available workspaces:
 - Engineer: assigned incidents, shared notes and status changes, plus access to
   their own submitted reports. Demo: `engineer@acme.inc` / `engineer`.
 
-Admins have a **Workspace** selector in both the administration and member
+Admins and engineers have a **Workspace** selector in both the administration and member
 headers. Choose Administration, My incidents, or Assigned to me (when the account
 has an engineer profile). Switching preserves the login and capabilities. Personal
 and assigned grids/summaries remain scoped to that account; member views hide
 administration controls. Returning to Administration restores admin controls.
 The selected workspace is represented by the URL and survives reload. Direct URLs
 without the required capability redirect to an allowed workspace. Engineers
-without admin access retain their existing Assigned to me / My incidents tabs.
+without admin access use the same selector for Assigned to me and My incidents.
+Accounts with only the employee workspace do not need a selector.
 
 Run the backend seed command to add the demo employee and expanded samples to an
 existing development database. Existing seeded accounts and passwords are preserved.
@@ -127,7 +128,7 @@ assignment lists remain unavailable. Direct admin URLs return employees to their
 incident grid; backend authorization also protects direct API calls and other
 employees' records.
 
-Engineers retain this submission/tracking view under the My incidents tab. It
+Engineers retain this submission/tracking view in the My incidents workspace. It
 filters by reporter independently of the Assigned to me tab.
 
 Below the page header, summary cards show all the employee's active, resolved and
@@ -154,14 +155,14 @@ workflow access. Refresh reloads the incident and its
 notes. Priority changes remain admin-only, and engineer pages
 provide no assignment, deletion or people-management controls.
 
-Engineer summary cards below the header show in-progress, blocked and resolved
-current assignments across the full assigned scope. The My incidents tab uses
-the personal summary instead. Mutations and Refresh update summaries, and counts
+Engineer summary cards below the header show awaiting acceptance, in-progress,
+blocked and resolved current assignments across the full assigned scope. The My
+incidents workspace uses the personal summary instead. Mutations and Refresh update summaries, and counts
 never include another engineer's assignments merely because the grid is filtered.
 
 `src/incidents/` shares list/detail/notes/progress components across employee and
 engineer scopes. `components/MemberLayout.tsx` owns their responsive account
-controls and tabs; routes require the backend-verified engineer profile. The API
+controls and workspace selection; routes require the backend-verified engineer profile. The API
 includes `reporter_name`, `assignee_name` and note `author_name` within authorized
 records, avoiding a people-directory request.
 
@@ -395,3 +396,17 @@ incidents, and returns active work to Open; Resolved and Closed statuses remain.
 If affected records change after the preview, review the updated counts and confirm
 again. Location reports include all matching locations; the repeated-only switch
 has been removed.
+
+
+Employee incident details show 30-day response expectations for the same category
+and building. Only aggregate first-assignment, acknowledgment and resolution
+averages and sample counts are returned; peer incident details remain private.
+Engineers see acknowledgment and resolution averages below their assignment
+counts, covering current assignments reported in the last 30 days regardless of
+grid filters. Times run from reporting to each first milestone. Missing milestones
+are excluded independently, and empty samples show a dash. These are historical
+averages, not a promised completion time. The assigned-work grid hides its redundant
+Assigned engineer column initially; it remains available in the column chooser.
+
+Incident notes are returned newest timestamp first, with descending ID for ties.
+Notes grids and related-note dialogs also default to descending creation timestamp.

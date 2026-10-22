@@ -131,6 +131,13 @@ class MilestoneMetric(Schema):
     average_minutes: Minutes | None
 
 
+class ResponseTimeSummary(ReportWindow):
+    """Historical averages only, without exposing another reporter's incident rows."""
+
+    total_count: Count
+    milestones: list[MilestoneMetric]
+
+
 class TimingRow(Schema):
     id: int
     title: str
